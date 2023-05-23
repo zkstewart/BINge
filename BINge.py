@@ -215,6 +215,78 @@ class EquivalenceClassCollection():
             len(self.samples), self.numTranscripts
         )
 
+class EquivalenceClassCollection():
+    def __init__(self):
+        self.ids = {} # transcript indices to transcript IDs
+        self.samples = [] # sample names
+        self.groups = [] # indication of which samples are replicates of the same group
+        self.ec = {} # equivalence class dicts
+        
+        self.index_to_ec = {} # maps transcript indices to equivalence classes
+        self.ec_to_count = {} # associates equivalence class to its number of reads
+        self.num_ec = 0 # stores how many ECs we've indexed thus far
+        
+        self.numTranscripts = None # for checking EC file compatibility
+    
+    def parse_eq_file(self, eqFile, sample, group):
+        # Validate input parameters
+        assert os.path.isfile(eqFile), \
+            f"Cannot parse '{eqFile}' as file does not exist!"
+        assert isinstance(sample, str) and not sample in self.samples, \
+            f"Sample name must be a string value that uniquely identifies this sample!"
+        assert isinstance(group, int) and group >= 1, \
+            "Group value must be an integer >= 1"
+        
+        # Figure out if we should hold onto transcript IDs or not
+        if self.ids == {}:
+            needsIDs = True
+        else:
+            needsIDs = False
+        
+        # Parse the file proper
+        with open(eqFile, "r") as fileIn:
+            
+            # Parse the first two lines of the file
+            numTranscripts = int(fileIn.readline().rstrip("\r\n "))
+            numECs = int(fileIn.readline().rstrip("\r\n "))
+            
+            # Check compatibility of EC files
+            if self.numTranscripts == None:
+                self.numTranscripts = numTranscripts
+            else:
+                assert self.numTranscripts == numTranscripts, \
+                    "EC files are incompatible since transcript numbers differ!"
+            
+            # Loop through transcript ID lines
+            for i in range(numTranscripts):
+                transcriptID = fileIn.readline().rstrip("\r\n ")
+                
+                # If we haven't constructed self.ids or self.index_to_ec yet, do so now
+                if needsIDs:
+                    self.ids[i] = transcriptID
+                    self.index_to_ec[i] = []
+            
+            # Loop through EC lines
+            for _ in range(numECs):
+                sl = list(map(int, fileIn.readline().rstrip("\r\n ").split("\t")))
+                numIDs, idIndices, numReads = sl[0], sl[1:-1], sl[-1]
+                
+                # Store relevant data
+                self.ec_to_count[self.num_ec] = numReads
+                for idIndex in idIndices:
+                    self.index_to_ec[idIndex].append(self.num_ec)
+                
+                self.num_ec += 1
+        
+        # Store relevant parameters now that parsing has completed successfully
+        self.samples.append(sample)
+        self.groups.append(group)
+    
+    def __repr__(self):
+        return "<EquivalenceClassCollection object;num_samples={0};num_transcripts={1}>".format(
+            len(self.samples), self.numTranscripts
+        )
+
 # Define functions
 def validate_args(args):
     # Validate input file locations
