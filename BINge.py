@@ -4,18 +4,20 @@
 
 # This script/program aims to provide an alternative to Corset
 # for situations where a reference genome is available. However,
-# in the reference genome might be for a different subspecies than
+# the reference genome might be for a different subspecies than
 # the one you're working with. Hence, it's not good enough to
 # just map against the reference genome. You should map against a
 # de novo transcriptome, but leverage the genomic information
 # to group transcripts into genes. That's what this does.
 
-import os, argparse, sys, pickle
+import os, argparse, sys, pickle, queue, time
 from intervaltree import IntervalTree, Interval
 from statistics import mean
+from pyfaidx import Fasta
+from threading import Thread
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from Various_scripts import ZS_GFF3IO
+from Various_scripts import ZS_GFF3IO, ZS_ClustIO, ZS_SeqIO
 
 # Define classes
 class Bin:
@@ -122,171 +124,6 @@ class BinCollection:
             len(self.bins)
         )
 
-class EquivalenceClassCollection():
-    def __init__(self):
-        self.ids = {} # transcript IDs to EC index dict
-        self.samples = [] # sample names
-        self.groups = [] # indication of which samples are replicates of the same group
-        self.ec = {} # equivalence class dicts
-        
-        self.numTranscripts = None # for checking EC file compatibility
-    
-    def parse_eq_file(self, eqFile, sample, group):
-        # Validate input parameters
-        assert os.path.isfile(eqFile), \
-            f"Cannot parse '{eqFile}' as file does not exist!"
-        assert isinstance(sample, str) and not sample in self.samples, \
-            f"Sample name must be a string value that uniquely identifies this sample!"
-        assert isinstance(group, int) and group >= 1, \
-            "Group value must be an integer >= 1"
-        
-        # Figure out if we should hold onto transcript IDs or not
-        if self.ids == {}:
-            needsIDs = True
-        else:
-            needsIDs = False
-        
-        # Parse the file proper
-        with open(eqFile, "r") as fileIn:
-            
-            # Parse the first two lines of the file
-            numTranscripts = int(fileIn.readline().rstrip("\r\n "))
-            numECs = int(fileIn.readline().rstrip("\r\n "))
-            
-            # Check compatibility of EC files
-            if self.numTranscripts == None:
-                self.numTranscripts = numTranscripts
-            else:
-                assert self.numTranscripts == numTranscripts, \
-                    "EC files are incompatible since transcript numbers differ!"
-            
-            # Loop through transcript ID lines
-            for i in range(numTranscripts):
-                transcriptID = fileIn.readline().rstrip("\r\n ")
-                if needsIDs:
-                    self.ids[transcriptID] = i
-            
-            # Loop through EC lines
-            thisEC = { i:0 for i in range(0, numTranscripts) } # holds onto counts per transcript for this file
-            for _ in range(numECs):
-                sl = list(map(int, fileIn.readline().rstrip("\r\n ").split("\t")))
-                numIDs, idIndices, numReads = sl[0], sl[1:-1], sl[-1]
-                
-                # Store relevant data
-                for idIndex in idIndices:
-                    thisEC[idIndex] += numReads # CAN MAKE TPM COMPATIBLE BY SPLITTING READS HERE
-        
-        # Store relevant parameters now that parsing has completed successfully
-        self.samples.append(sample)
-        self.groups.append(group)
-        
-        # Store EC counts inside parent structure
-        for ecIndex, ecCount in thisEC.items():
-            self.ec.setdefault(ecIndex, [])
-            self.ec[ecIndex].append(ecCount)
-    
-    def get_transcript_count(self, ecValue, group):
-        '''
-        Parameters:
-            ecValue -- an integer identifying the equivalence class index
-                       you want to get counts for, OR a string identifying
-                       the transcript ID you want to get counts for
-            group -- an integer identifying which group you want to obtain
-                     a count for; replicates are automatically averaged and this
-                     value is returned
-        Returns:
-            meanTranscriptCount -- an integer of the mean transcript count
-                                   for the indicated replicate group
-        '''
-        if isinstance(ecValue, int):
-            ec = self.ec[ecValue]
-        else:
-            ec = self.ec[self.ids[ecValue]]
-        
-        meanTranscriptCount = mean([
-            ec[i]
-            for i in range(len(self.groups))
-            if self.groups[i] == group
-        ])
-        return meanTranscriptCount
-    
-    def __repr__(self):
-        return "<EquivalenceClassCollection object;num_samples={0};num_transcripts={1}>".format(
-            len(self.samples), self.numTranscripts
-        )
-
-class EquivalenceClassCollection():
-    def __init__(self):
-        self.ids = {} # transcript indices to transcript IDs
-        self.samples = [] # sample names
-        self.groups = [] # indication of which samples are replicates of the same group
-        self.ec = {} # equivalence class dicts
-        
-        self.index_to_ec = {} # maps transcript indices to equivalence classes
-        self.ec_to_count = {} # associates equivalence class to its number of reads
-        self.num_ec = 0 # stores how many ECs we've indexed thus far
-        
-        self.numTranscripts = None # for checking EC file compatibility
-    
-    def parse_eq_file(self, eqFile, sample, group):
-        # Validate input parameters
-        assert os.path.isfile(eqFile), \
-            f"Cannot parse '{eqFile}' as file does not exist!"
-        assert isinstance(sample, str) and not sample in self.samples, \
-            f"Sample name must be a string value that uniquely identifies this sample!"
-        assert isinstance(group, int) and group >= 1, \
-            "Group value must be an integer >= 1"
-        
-        # Figure out if we should hold onto transcript IDs or not
-        if self.ids == {}:
-            needsIDs = True
-        else:
-            needsIDs = False
-        
-        # Parse the file proper
-        with open(eqFile, "r") as fileIn:
-            
-            # Parse the first two lines of the file
-            numTranscripts = int(fileIn.readline().rstrip("\r\n "))
-            numECs = int(fileIn.readline().rstrip("\r\n "))
-            
-            # Check compatibility of EC files
-            if self.numTranscripts == None:
-                self.numTranscripts = numTranscripts
-            else:
-                assert self.numTranscripts == numTranscripts, \
-                    "EC files are incompatible since transcript numbers differ!"
-            
-            # Loop through transcript ID lines
-            for i in range(numTranscripts):
-                transcriptID = fileIn.readline().rstrip("\r\n ")
-                
-                # If we haven't constructed self.ids or self.index_to_ec yet, do so now
-                if needsIDs:
-                    self.ids[i] = transcriptID
-                    self.index_to_ec[i] = []
-            
-            # Loop through EC lines
-            for _ in range(numECs):
-                sl = list(map(int, fileIn.readline().rstrip("\r\n ").split("\t")))
-                numIDs, idIndices, numReads = sl[0], sl[1:-1], sl[-1]
-                
-                # Store relevant data
-                self.ec_to_count[self.num_ec] = numReads
-                for idIndex in idIndices:
-                    self.index_to_ec[idIndex].append(self.num_ec)
-                
-                self.num_ec += 1
-        
-        # Store relevant parameters now that parsing has completed successfully
-        self.samples.append(sample)
-        self.groups.append(group)
-    
-    def __repr__(self):
-        return "<EquivalenceClassCollection object;num_samples={0};num_transcripts={1}>".format(
-            len(self.samples), self.numTranscripts
-        )
-
 # Define functions
 def validate_args(args):
     # Validate input file locations
@@ -304,27 +141,10 @@ def validate_args(args):
             print(f'I am unable to locate the GMAP GFF3 file ({gmapFile})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
-    for eqFile in args.equivalenceClassFiles:
-        if not os.path.isfile(eqFile):
-            print(f'I am unable to locate the salmon equivalence class file ({eqFile})')
-            print('Make sure you\'ve typed the file name or location correctly and try again.')
-            quit()
     # Validate the input files are logically sound
     if len(args.annotationFiles) != len(args.gmapFiles):
         print("Your genome annotation and GMAP files are incompatible!")
         print(f"I'm seeing {len(args.annotationFiles)} annotation files and {len(args.gmapFiles)} GMAP files")
-        print("These numbers should be the same. You need to fix this up and try again.")
-        quit()
-    if len(args.equivalenceClassFiles) != len(args.sampleNames):
-        print("Your equivalence class and sample names are incompatible!")
-        print((f"I'm seeing {len(args.equivalenceClassFiles)} equivalence class files " +
-              f"and {len(args.sampleNames)} sample names"))
-        print("These numbers should be the same. You need to fix this up and try again.")
-        quit()
-    if len(args.sampleNames) != len(args.replicateNumbers):
-        print("Your equivalence class and sample names are incompatible!")
-        print((f"I'm seeing {len(args.sampleNames)} sample names " +
-              f"and {len(args.replicateNumbers)} replicate numbers"))
         print("These numbers should be the same. You need to fix this up and try again.")
         quit()
     
@@ -363,13 +183,11 @@ def _create_feature_from_sl(sl):
 def iterate_through_gff3(gff3File):
     '''
     Provides a simple iterator for a GFF3 file which yields GFF3
-    features.
+    features. Only works if the GFF3 file is sorted.
     
     Parameters:
-        gmapFile --
-        recordsDict -- 
-        gff3Obj -- 
-        binCollection -- 
+        gff3File -- a string indicating the location of a GFF3 formatted
+                    file that is sorted.
     '''
     thisFeature = []
     with open(gff3File, "r") as fileIn:
@@ -532,6 +350,155 @@ def bin_by_gmap(gmapFile, binCollection):
 #         featureOvlPct, binOvlPct = calculate_overlap_percentages(feature, geneBin)
 #         print(f"featureOvlPct={featureOvlPct};binOvlPct={binOvlPct}")
 
+def cluster_bin(bin, transcriptRecords):
+    '''
+    Parameters:
+        bin -- a Bin object which should be clustered with CD-HIT.
+        transcriptRecords -- a pyfaidx Fasta object containing all the sequences
+                             we'll want to cluster from our bins.
+    Returns:
+        clusterDict -- a dictionary result of clustering with structure like:
+                       {
+                           0: [seqid1, seqid2, ...],
+                           1: [ ... ],
+                           ...
+                       }
+    '''
+    # Bypass clustering if this bin has only one sequence
+    if len(bin.ids) == 1:
+        clusterDict = {0: list(bin.ids)}
+    else:
+        # Create a FASTA object for the sequences in this bin
+        FASTA_obj = ZS_SeqIO.FASTA(None)
+        for id in bin.ids:
+            FastASeq_obj = ZS_SeqIO.FastASeq(id, str(transcriptRecords[id]))
+            FASTA_obj.insert(0, FastASeq_obj)
+        
+        # Cluster it with CD-HIT at lax settings
+        clusterer = ZS_ClustIO.CDHIT(FASTA_obj, "nucleotide")
+        clusterer.identity = 0.8
+        clusterer.set_shorter_cov_pct(0.2)
+        clusterer.set_longer_cov_pct(0.0)
+        clusterer.set_local()
+        clusterer.clean = False
+        clusterer.get_cdhit_results(returnClusters=True) # throw away the temporary file return value
+        
+        clusterDict = clusterer.resultClusters
+    
+    return clusterDict
+
+def testing_bin_processing(bin, transcriptRecords):
+    '''
+    Parameters:
+        bin -- a Bin object which should be clustered with CD-HIT.
+        transcriptRecords -- a pyfaidx Fasta object containing all the sequences
+                             we'll want to cluster from our bins.
+    Returns:
+        clusterDict -- a dictionary result of clustering with structure like:
+                       {
+                           0: [seqid1, seqid2, ...],
+                           1: [ ... ],
+                           ...
+                       }
+    '''
+    ## JUST WHILE TESTING!!!
+    for collection in [binCollection, novelBinCollection]:
+        for interval in collection:
+            bin = interval.data
+            
+            # Bypass clustering if this bin has only one sequence
+            if len(bin.ids) == 1:
+                clusterDict = {0: list(bin.ids)}
+            else:
+                # Create a FASTA object for the sequences in this bin
+                FASTA_obj = ZS_SeqIO.FASTA(None)
+                for id in bin.ids:
+                    FastASeq_obj = ZS_SeqIO.FastASeq(id, str(transcriptRecords[id]))
+                    FASTA_obj.insert(0, FastASeq_obj)
+                
+                # Cluster it with CD-HIT at lax settings
+                clusterer = ZS_ClustIO.CDHIT(FASTA_obj, "nucleotide")
+                clusterer.identity = 0.8
+                clusterer.set_shorter_cov_pct(0.2)
+                clusterer.set_longer_cov_pct(0.0)
+                clusterer.set_local()
+                clusterer.clean = False
+                clusterer.get_cdhit_results(returnClusters=True) # throw away the temporary file return value
+                
+                clusterDict = clusterer.resultClusters
+    
+    return clusterDict
+
+def bin_clustering_worker(binQueue, outputQueue, transcriptRecords):
+    '''
+    Parameters:
+        binQueue -- a queue.Queue object containing Bin objects for clustering.
+        outputQueue -- a queue.Queue object that will receive the processed outputs
+                       of this worker thread.
+        transcriptRecords -- a pyfaidx Fasta object containing all the sequences
+                             we'll want to cluster from our bins.
+    '''
+    while True:
+        # Continue condition
+        if binQueue.empty():
+            time.sleep(0.5)
+            continue
+        
+        # Grabbing condition
+        bin = binQueue.get()
+        
+        # Exit condition
+        if bin == None:
+            binQueue.task_done()
+            break
+        
+        # Perform work
+        clusterDict = cluster_bin(bin, transcriptRecords)
+        
+        # Store result in output queue
+        outputQueue.put(clusterDict)
+        
+        # Mark work completion
+        binQueue.task_done()
+
+def output_worker(outputQueue, transcriptRecords):
+    '''
+    Parameters:
+        binQueue -- a queue.Queue object containing Bin objects for clustering.
+        outputQueue -- a queue.Queue object that will receive the processed outputs
+                       of this worker thread.
+        transcriptRecords -- a pyfaidx Fasta object containing all the sequences
+                             we'll want to cluster from our bins.
+    '''
+    clusterNum = -1 # iterates on start of loop; set as -1 so loop starts at 0
+    while True:
+        # Continue condition
+        if outputQueue.empty():
+            time.sleep(0.5)
+            continue
+        
+        # Grabbing condition
+        clusterDict = outputQueue.get()
+        
+        # Exit condition
+        if clusterDict == None:
+            outputQueue.task_done()
+            break
+        
+        # Perform work
+        clusterDict = cluster_bin(bin, transcriptRecords)
+        
+        # Store clusters
+        for clusterIDs in clusterer.resultClusters.values(): # TBD: put an actual output func here
+            clusterNum += 1
+            clusterDict[clusterNum] = clusterIDs
+        
+        # Store result in output queue
+        outputQueue.put(clusterDict)
+        
+        # Mark work completion
+        outputQueue.task_done()
+
 ## Main
 def main():
     # User input
@@ -566,12 +533,6 @@ def main():
                    nargs="+",
                    required=True,
                    help="Input one or more sample names (paired to the equivalence classes)")
-    p.add_argument("-r", dest="groupNumbers",
-                   nargs="+",
-                   required=True,
-                   help="""Input one or more numbers (paired to the equivalence classes) which
-                   represent the group a sample belongs to. Samples in the same group are treated
-                   as replicates.""")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for TSV-formatted results")
@@ -618,6 +579,7 @@ def main():
                 
                 # ... and add the new bin
                 binCollection.add(featureBin)
+    gff3Obj = None # just to help garbage collect and reduce memory footprint (maybe?)
     
     # For each GMAP file, add sequences to bins
     for gmapFile in args.gmapFiles:
@@ -627,34 +589,40 @@ def main():
     ## TBD: Current dataset lacks chimeras so there's nothing to
     ## fix or test things on even.
     
-    # Parse equivalence class files
-    ecCollection = EquivalenceClassCollection()
-    for i in range(len(args.equivalenceClassFiles)):
-        eqFile = args.equivalenceClassFiles[i]
-        sample = args.sampleNames[i]
-        replicate = args.replicateNumbers[i]
-        
-        ecCollection.parse_eq_file(eqFile, sample, replicate)
+    # Load transcripts into memory for quick access
+    transcriptRecords = Fasta(args.transcriptomeFile)
     
-    # Cluster transcripts within each bin
-    clustersDict = {}
+    # Set up queueing system for multi-threading
+    workerQueue = queue.Queue(maxsize=50)
+    outputQueue = queue.Queue(maxsize=1000)
+    
+    # Start up threads for clustering of bins
+    for _ in range(args.threads):
+        worker = Thread(
+            target=bin_clustering_worker,
+            args=(workerQueue, outputQueue, transcriptRecords))
+        worker.setDaemon(True)
+        worker.start()
+    
+    clusterDict = {}
+    outputWorker = Thread(target=output_worker,
+                          args=(outputQueue, clusterDict))
+    outputWorker.setDaemon(True)
+    outputWorker.start()
+    
+    # Put bins in queue for worker threads
     for collection in [binCollection, novelBinCollection]:
-        for interval in collection.bins: # remove .bins after re-running and pickling
+        for interval in collection:
             bin = interval.data
-            
-            # Build a dataset for distance calculation...?
-            # for seqID in bin.ids:
-                
-            # ecCollection
-            
-            # Simple jaccard distance calculation
-            jaccard = pairwise_distances(arr1, arr2, metric="jaccard", n_jobs=args.threads)
-            
-            stop
+            workerQueue.put(bin)
     
-    ## TBD: Running compacta/corset on clusters
+    # Close up shop on the threading structures
+    for i in range(args.threads):
+        workerQueue.put(None) # this is a marker for the worker threads to stop
+    workerQueue.join()
     
-    ## TBD: Generating output
+    outputQueue.put(None) # marker for the output thead to stop
+    outputQueue.join()
     
     print("Program completed successfully!")
 
@@ -663,11 +631,11 @@ if __name__ == "__main__":
     # with open("binge.pkl", "wb") as pickleOut:
     #     pickle.dump([binCollection, novelBinCollection, chimeras], pickleOut)
     
-    # with open("binge.pkl", "rb") as pickleIn:
-    #     binCollection, novelBinCollection, chimeras = pickle.load(pickleIn)
+    with open("binge.pkl", "rb") as pickleIn:
+        binCollection, novelBinCollection, chimeras = pickle.load(pickleIn)
     
-    with open("binge_ec.pkl", "wb") as pickleOut:
-        pickle.dump(ecCollection, pickleOut)
+    # with open("binge_ec.pkl", "wb") as pickleOut:
+    #     pickle.dump(ecCollection, pickleOut)
     
-    with open("binge_ec.pkl", "rb") as pickleIn:
-        ecCollection = pickle.load(pickleIn)
+    # with open("binge_ec.pkl", "rb") as pickleIn:
+    #     ecCollection = pickle.load(pickleIn)
