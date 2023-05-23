@@ -465,14 +465,6 @@ def main():
                    nargs="+",
                    required=True,
                    help="Input one or more GMAP (GFF3) files")
-    p.add_argument("-e", dest="equivalenceClassFiles",
-                   nargs="+",
-                   required=True,
-                   help="Input one or more salmon eq_classes.txt files")
-    p.add_argument("-s", dest="sampleNames",
-                   nargs="+",
-                   required=True,
-                   help="Input one or more sample names (paired to the equivalence classes)")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for TSV-formatted results")
