@@ -10,9 +10,8 @@
 # de novo transcriptome, but leverage the genomic information
 # to group transcripts into genes. That's what this does.
 
-import os, argparse, sys, pickle, queue, time
+import os, argparse, sys, queue, time
 from intervaltree import IntervalTree, Interval
-from statistics import mean
 from pyfaidx import Fasta
 from threading import Thread
 
@@ -97,7 +96,6 @@ class BinCollection:
         self.bins = IntervalTree()
     
     def add(self, bin):
-        # assert isinstance(bin, Bin) # doesn't work
         self.bins[bin.start:bin.end+1] = bin
     
     def find(self, contig, start, end):
@@ -338,18 +336,6 @@ def bin_by_gmap(gmapFile, binCollection):
     
     return novelBinCollection, chimeras
 
-# def chimera_handler(binCollection):
-#     binOverlap = binCollection.find(feature.contig, feature.start, feature.end)
-    
-#     for geneBin in binOverlap:
-#         featureOngoing = 0
-#         for exonFeature in mrnaFeature.exon:
-#             cdsOvlPct, _ = calculate_overlap_percentages(exonFeature, geneBin)
-#             featureOngoing += cdsOvlPct if cdsOvlPct > 0 else 0
-        
-#         featureOvlPct, binOvlPct = calculate_overlap_percentages(feature, geneBin)
-#         print(f"featureOvlPct={featureOvlPct};binOvlPct={binOvlPct}")
-
 def cluster_bin(bin, transcriptRecords):
     '''
     Parameters:
@@ -380,52 +366,9 @@ def cluster_bin(bin, transcriptRecords):
         clusterer.set_shorter_cov_pct(0.2)
         clusterer.set_longer_cov_pct(0.0)
         clusterer.set_local()
-        clusterer.clean = False
         clusterer.get_cdhit_results(returnClusters=True) # throw away the temporary file return value
         
         clusterDict = clusterer.resultClusters
-    
-    return clusterDict
-
-def testing_bin_processing(bin, transcriptRecords):
-    '''
-    Parameters:
-        bin -- a Bin object which should be clustered with CD-HIT.
-        transcriptRecords -- a pyfaidx Fasta object containing all the sequences
-                             we'll want to cluster from our bins.
-    Returns:
-        clusterDict -- a dictionary result of clustering with structure like:
-                       {
-                           0: [seqid1, seqid2, ...],
-                           1: [ ... ],
-                           ...
-                       }
-    '''
-    ## JUST WHILE TESTING!!!
-    for collection in [binCollection, novelBinCollection]:
-        for interval in collection:
-            bin = interval.data
-            
-            # Bypass clustering if this bin has only one sequence
-            if len(bin.ids) == 1:
-                clusterDict = {0: list(bin.ids)}
-            else:
-                # Create a FASTA object for the sequences in this bin
-                FASTA_obj = ZS_SeqIO.FASTA(None)
-                for id in bin.ids:
-                    FastASeq_obj = ZS_SeqIO.FastASeq(id, str(transcriptRecords[id]))
-                    FASTA_obj.insert(0, FastASeq_obj)
-                
-                # Cluster it with CD-HIT at lax settings
-                clusterer = ZS_ClustIO.CDHIT(FASTA_obj, "nucleotide")
-                clusterer.identity = 0.8
-                clusterer.set_shorter_cov_pct(0.2)
-                clusterer.set_longer_cov_pct(0.0)
-                clusterer.set_local()
-                clusterer.clean = False
-                clusterer.get_cdhit_results(returnClusters=True) # throw away the temporary file return value
-                
-                clusterDict = clusterer.resultClusters
     
     return clusterDict
 
@@ -461,56 +404,53 @@ def bin_clustering_worker(binQueue, outputQueue, transcriptRecords):
         # Mark work completion
         binQueue.task_done()
 
-def output_worker(outputQueue, transcriptRecords):
+def output_worker(outputQueue, outputFileName):
     '''
     Parameters:
-        binQueue -- a queue.Queue object containing Bin objects for clustering.
-        outputQueue -- a queue.Queue object that will receive the processed outputs
-                       of this worker thread.
-        transcriptRecords -- a pyfaidx Fasta object containing all the sequences
-                             we'll want to cluster from our bins.
+        outputQueue -- a queue.Queue object that receives outputs from worker threads.
+        outputFileName -- a string indicating the location to write results to.
     '''
-    clusterNum = -1 # iterates on start of loop; set as -1 so loop starts at 0
-    while True:
-        # Continue condition
-        if outputQueue.empty():
-            time.sleep(0.5)
-            continue
+    clusterNum = 1
+    with open(outputFileName, "w") as fileOut:
+        # Write header
+        fileOut.write("#BINge clustering information file\n")
+        fileOut.write("cluster_num\tsequence_id\n")
         
-        # Grabbing condition
-        clusterDict = outputQueue.get()
-        
-        # Exit condition
-        if clusterDict == None:
+        # Write content lines as they become available
+        while True:
+            # Continue condition
+            if outputQueue.empty():
+                time.sleep(0.5)
+                continue
+            
+            # Grabbing condition
+            clusterDict = outputQueue.get()
+            
+            # Exit condition
+            if clusterDict == None:
+                outputQueue.task_done()
+                break
+            
+            # Perform work
+            for clusterIDs in clusterDict.values():
+                for seqID in clusterIDs:
+                    fileOut.write(f"{clusterNum}\t{seqID}\n")
+                clusterNum += 1
+            
+            # Mark work completion
             outputQueue.task_done()
-            break
-        
-        # Perform work
-        clusterDict = cluster_bin(bin, transcriptRecords)
-        
-        # Store clusters
-        for clusterIDs in clusterer.resultClusters.values(): # TBD: put an actual output func here
-            clusterNum += 1
-            clusterDict[clusterNum] = clusterIDs
-        
-        # Store result in output queue
-        outputQueue.put(clusterDict)
-        
-        # Mark work completion
-        outputQueue.task_done()
 
 ## Main
 def main():
     # User input
-    usage = """%(prog)s is ... WIP.
+    usage = """%(prog)s (BIN Genes for Expression analyses) is a program which bins
+    de novo-assembled transcripts together on the basis of reference genome alignments.
+    This might be necessary when working with multiple subspecies that are expected to
+    diverge only slightly from the reference organism. By binning like this, each subspecies
+    can have its gene counts compared fairly during DGE.
     
-    For each annotation GFF3 (-ga) you should provide a matching GMAP GFF3 alignment file
-    (-gm). These values should be ordered equivalently.
-    
-    Additionally, for each sample, you should provide its name (-s), the location of the
-    eq_classes.txt file from salmon (-e), and what replicate number it is (-r). Replicate
-    numbers will be used to tie samples together into groups for clustering. The order
-    of all these values should be equivalent, too.
+    Note: For each annotation GFF3 (-ga) you should provide a matching GMAP GFF3 alignment
+    file (-gm). These values should be ordered equivalently.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
@@ -551,9 +491,6 @@ def main():
     binCollection = BinCollection()
     for annotFile in args.annotationFiles:
         # Parse first as a GFF3 object
-        '''The main reason for doing this is with unsorted GFF3s. A simple
-        system fails here. And, I happen to be working with banana annotations
-        right now which have unsorted, terrible GFF3 files.'''
         gff3Obj = ZS_GFF3IO.GFF3(annotFile, strict_parse=True)
         for geneFeature in gff3Obj.types["gene"]:
             # Create a bin for this feature
@@ -579,15 +516,14 @@ def main():
                 
                 # ... and add the new bin
                 binCollection.add(featureBin)
-    gff3Obj = None # just to help garbage collect and reduce memory footprint (maybe?)
+    gff3Obj = None # help garbage collection and reduce memory footprint (I think?)
     
     # For each GMAP file, add sequences to bins
     for gmapFile in args.gmapFiles:
         novelBinCollection, chimeras = bin_by_gmap(gmapFile, binCollection)
     
     # Resolve chimeras
-    ## TBD: Current dataset lacks chimeras so there's nothing to
-    ## fix or test things on even.
+    ## For implementation only if chimeras are found in dataset
     
     # Load transcripts into memory for quick access
     transcriptRecords = Fasta(args.transcriptomeFile)
@@ -604,9 +540,8 @@ def main():
         worker.setDaemon(True)
         worker.start()
     
-    clusterDict = {}
     outputWorker = Thread(target=output_worker,
-                          args=(outputQueue, clusterDict))
+                          args=(outputQueue, args.outputFileName))
     outputWorker.setDaemon(True)
     outputWorker.start()
     
@@ -628,14 +563,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # with open("binge.pkl", "wb") as pickleOut:
-    #     pickle.dump([binCollection, novelBinCollection, chimeras], pickleOut)
-    
-    with open("binge.pkl", "rb") as pickleIn:
-        binCollection, novelBinCollection, chimeras = pickle.load(pickleIn)
-    
-    # with open("binge_ec.pkl", "wb") as pickleOut:
-    #     pickle.dump(ecCollection, pickleOut)
-    
-    # with open("binge_ec.pkl", "rb") as pickleIn:
-    #     ecCollection = pickle.load(pickleIn)
