@@ -11,6 +11,8 @@
 # to group transcripts into genes. That's what this does.
 
 import os, argparse, sys, queue, time
+import networkx as nx
+
 from intervaltree import IntervalTree, Interval
 from pyfaidx import Fasta
 from threading import Thread
@@ -30,7 +32,6 @@ class Bin:
         self.end = end
         
         self.ids = set() # set of sequence IDs
-        #self.links = [] # list of other Bin objects this one connects to
     
     @property
     def contig(self):
@@ -66,13 +67,12 @@ class Bin:
         self._end = value
     
     def add(self, idValue):
+        assert isinstance(idValue, str)
         self.ids.add(idValue)
     
-    def union(self, idList):
-        self.ids = self.ids.union(idList)
-    
-    def add_link(self, binValue):
-        self.links.append(binValue)
+    def union(self, ids):
+        assert isinstance(ids, list) or isinstance(ids, set)
+        self.ids = self.ids.union(ids)
     
     def merge(self, otherBin):
         assert self.contig == otherBin.contig, \
@@ -174,7 +174,15 @@ def validate_args(args):
         print(f"I'm seeing {len(args.annotationFiles)} annotation files and {len(args.gmapFiles)} GMAP files")
         print("These numbers should be the same. You need to fix this up and try again.")
         quit()
-    
+    # Validate numeric inputs
+    if args.threads < 1:
+        print("--threads should be given a value >= 1")
+        print("Fix this and try again.")
+        quit()
+    if args.convergenceIters < 1:
+        print("--convergence_iters should be given a value >= 1")
+        print("Fix this and try again.")
+        quit()
     # Validate output file location
     if os.path.isfile(args.outputFileName):
         print(f'File already exists at output location ({args.outputFileName})')
@@ -519,6 +527,81 @@ def output_worker(outputQueue, outputFileName):
             # Mark work completion
             outputQueue.task_done()
 
+def bin_linker(binCollection):
+    '''
+    Receives a BinCollection that has potentially been created through multiple
+    genome, multiple subspecies transcriptomics. It will attempt to merge bins
+    that are "equivalent" across the genomes using a graph-based approach to
+    modelling the relationships between the bins. The result is a BinCollection
+    that unifies all input data and is appropriate for sequence clustering.
+    
+    Note: this function is not guaranteed to produce a stable output i.e., if
+    you feed its result back in, you may get different results. It should
+    eventually converge on a stable solution, but there might theoretically
+    be an edge case where that never happens.
+    
+    Parameters:
+        binCollection -- a BinCollection object containing an assortment
+                         of bins from different genomes and/or genes that
+                         are (at a sequence level) indistinguishable and
+                         hence confounding for DGE.
+    Returns:
+        linkedBinCollection -- a BinCollection object where bins have been
+                               merged where deemed appropriate.
+    '''
+    VOTE_THRESHOLD = 0.5
+    
+    # Format bins into a dictionary
+    "It's not ideal for memory use but I need instant lookup and consistent ordering"
+    binDict = {}
+    binCounter = 0
+    for bin in binCollection:
+        binDict[binCounter] = bin.data
+        binCounter += 1
+    
+    # Figure out which bins have links through shared sequences
+    idLinks = {}
+    for binIndex, bin in binDict.items():
+        for seqID in bin.ids:
+            idLinks.setdefault(seqID, set())
+            idLinks[seqID].add(binIndex)
+    
+    # Model links between bins as a graph structure
+    binGraph = nx.Graph()
+    binGraph.add_nodes_from(range(0, len(binDict)))
+    
+    for binIndex, bin in binDict.items():
+        # Perform tallying and identify edges in the bin merging graph
+        votes = {}
+        for seqID in bin.ids:
+            for index in idLinks[seqID]:
+                if index != binIndex:
+                    votes.setdefault(index, 0)
+                    votes[index] += 1
+        toLink = [
+            index
+            for index, count in votes.items()
+            if count / len(bin.ids) >= VOTE_THRESHOLD
+        ]
+        
+        # Add edges between any relevant bin nodes
+        if len(toLink) > 0:
+            for index in toLink:
+                binGraph.add_edge(binIndex, index)
+    
+    # Merge bins on the basis of link identification
+    "At this point, the bins will lose any meaning they have in their .contig, .start, etc"
+    linkedBinCollection = BinCollection()
+    for connectedBins in nx.connected_components(binGraph):
+        connectedBins = list(connectedBins)
+        
+        newBin = binDict[connectedBins[0]]
+        for index in connectedBins[1:]:
+            newBin.union(binDict[index].ids)
+        linkedBinCollection.add(newBin)
+    
+    return linkedBinCollection
+
 ## Main
 def main():
     # User input
@@ -554,6 +637,15 @@ def main():
                    help="""Optionally, specify how many threads to run when multithreading
                    is available (default==1)""",
                    default=1)
+    p.add_argument("--convergence_iters", dest="convergenceIters",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify a maximum number of iterations allowed for
+                   bin convergence to be achieved (default==5); in most cases results will
+                   converge in fewer than 5 iterations, so setting a maximum acts merely as
+                   a safeguard against edge cases I have no reason to believe will ever
+                   happen.""",
+                   default=5)
     
     args = p.parse_args()
     validate_args(args)
@@ -594,15 +686,32 @@ def main():
     for i in range(1, len(collectionList)):
         binCollection.merge(collectionList[i])
     
+    # Link and merge bins across genomes / across gene copies
+    """Usually linking will unify multiple genomes together, but it may detect
+    bins of identical gene copies and link them together which is reasonable
+    since these would confound DGE to keep separate anyway"""
+    
+    prevCollectionCount = len(binCollection.bins)
+    for _ in range(args.convergenceIters):
+        binCollection = bin_linker(binCollection)
+        if len(binCollection.bins) == prevCollectionCount:
+            break
+    
+    prevCollectionCount = len(novelBinCollection.bins)
+    for _ in range(args.convergenceIters):
+        novelBinCollection = bin_linker(novelBinCollection)
+        if len(novelBinCollection.bins) == prevCollectionCount:
+            break
+    
     # Resolve chimeras
-    ## For implementation only if chimeras are found in dataset
+    ## For implementation only if chimeras are found in a dataset I can test on
     
     # Load transcripts into memory for quick access
     transcriptRecords = Fasta(args.transcriptomeFile)
     
     # Set up queueing system for multi-threading
-    workerQueue = queue.Queue(maxsize=50)
-    outputQueue = queue.Queue(maxsize=1000)
+    workerQueue = queue.Queue(maxsize=int(args.threads * 10)) # allow queue to scale with threads
+    outputQueue = queue.Queue(maxsize=int(args.threads * 100))
     
     # Start up threads for clustering of bins
     for _ in range(args.threads):
