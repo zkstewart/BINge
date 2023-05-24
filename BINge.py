@@ -114,6 +114,17 @@ class BinCollection:
         self.bins.remove(Interval(oldBin.start, oldBin.end+1, oldBin))
         self.add(newBin)
     
+    def merge(self, otherBinCollection):
+        '''
+        Merges the otherBinCollection into this one, adding all its Bins into this. This
+        results in changes to this object.
+        
+        This will NOT merge overlapping bins in any way. It just purely adds the Bins of
+        the other collection into this one.
+        '''
+        for bin in otherBinCollection:
+            self.add(bin.data)
+    
     def __iter__(self):
         return iter(self.bins)
     
@@ -121,6 +132,24 @@ class BinCollection:
         return "<BinCollection object;num_bins={0}>".format(
             len(self.bins)
         )
+
+class GmapBinThread(Thread):
+    '''
+    This provides a modified Thread which allows for the output of bin_by_gmap
+    to be stored locally within the object. Multi-threading this process is viable
+    since each GMAP file should correspond to an entirely separate genome and hence
+    there should be no overlap.
+    '''
+    def __init__(self, gmapFile, binCollection):
+        Thread.__init__(self)
+        
+        self.gmapFile = gmapFile
+        self.binCollection = binCollection
+        self.novelBinCollection = None
+        self.chimeras = None
+    
+    def run(self):
+        self.novelBinCollection, self.chimeras = bin_by_gmap(self.gmapFile, self.binCollection)
 
 # Define functions
 def validate_args(args):
@@ -151,6 +180,56 @@ def validate_args(args):
         print(f'File already exists at output location ({args.outputFileName})')
         print('Make sure you specify a unique file name and try again.')
         quit()
+
+def generate_bin_collections(annotationFiles):
+    '''
+    Receives a list of genome annotations in GFF3 format and parses these
+    into BinCollection structures which are separately stored in the returned list.
+    
+    Parameters:
+        annotationFiles -- a list of strings pointing to GFF3 genome annotation files.
+    Returns:
+        collectionList -- a list containing BinCollections in the same order as the
+                          input annotation files.
+    '''
+    # Parse each GFF3 into a bin collection structure
+    collectionList = [] # by using a list, we keep genome bins separate to multi-thread later
+    
+    for annotFile in annotationFiles:
+        binCollection = BinCollection()
+        
+        # Parse first as a GFF3 object
+        gff3Obj = ZS_GFF3IO.GFF3(annotFile, strict_parse=True)
+        for geneFeature in gff3Obj.types["gene"]:
+            
+            # Create a bin for this feature
+            featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
+            featureBin.add(geneFeature.ID)
+            
+            # See if this overlaps an existing bin
+            binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
+            
+            # If not, add the new bin
+            if len(binOverlap) == 0:
+                binCollection.add(featureBin)
+            
+            # Otherwise...
+            else:
+                # ... merge the bins together
+                for overlappingBin in binOverlap:
+                    featureBin.merge(overlappingBin)
+                
+                # ... delete the overlapping bins
+                for overlappingBin in binOverlap:
+                    binCollection.delete(overlappingBin)
+                
+                # ... and add the new bin
+                binCollection.add(featureBin)
+        
+        # Store the bin collection in our list for multi-threading later
+        collectionList.append(binCollection)
+    
+    return collectionList
 
 def _create_feature_from_sl(sl):
     # Extract details from sl
@@ -269,8 +348,8 @@ def bin_by_gmap(gmapFile, binCollection):
     OKAY_COVERAGE = 94
     OKAY_IDENTITY = 92
     ##
-    ALLOWED_COV_DIFF = 2
-    ALLOWED_IDENT_DIFF = 0.5
+    ALLOWED_COV_DIFF = 1
+    ALLOWED_IDENT_DIFF = 0.1
     ##
     GENE_BIN_OVL_PCT = 0.5
     NOVEL_BIN_OVL_PCT = 0.5
@@ -480,39 +559,40 @@ def main():
     validate_args(args)
     
     # Parse each GFF3 into a bin collection structure
-    binCollection = BinCollection()
-    for annotFile in args.annotationFiles:
-        # Parse first as a GFF3 object
-        gff3Obj = ZS_GFF3IO.GFF3(annotFile, strict_parse=True)
-        for geneFeature in gff3Obj.types["gene"]:
-            # Create a bin for this feature
-            featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
-            featureBin.add(geneFeature.ID)
-            
-            # See if this overlaps an existing bin
-            binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
-            
-            # If not, add the new bin
-            if len(binOverlap) == 0:
-                binCollection.add(featureBin)
-            
-            # Otherwise...
-            else:
-                # ... merge the bins together
-                for overlappingBin in binOverlap:
-                    featureBin.merge(overlappingBin)
-                
-                # ... delete the overlapping bins
-                for overlappingBin in binOverlap:
-                    binCollection.delete(overlappingBin)
-                
-                # ... and add the new bin
-                binCollection.add(featureBin)
-    gff3Obj = None # help garbage collection and reduce memory footprint (I think?)
+    collectionList = generate_bin_collections(args.annotationFiles) # keep genome bins separate to multi-thread later
     
-    # For each GMAP file, add sequences to bins
-    for gmapFile in args.gmapFiles:
-        novelBinCollection, chimeras = bin_by_gmap(gmapFile, binCollection)
+    # Parse GMAP alignments into our bin collection with multiple threads
+    novelBinCollection = BinCollection()
+    chimeras = set()
+    for i in range(0, len(args.gmapFiles), args.threads): # only process n (threads) files at a time
+        processing = []
+        for x in range(args.threads): # begin processing n files
+            if i+x < len(args.gmapFiles): # parent loop may excess if n > the number of GMAP files
+                gmapFile = args.gmapFiles[i+x]
+                binCollection = collectionList[i+x]
+                
+                workerThread = GmapBinThread(gmapFile, binCollection)
+                processing.append(workerThread)
+                workerThread.start()
+        
+        # Gather results
+        for workerThread in processing:
+            # Wait for thread to end
+            workerThread.join()
+            
+            # Grab the new outputs from this thread
+            "Each thread modifies a BinCollection part of collectionList directly"
+            threadNovelBinCollection, threadChimeras = workerThread.novelBinCollection, \
+                workerThread.chimeras
+            
+            # Merge them
+            novelBinCollection.merge(threadNovelBinCollection)
+            chimeras = chimeras.union(threadChimeras)
+    
+    # Merge gene bins together
+    binCollection = collectionList[0]
+    for i in range(1, len(collectionList)):
+        binCollection.merge(collectionList[i])
     
     # Resolve chimeras
     ## For implementation only if chimeras are found in dataset
