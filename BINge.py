@@ -240,7 +240,7 @@ def generate_bin_collections(annotationFiles):
         binCollection = BinCollection()
         
         # Parse first as a GFF3 object
-        gff3Obj = ZS_GFF3IO.GFF3(annotFile, strict_parse=True)
+        gff3Obj = ZS_GFF3IO.GFF3(annotFile, strict_parse=False)
         for geneFeature in gff3Obj.types["gene"]:
             
             # Create a bin for this feature
