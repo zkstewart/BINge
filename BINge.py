@@ -10,7 +10,7 @@
 # de novo transcriptome, but leverage the genomic information
 # to group transcripts into genes. That's what this does.
 
-import os, argparse, sys, queue, time
+import os, argparse, sys, queue, time, pickle # REMOVE AFTER TESTING
 import networkx as nx
 
 from intervaltree import IntervalTree, Interval
@@ -151,6 +151,23 @@ class GmapBinThread(Thread):
     def run(self):
         self.novelBinCollection, self.chimeras = bin_by_gmap(self.gmapFile, self.binCollection)
 
+class OutputWorkerThread(Thread):
+    '''
+    This provides a modified Thread which allows for the output worker to return a value
+    indicating how many clusters it wrote to file. This will save a little bit of time later
+    when we want to append more cluster results to the same file
+    '''
+    def __init__(self, outputQueue, outputFileName, clusterType):
+        Thread.__init__(self)
+        
+        self.outputQueue = outputQueue
+        self.outputFileName = outputFileName
+        self.clusterType = clusterType
+        self.numClusters = None
+    
+    def run(self):
+        self.numClusters = output_worker(self.outputQueue, self.outputFileName, self.clusterType)
+
 # Define functions
 def validate_args(args):
     # Validate input file locations
@@ -181,6 +198,22 @@ def validate_args(args):
         quit()
     if args.convergenceIters < 1:
         print("--convergence_iters should be given a value >= 1")
+        print("Fix this and try again.")
+        quit()
+    if not 0.0 < args.cdhitIdentity <= 1.0:
+        print("--cdhit_identity should be given a value greater than zero, and equal or less than 1")
+        print("Fix this and try again.")
+        quit()
+    if not 0.0 <= args.cdhitShortCov <= 1.0:
+        print("--cdhit_shortcov should be given a value in the range of 0 -> 1 (inclusive)")
+        print("Fix this and try again.")
+        quit()
+    if not 0.0 <= args.cdhitLongCov <= 1.0:
+        print("--cdhit_longcov should be given a value in the range of 0 -> 1 (inclusive)")
+        print("Fix this and try again.")
+        quit()
+    if not args.cdhitMem >= 100:
+        print("--cdhit_mem should be given a value at least greater than 100 (megabytes)")
         print("Fix this and try again.")
         quit()
     # Validate output file location
@@ -324,8 +357,10 @@ def novel_binner(feature, novelBinCollection, NOVEL_BIN_OVL_PCT):
     whether it should be binned with another novel bin or become
     a new bin itself.
     '''
+    baseID = feature.ID.rsplit(".", maxsplit=1)[0]
+    
     thisBin = Bin(feature.contig, feature.start, feature.end) # create a novel bin
-    thisBin.add(feature.ID)
+    thisBin.add(baseID) # we don't want the .path# suffix attached to this bin
     
     # ... see if this overlaps a novel bin that it should join
     novelBinOverlap = novelBinCollection.find(feature.contig, feature.start, feature.end)
@@ -453,7 +488,7 @@ def cluster_bin(bin, transcriptRecords):
         clusterer.set_shorter_cov_pct(0.2)
         clusterer.set_longer_cov_pct(0.0)
         clusterer.set_local()
-        clusterer.get_cdhit_results(returnClusters=True) # throw away the temporary file return value
+        clusterer.get_cdhit_results(returnFASTA=False, returnClusters=True) # throw away the temporary file return value
         
         clusterDict = clusterer.resultClusters
     
@@ -491,17 +526,22 @@ def bin_clustering_worker(binQueue, outputQueue, transcriptRecords):
         # Mark work completion
         binQueue.task_done()
 
-def output_worker(outputQueue, outputFileName):
+def output_worker(outputQueue, outputFileName, clusterType):
     '''
     Parameters:
         outputQueue -- a queue.Queue object that receives outputs from worker threads.
         outputFileName -- a string indicating the location to write results to.
+        clusterType -- a string to put in an output column indicating what source of
+                       evidence led to this cluster's formation; usually, this will
+                       have the value of "binned" to indicate that it was binned via
+                       GMAP alignment, or "unbinned" to indicate that it has been
+                       binned solely via CD-HIT clustering.
     '''
     clusterNum = 1
     with open(outputFileName, "w") as fileOut:
         # Write header
         fileOut.write("#BINge clustering information file\n")
-        fileOut.write("cluster_num\tsequence_id\n")
+        fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
         
         # Write content lines as they become available
         while True:
@@ -521,13 +561,14 @@ def output_worker(outputQueue, outputFileName):
             # Perform work
             for clusterIDs in clusterDict.values():
                 for seqID in clusterIDs:
-                    fileOut.write(f"{clusterNum}\t{seqID}\n")
+                    fileOut.write(f"{clusterNum}\t{seqID}\t{clusterType}\n")
                 clusterNum += 1
             
             # Mark work completion
             outputQueue.task_done()
+    return clusterNum - 1 # -1 to return the amount of clusters we actually wrote
 
-def bin_linker(binCollection):
+def bin_self_linker(binCollection):
     '''
     Receives a BinCollection that has potentially been created through multiple
     genome, multiple subspecies transcriptomics. It will attempt to merge bins
@@ -602,6 +643,158 @@ def bin_linker(binCollection):
     
     return linkedBinCollection
 
+def iterative_bin_self_linking(binCollection, convergenceIters):
+    '''
+    Links a bin to itself iteratively until it converges or
+    convergenceIters is reached.
+    
+    Parameters:
+        binCollection -- a BinCollection object
+        convergenceIters -- an integer providing a maximum limit for
+                            the amount of iterations that may occur.
+    '''
+    prevCollectionCount = len(binCollection.bins)
+    for _ in range(convergenceIters):
+        binCollection = bin_self_linker(binCollection)
+        if len(binCollection.bins) == prevCollectionCount:
+            break
+        prevCollectionCount = len(binCollection.bins)
+    return binCollection
+
+def multithread_bin_cluster(binCollectionList, threads, transcriptRecords,
+                            outputFileName, clusterType="binned"):
+    '''
+    This code has been pulled out into a function solely to ensure the main() function
+    is cleaner to read.
+    
+    What it does is set up a queue to store bins. Worker threads will grab bins to
+    process with CD-HIT. They will put their predicted cluster dictionary into the output
+    worker which will write it to file.
+    
+    We use this CD-HIT clustering of bins because each bin is only guaranteed to contain
+    sequences that generally align well over a predicted genomic region. There's no
+    guarantee that they are isoforms of the same gene, or even share any exonic content.
+    This clustering step is very lax and designed just to separate out overlapping
+    genes (which aren't actually the _same_ gene).
+    
+    Parameters:
+        binCollectionList -- a list containing BinCollection's
+        threads -- an integer indicating how many threads to run
+        transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
+                             sequences
+        outputFileName -- a string indicating the location to write output clustering
+                          results to.
+        clusterType -- a string to put in an output column indicating what source of
+                       evidence led to this cluster's formation; usually, this will
+                       have the value of "binned" to indicate that it was binned via
+                       GMAP alignment, or "unbinned" to indicate that it has been
+                       binned solely via CD-HIT clustering.
+    Returns:
+
+    '''
+    # Set up queueing system for multi-threading
+    workerQueue = queue.Queue(maxsize=int(threads * 10)) # allow queue to scale with threads
+    outputQueue = queue.Queue(maxsize=int(threads * 100))
+    
+    # Start up threads for clustering of bins
+    for _ in range(threads):
+        worker = Thread(
+            target=bin_clustering_worker,
+            args=(workerQueue, outputQueue, transcriptRecords))
+        worker.setDaemon(True)
+        worker.start()
+    
+    outputWorker = OutputWorkerThread(outputQueue, outputFileName, clusterType)
+    outputWorker.setDaemon(True)
+    outputWorker.start()
+    
+    # Put bins in queue for worker threads
+    for binCollection in binCollectionList:
+        for interval in binCollection:
+            bin = interval.data
+            workerQueue.put(bin)
+    
+    # Close up shop on the threading structures
+    for i in range(threads):
+        workerQueue.put(None) # this is a marker for the worker threads to stop
+    workerQueue.join()
+    
+    outputQueue.put(None) # marker for the output thead to stop
+    outputQueue.join()
+    
+    return outputWorker.numClusters
+
+def get_unbinned_sequence_ids(binCollectionList, transcriptRecords):
+    '''
+    Compares one or more BinCollection objects against the transcript sequences
+    to see if any sequences indicated in transcriptRecords do not exist in
+    any Bins.
+    
+    Parameters:
+        binCollectionList -- a list containing BinCollection's
+        transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
+                             sequences
+    '''
+    binnedIDs = []
+    for binCollection in binCollectionList:
+        for interval in binCollection:
+            bin = interval.data
+            binnedIDs.extend(bin.ids)
+    binnedIDs = set(binnedIDs)
+    
+    unbinnedIDs = []
+    for record in transcriptRecords:
+        if record.name not in binnedIDs:
+            unbinnedIDs.append(record.name)
+    return unbinnedIDs
+
+def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, threads, mem,
+                               IDENTITY=0.85, SHORTER_COV_PCT=0.6, LONGER_COV_PCT=0.3):
+    '''
+    Runs CD-HIT on the unbinned sequences in order to assign them to a cluster.
+    It's not ideal, but the alternative is to exclude these sequences which may
+    not be in line with the user's aims. By noting the source of clustering in
+    the output file, they can decide if they'd like to exclude these or not.
+    
+    Note: the default CD-HIT parameter values have been derived from some limited
+    testing which suggests that these values may work optimally to cluster sequences
+    into "genes" or the closest thing we have to them without proper genomic evidence.
+    
+    Parameters:
+        unbinnedIDs -- a list containg sequence IDs that exist in transcriptRecords
+                       which should be clustered with CD-HIT.
+        transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
+                             sequences.
+        threads -- an integer value indicating how many threads to run CD-HIT with.
+        mem -- an integer value indicating how many megabytes of memory to run CD-HIT with.
+        IDENTITY -- a float value indicating what identity value to run CD-HIT with.
+        SHORTER_COV_PCT -- a float value setting the -aS parameter of CD-HIT.
+        LONGER_COV_PCT -- a float value setting the -aL parameter of CD-HIT.
+    '''
+    # Generate a temporary FASTA file containing unbinned transcripts
+    tmpFileName = "tmp_BINge_unbinned_{0}.fasta".format(
+        ZS_SeqIO.Conversion.get_hash_for_input_sequences(str(transcriptRecords))
+    )
+    with open(tmpFileName, "w") as fileOut:
+        for seqID in unbinnedIDs:
+            record = transcriptRecords[seqID]
+            fileOut.write(f">{record.name}\n{str(record)}\n")
+    
+    # Cluster the unbinned transcripts
+    clusterer = ZS_ClustIO.CDHIT(tmpFileName, "nucleotide")
+    clusterer.identity = IDENTITY
+    clusterer.set_shorter_cov_pct(SHORTER_COV_PCT)
+    clusterer.set_longer_cov_pct(LONGER_COV_PCT)
+    clusterer.threads = threads
+    clusterer.mem = mem
+    clusterer.get_cdhit_results(returnFASTA=False, returnClusters=True)
+    
+    # Clean up temporary file(s)
+    os.unlink(tmpFileName)
+    
+    # Return cluster dictionary results
+    return clusterer.resultClusters
+
 ## Main
 def main():
     # User input
@@ -646,6 +839,30 @@ def main():
                    a safeguard against edge cases I have no reason to believe will ever
                    happen.""",
                    default=5)
+    p.add_argument("--cdhit_identity", dest="cdhitIdentity",
+                   required=False,
+                   type=float,
+                   help="""Optionally, when clustering unbinned sequences, specify what
+                   identity value (-c) to provide CD-HIT (default==0.85)""",
+                   default=0.85)
+    p.add_argument("--cdhit_shortcov", dest="cdhitShortCov",
+                   required=False,
+                   type=float,
+                   help="""Optionally, when clustering unbinned sequences, specify what
+                   -aS parameter to provide CD-HIT (default==0.6)""",
+                   default=0.6)
+    p.add_argument("--cdhit_longcov", dest="cdhitLongCov",
+                   required=False,
+                   type=float,
+                   help="""Optionally, when clustering unbinned sequences, specify what
+                   -aL parameter to provide CD-HIT (default==0.3)""",
+                   default=0.3)
+    p.add_argument("--cdhit_mem", dest="cdhitMem",
+                   required=False,
+                   type=int,
+                   help="""Optionally, when clustering unbinned sequences, specify how
+                   many megabytes of memory to provide CD-HIT (default==5000)""",
+                   default=5000)
     
     args = p.parse_args()
     validate_args(args)
@@ -691,17 +908,16 @@ def main():
     bins of identical gene copies and link them together which is reasonable
     since these would confound DGE to keep separate anyway"""
     
-    prevCollectionCount = len(binCollection.bins)
-    for _ in range(args.convergenceIters):
-        binCollection = bin_linker(binCollection)
-        if len(binCollection.bins) == prevCollectionCount:
-            break
+    binCollection = iterative_bin_self_linking(binCollection, args.convergenceIters)
+    novelBinCollection = iterative_bin_self_linking(novelBinCollection, args.convergenceIters)
     
-    prevCollectionCount = len(novelBinCollection.bins)
-    for _ in range(args.convergenceIters):
-        novelBinCollection = bin_linker(novelBinCollection)
-        if len(novelBinCollection.bins) == prevCollectionCount:
-            break
+    # Merge bin collections together and re-link bins
+    """A novel bin in one genome may just be because of an absence in the annotation.
+    Such an absence may not exist in another genome, and hence it will have a gene bin.
+    These should be merged together to prevent having redundant bins."""
+    
+    binCollection.merge(novelBinCollection)
+    binCollection = iterative_bin_self_linking(binCollection, args.convergenceIters)
     
     # Resolve chimeras
     ## For implementation only if chimeras are found in a dataset I can test on
@@ -709,36 +925,27 @@ def main():
     # Load transcripts into memory for quick access
     transcriptRecords = Fasta(args.transcriptomeFile)
     
-    # Set up queueing system for multi-threading
-    workerQueue = queue.Queue(maxsize=int(args.threads * 10)) # allow queue to scale with threads
-    outputQueue = queue.Queue(maxsize=int(args.threads * 100))
+    # Cluster each bin with CD-HIT to separate overlapping genes
+    numClusters = multithread_bin_cluster([binCollection],
+                                          args.threads, transcriptRecords,
+                                          args.outputFileName, clusterType="binned")
     
-    # Start up threads for clustering of bins
-    for _ in range(args.threads):
-        worker = Thread(
-            target=bin_clustering_worker,
-            args=(workerQueue, outputQueue, transcriptRecords))
-        worker.setDaemon(True)
-        worker.start()
+    # Cluster remaining unbinned sequences
+    unbinnedIDs = get_unbinned_sequence_ids([binCollection], transcriptRecords)
+    unbinnedClusterDict = cluster_unbinned_sequences(
+        unbinnedIDs, transcriptRecords, args.threads, args.cdhitMem,
+        args.cdhitIdentity, args.cdhitShortCov, args.cdhitLongCov)
     
-    outputWorker = Thread(target=output_worker,
-                          args=(outputQueue, args.outputFileName))
-    outputWorker.setDaemon(True)
-    outputWorker.start()
+    ## TESTING ##
+    with open("BINge_testing.pkl", "wb") as fileOut:
+        pickle.dump([binCollection, numClusters, unbinnedClusterDict], fileOut)
+    ## END TESTING ##
     
-    # Put bins in queue for worker threads
-    for collection in [binCollection, novelBinCollection]:
-        for interval in collection:
-            bin = interval.data
-            workerQueue.put(bin)
-    
-    # Close up shop on the threading structures
-    for i in range(args.threads):
-        workerQueue.put(None) # this is a marker for the worker threads to stop
-    workerQueue.join()
-    
-    outputQueue.put(None) # marker for the output thead to stop
-    outputQueue.join()
+    # Write output of clustering to file
+    with open(args.outputFileName, "a") as fileOut:
+        for clusterNum, clusterIDs in unbinnedClusterDict.items():
+            for seqID in clusterIDs:
+                fileOut.write(f"{clusterNum+numClusters+1}\t{seqID}\tunbinned\n") # clusterType = "unbinned"
     
     print("Program completed successfully!")
 
