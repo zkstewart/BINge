@@ -56,15 +56,21 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for text results")
+    # Optional
+    p.add_argument("--seq_prefix", dest="seqPrefix",
+                   required=False,
+                   help="""Optionally, if your GFF3 has a prefix before all its sequence
+                   IDs that is not seen in your FASTA file of transcripts, specify that here.
+                   For example, with NCBI GenBank genomes, it's not uncommon for the transcript
+                   FASTA file to have IDs like 'XM_009121514.3' but the GFF3 would index that
+                   as 'rna-XM_009121514.3'. So you would specify 'rna-' here to address that.""",
+                   default="")
     
     args = p.parse_args()
     validate_args(args)
     
-    # Parse the CD-HIT cluster file
-    testDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.clstrFile) # we will 'test' this against our ground truth
-    
     # Parse the GFF3 file into memory
-    gff3 = ZS_GFF3IO.GFF3(args.gff3File)
+    gff3 = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False)
     
     # Derive a cluster dict from the GFF3 to use as our true labels
     clusterNum = 1
@@ -75,13 +81,16 @@ def main():
                 trueDict[mrnaFeature.ID] = clusterNum
             clusterNum += 1
     
+    # Parse the CD-HIT cluster file, changing cluster IDs to not overlap
+    idOffset = max(trueDict.values()) # adding this number means our cluster numbers won't overlap
+    testDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.clstrFile) # we will 'test' this against our ground truth
+    testDict = { f"{args.seqPrefix}{seqID}":clustNum+idOffset+1 for clustNum, idList in testDict.items() for seqID in idList } # flip the dict around
+    
     # Drop any sequences in testDict that aren't in our trueDict
     "Must have the exact same sequences for comparison"
-    foundNum = 0
     for seqID in list(testDict.keys()):
         if not seqID in trueDict:
             del testDict[seqID]
-        foundNum += 1
     
     # Ensure that things are okay, erroring out if they are not
     if len(testDict) != len(gff3.types["mRNA"]):
