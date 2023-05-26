@@ -7,6 +7,7 @@
 
 import os, argparse, sys
 from sklearn.metrics.cluster import adjusted_rand_score
+from BINge_counter import parse_binge_clusters
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Various_scripts import ZS_GFF3IO, ZS_ClustIO
@@ -18,8 +19,8 @@ def validate_args(args):
         print(f'I am unable to locate the GFF3 annotation file ({args.gff3File})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.clstrFile):
-        print(f'I am unable to locate the CD-HIT .clstr file ({args.clstrFile})')
+    if not os.path.isfile(args.clusterFile):
+        print(f'I am unable to locate the cluster file ({args.clusterFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Validate output file location
@@ -31,28 +32,32 @@ def validate_args(args):
 ## Main
 def main():
     # User input
-    usage = """%(prog)s is a module intended for use prior to BINge clustering. The final
-    step of BINge clustering is to use CD-HIT to cluster any unbinned sequences de novo,
-    without using the genome. Having CD-HIT correctly tuned to render good results is
-    important for the reliability of its results.
+    usage = """%(prog)s is a module intended for two primary purposes.
     
-    This module allows one to test CD-HIT's clustering on an existing genome annotation.
-    Provide a GFF3 file for a species related to yours which has a high-quality annotation
-    inclusive of alternatively spliced isoforms. Additionally, provide the .clstr output
-    of CD-HIT that you've run beforehand on the isoform transcripts for that same genome.
-    This script will then assess how well CD-HIT was able to re-discover the gene groupings.
+    First, it can be used to fine-tune CD-HIT's parameters prior to BINge's clustering.
+    Specifically, the final step of BINge clustering is to use CD-HIT to cluster any
+    unbinned sequences de novo, without using the genome. Having CD-HIT correctly tuned
+    to render good results is important for the reliability of its results.
     
-    Note that the identity value will be difficult to assess since multi-subspecies use will
-    necessitate a lower identity threshold than clustering same species genes.
+    Second, it can be used to test CD-HIT's or BINge's clustering on an existing genome
+    annotation. Provide a GFF3 file for a species related to yours which has a high-quality
+    annotation inclusive of alternatively spliced isoforms. Additionally, provide the .clstr
+    of CD-HIT or the .tsv output of BINge that you've run beforehand on the isoform transcripts
+    for that same genome. This script will then assess how well the clusterer was able to
+    re-discover the gene groupings.
+    
+    Note that (for the first purpose) the identity value will be difficult to assess since
+    multi-subspecies use will necessitate a lower identity threshold than clustering same
+    species genes. But the remaining parameters should hold true.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
     p.add_argument("-g", dest="gff3File",
                    required=True,
                    help="Input the GFF3 annotation file")
-    p.add_argument("-c", dest="clstrFile",
+    p.add_argument("-c", dest="clusterFile",
                    required=True,
-                   help="Input the CD-HIT output .clstr file")
+                   help="Input the CD-HIT or BINge cluster file")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for text results")
@@ -65,6 +70,11 @@ def main():
                    FASTA file to have IDs like 'XM_009121514.3' but the GFF3 would index that
                    as 'rna-XM_009121514.3'. So you would specify 'rna-' here to address that.""",
                    default="")
+    p.add_argument("--binge", dest="isBinge",
+                   required=False,
+                   action="store_true",
+                   help="Set this flag if the input file is a BINge file, not CD-HIT.",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -81,9 +91,12 @@ def main():
                 trueDict[mrnaFeature.ID] = clusterNum
             clusterNum += 1
     
-    # Parse the CD-HIT cluster file, changing cluster IDs to not overlap
+    # Parse the CD-HIT / BINge cluster file, changing cluster IDs to not overlap
     idOffset = max(trueDict.values()) # adding this number means our cluster numbers won't overlap
-    testDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.clstrFile) # we will 'test' this against our ground truth
+    if args.isBinge:
+        testDict = parse_binge_clusters(args.clusterFile) # we will 'test' this against our ground truth
+    else:
+        testDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.clusterFile) 
     testDict = { f"{args.seqPrefix}{seqID}":clustNum+idOffset+1 for clustNum, idList in testDict.items() for seqID in idList } # flip the dict around
     
     # Drop any sequences in testDict that aren't in our trueDict
@@ -119,7 +132,7 @@ def main():
         
         # Write details
         fileOut.write(f"Annotation file\t{args.gff3File}\n")
-        fileOut.write(f"Cluster file\t{args.clstrFile}\n")
+        fileOut.write(f"Cluster file\t{args.clusterFile}\n")
         fileOut.write(f"Number of sequences\t{len(trueList)}\n")
         fileOut.write(f"Number of genes in annotation\t{len(set(trueList))}\n")
         fileOut.write(f"Number of clusters from CD-HIT\t{len(set(testList))}\n")
