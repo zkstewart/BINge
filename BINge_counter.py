@@ -73,11 +73,11 @@ class EquivalenceClassCollection():
         Parameters:
             ecValue -- an integer identifying the equivalence class index
                        you want to get counts for, OR a string identifying
-                       the transcript ID you want to get counts for
+                       the transcript ID you want to get counts for.
         Returns:
             transcriptCount -- a list containing each sample's count for
                                the given transcript; order is equivalent to
-                               self.samples
+                               self.samples.
         '''
         if isinstance(ecValue, int):
             return self.ec[ecValue]
@@ -89,6 +89,68 @@ class EquivalenceClassCollection():
             len(self.samples), self.numTranscripts
         )
 
+class QuantCollection():
+    def __init__(self):
+        self.samples = [] # sample names
+        self.quant = {} # quant count dicts
+        
+        self.numTranscripts = None # for checking quant file compatibility
+    
+    def parse_quant_file(self, quantFile, sample):
+        # Validate input parameters
+        assert os.path.isfile(quantFile), \
+            f"Cannot parse '{quantFile}' as file does not exist!"
+        assert isinstance(sample, str) and not sample in self.samples, \
+            f"Sample name must be a string value that uniquely identifies this sample!"
+        
+        # Parse the file proper
+        firstLine = True
+        thisQuant = {}
+        with open(quantFile, "r") as fileIn:
+            for line in fileIn:
+                sl = line.rstrip("\r\n ").split("\t")
+                
+                # Handle header line
+                if firstLine == True:
+                    assert sl == ["Name", "Length", "EffectiveLength", "TPM", "NumReads"], \
+                        "Quant file appears to lack the expected header? Cannot parse."
+                    firstLine = False
+                # Handle content lines
+                else:
+                    name, _, _, _, numReads = sl # might error here if file format is bad
+                    thisQuant[name] = float(numReads)
+        
+        # Check compatibility of quant file with existing ones
+        if self.numTranscripts == None:
+            self.numTranscripts = len(thisQuant)
+        else:
+            assert self.numTranscripts == len(thisQuant), \
+                "Quant files are incompatible since transcript numbers differ!"
+        
+        # Store relevant parameters now that parsing has completed successfully
+        self.samples.append(sample)
+        
+        # Store counts inside parent structure
+        for name, numReads in thisQuant.items():
+            self.quant.setdefault(name, [])
+            self.quant[name].append(float(numReads))
+    
+    def get_transcript_count(self, seqID):
+        '''
+        Parameters:
+            seqID -- a string identifying the transcript ID you want to get counts for.
+        Returns:
+            transcriptCount -- a list containing each sample's count for
+                               the given transcript; order is equivalent to
+                               self.samples.
+        '''
+        return self.quant[seqID]
+    
+    def __repr__(self):
+        return "<QuantCollection object;num_samples={0};num_transcripts={1}>".format(
+            len(self.samples), self.numTranscripts
+        )
+
 # Define functions
 def validate_args(args):
     # Validate input file locations
@@ -96,15 +158,51 @@ def validate_args(args):
         print(f'I am unable to locate the BINge result file ({args.bingeResultFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    for eqFile in args.equivalenceClassFiles:
-        if not os.path.isfile(eqFile):
-            print(f'I am unable to locate the salmon equivalence class file ({eqFile})')
+    for salmonFile in args.salmonFiles:
+        if not os.path.isfile(salmonFile):
+            print(f'I am unable to locate the salmon input file ({salmonFile})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
+    
+    # Validate input files are all of a consistent format
+    isEC = False
+    isQuant = False
+    for salmonFile in args.salmonFiles:
+        thisFileValid = False
+        with open(salmonFile, "r") as fileIn:
+            # Get the first 3 lines out of the file
+            firstLine = fileIn.readline().rstrip("\r\n ")
+            secondLine = fileIn.readline().rstrip("\r\n ")
+            thirdLine = fileIn.readline().rstrip("\r\n ")
+            
+            # Check if it conforms to equivalence class expectations
+            if firstLine.isdigit() and secondLine.isdigit() and not thirdLine.isdigit():
+                isEC = True
+                thisFileValid = True
+            
+            # Check if it conforms to quant file expectations
+            elif firstLine.split("\t") == ["Name", "Length", "EffectiveLength", "TPM", "NumReads"]:
+                isQuant = True
+                thisFileValid = True
+        
+        if not thisFileValid:
+            print(f"The input file '{salmonFile}' does not appear to be a Salmon quant or " + 
+                  "equivalence class file")
+            print("You should check your inputs and try again.")
+            quit()
+    
+    if isEC and isQuant:
+        print("You appear to have given a mix of quant and equivalence class files.")
+        print("That's too hard for me to figure out, so please only give one type and try again.")
+        quit()
+    
+    # Set internal flag to mark what type of file we're using
+    args.fileFormat = "ec" if isEC else "quant"
+    
     # Validate the input files are logically sound
-    if len(args.equivalenceClassFiles) != len(args.sampleNames):
-        print("Your equivalence class and sample names are incompatible!")
-        print((f"I'm seeing {len(args.equivalenceClassFiles)} equivalence class files " +
+    if len(args.salmonFiles) != len(args.sampleNames):
+        print("Your salmon files and sample names are incompatible!")
+        print((f"I'm seeing {len(args.salmonFiles)} salmon files " +
               f"and {len(args.sampleNames)} sample names"))
         print("These numbers should be the same. You need to fix this up and try again.")
         quit()
@@ -140,6 +238,30 @@ def parse_equivalence_classes(equivalenceClassFiles, sampleNames):
         ecCollection.parse_eq_file(eqFile, sample)
     return ecCollection
 
+def parse_quants(quantFiles, sampleNames):
+    '''
+    Parses in one or more quant files from Salmon, producing a QuantCollection
+    object enabling read count summarisation.
+    
+    Parameters:
+        quantFiles -- a list containing strings pointing to the location
+                      of Salmon quant files (quant.sf files).
+        sampleNames -- an equal length list indicating the sample names for each
+                       salmon quant file.
+    '''
+    assert len(quantFiles) == len(sampleNames), \
+        ("parse_quants cannot parse quant files since the number " +
+         f"of files ({len(quantFiles)}) does not match the number of " +
+         f"sample names ({len(sampleNames)})")
+    
+    quantCollection = QuantCollection()
+    for i in range(len(quantFiles)):
+        quantFile = quantFiles[i]
+        sample = sampleNames[i]
+        
+        quantCollection.parse_quant_file(quantFile, sample)
+    return quantCollection
+
 def parse_binge_clusters(bingeFile):
     '''
     Reads in the output file of BINge as a dictionary assocating clusters to their
@@ -168,39 +290,39 @@ def parse_binge_clusters(bingeFile):
                     "Your file is hence not recognised as a valid BINge cluster file.")
                 lineNum += 1
             elif lineNum == 1:
-                assert sl == ["cluster_num", "sequence_id"], \
+                assert sl == ["cluster_num", "sequence_id", "cluster_type"], \
                     ("BINge file is expected to have a specific header line on the second line! " +
                      "Your file is hence not recognised as a valid BINge cluster file.")
                 lineNum += 1
             
             # Handle content lines
             else:
-                clustNum, seqID = int(sl[0]), sl[1]
+                clustNum, seqID, clusterType = int(sl[0]), sl[1], sl[2]
                 clusterDict.setdefault(clustNum, [])
                 clusterDict[clustNum].append(seqID)
     return clusterDict
-                
+
 ## Main
 def main():
     # User input
     usage = """%(prog)s is a module intended for use downstream of BINge clustering. It
-    will read in the output of BINge alongside one or more equivalence class files from
-    Salmon, generating a tabular output of read counts per cluster suitable for DGE analysis.
+    will read in the output of BINge alongside either 1) the equivalence class output files
+    from Salmon, or 2) the quant.sf files output by Salmon. From either of these files, it
+    will generate a tabular output of read counts per cluster suitable for DGE analysis.
     
-    For each equivalence class file (-e), you should provide the name of the sample (-s).
-    The order of these values should be equivalent, and will be reflected in the header
-    of the output TSV file.
+    For each salmon file (-s), you should provide the sample name (-n). The order of these
+    values should be equivalent, and will be reflected in the header of the output TSV file.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
     p.add_argument("-i", dest="bingeResultFile",
                    required=True,
                    help="Input the TSV result of running BINge")
-    p.add_argument("-e", dest="equivalenceClassFiles",
+    p.add_argument("-s", dest="salmonFiles",
                    nargs="+",
                    required=True,
-                   help="Input one or more salmon eq_classes.txt files")
-    p.add_argument("-s", dest="sampleNames",
+                   help="Input one or more salmon eq_classes.txt or quant.sf files")
+    p.add_argument("-n", dest="sampleNames",
                    nargs="+",
                    required=True,
                    help="Input one or more sample names (paired to the equivalence classes)")
@@ -214,11 +336,15 @@ def main():
     # Parse the BINge cluster file
     clusterDict = parse_binge_clusters(args.bingeResultFile)
     
-    # Parse all equivalence classes
-    ecCollection = parse_equivalence_classes(args.equivalenceClassFiles, args.sampleNames)
+    # Parse all salmon files
+    if args.fileFormat == "ec":
+        salmonCollection = parse_equivalence_classes(args.salmonFiles, args.sampleNames)
+    else:
+        salmonCollection = parse_quants(args.salmonFiles, args.sampleNames)
     
     # Generate output for clusters
-    misses = []
+    misses = 0
+    numSeqs = 0
     with open(args.outputFileName, "w") as fileOut:
         # Write header
         fileOut.write("\t{0}\n".format("\t".join(args.sampleNames)))
@@ -229,11 +355,12 @@ def main():
             # Sum counts across transcripts in this cluster per-sample
             clusterCount = [ 0 for _ in range(len(args.sampleNames)) ]
             for seqID in clusterIDs:
+                numSeqs += 1
                 try:
-                    counts = ecCollection.get_transcript_count(seqID)
+                    counts = salmonCollection.get_transcript_count(seqID)
                     clusterCount = [ clusterCount[x] + counts[x] for x in range(len(counts)) ]
-                except: # this probably happens if Salmon filtered something out?
-                    misses.append(seqID)
+                except: # this happens if Salmon filtered something out
+                    misses += 1
                     continue
                 
             # Output count
@@ -241,6 +368,19 @@ def main():
                 f"cluster-{clusterNum}",
                 "\t".join(map(str, clusterCount))
             ))
+    
+    # Alert user to potential problem
+    if misses > 0:
+        print("Potential non-issue warning:")
+        print(" > Salmon filters out duplicate transcripts internally.")
+        print(" > As a consequence, this program does expect there to be some differences between " +
+              "the BINge clusters file and the equivalence class / quant files.")
+        print(f" > In this case, it looks like Salmon filtered out {misses} sequences.")
+        print(f" > Your BINge file indicates that {numSeqs} sequences were in your transcriptome.")
+        print(" > If the number of filtered sequences is very similar to your total number of " +
+              "sequences there might be a problem with your files.")
+        print(" > i.e., your files were incompatible?")
+        print(" > Otherwise no worries!")
     
     print("Program completed successfully!")
 
