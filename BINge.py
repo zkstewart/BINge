@@ -161,10 +161,10 @@ class OutputWorkerThread(Thread):
         outputQueue -- a queue.Queue object that receives outputs from worker threads.
         outputFileName -- a string indicating the location to write results to.
         clusterType -- a string to put in an output column indicating what source of
-                    evidence led to this cluster's formation; usually, this will
-                    have the value of "binned" to indicate that it was binned via
-                    GMAP alignment, or "unbinned" to indicate that it has been
-                    binned solely via CD-HIT clustering.
+                       evidence led to this cluster's formation; usually, this will
+                       have the value of "binned" to indicate that it was binned via
+                       GMAP alignment, or "unbinned" to indicate that it has been
+                       binned solely via CD-HIT clustering.
     '''
     def __init__(self, outputQueue, outputFileName, clusterType):
         Thread.__init__(self)
@@ -211,6 +211,93 @@ class OutputWorkerThread(Thread):
                 
                 # Mark work completion
                 self.outputQueue.task_done()
+
+class WorkerThread(Thread):
+    '''
+    This provides a modified Thread which is only being done for code tidiness and OOP
+    reasons. Encapsulates the code needed to cluster a Bin using CD-HIT.
+    
+    Parameters:
+        binQueue -- a queue.Queue object containing Bin objects for clustering.
+        outputQueue -- a queue.Queue object that will receive the processed outputs
+                       of this worker thread.
+        transcriptRecords -- a pyfaidx Fasta object containing all the sequences
+                             we'll want to cluster from our bins.
+        mem -- an integer indicating how many megabytes of memory to run CD-HIT with.
+    '''
+    def __init__(self, binQueue, outputQueue, transcriptRecords, mem):
+        Thread.__init__(self)
+        
+        self.binQueue = binQueue
+        self.outputQueue = outputQueue
+        self.transcriptRecords = transcriptRecords
+        self.mem = mem
+    
+    def run(self):
+        '''
+        Receives Bin objects via self.binQueue and processes them, adding
+        the results in self.outputQueue.
+        '''
+        while True:
+            # Continue condition
+            if self.binQueue.empty():
+                time.sleep(0.5)
+                continue
+            
+            # Grabbing condition
+            bin = self.binQueue.get()
+            
+            # Exit condition
+            if bin == None:
+                self.binQueue.task_done()
+                break
+            
+            # Perform work
+            clusterDict = self.cluster_bin(bin)
+            
+            # Store result in output queue
+            self.outputQueue.put(clusterDict)
+            
+            # Mark work completion
+            self.binQueue.task_done()
+    
+    def cluster_bin(self, bin):
+        '''
+        Performs the work of clustering the sequences in a bin with CD-HIT.
+        
+        Parameters:
+            bin -- a Bin object which should be clustered with CD-HIT.
+        
+        Returns:
+            clusterDict -- a dictionary result of clustering with structure like:
+                        {
+                            0: [seqid1, seqid2, ...],
+                            1: [ ... ],
+                            ...
+                        }
+        '''
+        # Bypass clustering if this bin has only one sequence
+        if len(bin.ids) == 1:
+            clusterDict = {0: list(bin.ids)}
+        else:
+            # Create a FASTA object for the sequences in this bin
+            FASTA_obj = ZS_SeqIO.FASTA(None)
+            for id in bin.ids:
+                FastASeq_obj = ZS_SeqIO.FastASeq(id, str(self.transcriptRecords[id]))
+                FASTA_obj.insert(0, FastASeq_obj)
+            
+            # Cluster it with CD-HIT at lax settings
+            clusterer = ZS_ClustIO.CDHIT(FASTA_obj, "nucleotide")
+            clusterer.identity = 0.8
+            clusterer.set_shorter_cov_pct(0.2)
+            clusterer.set_longer_cov_pct(0.0)
+            clusterer.set_local()
+            clusterer.mem = self.mem
+            clusterer.get_cdhit_results(returnFASTA=False, returnClusters=True) # throw away the temporary file return value
+            
+            clusterDict = clusterer.resultClusters
+        
+        return clusterDict
 
 # Define functions
 def validate_args(args):
@@ -502,77 +589,6 @@ def bin_by_gmap(gmapFile, binCollection):
     
     return novelBinCollection, chimeras
 
-def cluster_bin(bin, transcriptRecords, mem):
-    '''
-    Parameters:
-        bin -- a Bin object which should be clustered with CD-HIT.
-        transcriptRecords -- a pyfaidx Fasta object containing all the sequences
-                             we'll want to cluster from our bins.
-        mem -- an integer indicating how many megabytes of memory to run CD-HIT with.
-    Returns:
-        clusterDict -- a dictionary result of clustering with structure like:
-                       {
-                           0: [seqid1, seqid2, ...],
-                           1: [ ... ],
-                           ...
-                       }
-    '''
-    # Bypass clustering if this bin has only one sequence
-    if len(bin.ids) == 1:
-        clusterDict = {0: list(bin.ids)}
-    else:
-        # Create a FASTA object for the sequences in this bin
-        FASTA_obj = ZS_SeqIO.FASTA(None)
-        for id in bin.ids:
-            FastASeq_obj = ZS_SeqIO.FastASeq(id, str(transcriptRecords[id]))
-            FASTA_obj.insert(0, FastASeq_obj)
-        
-        # Cluster it with CD-HIT at lax settings
-        clusterer = ZS_ClustIO.CDHIT(FASTA_obj, "nucleotide")
-        clusterer.identity = 0.8
-        clusterer.set_shorter_cov_pct(0.2)
-        clusterer.set_longer_cov_pct(0.0)
-        clusterer.set_local()
-        clusterer.mem = mem
-        clusterer.get_cdhit_results(returnFASTA=False, returnClusters=True) # throw away the temporary file return value
-        
-        clusterDict = clusterer.resultClusters
-    
-    return clusterDict
-
-def bin_clustering_worker(binQueue, outputQueue, transcriptRecords, mem):
-    '''
-    Parameters:
-        binQueue -- a queue.Queue object containing Bin objects for clustering.
-        outputQueue -- a queue.Queue object that will receive the processed outputs
-                       of this worker thread.
-        transcriptRecords -- a pyfaidx Fasta object containing all the sequences
-                             we'll want to cluster from our bins.
-        mem -- an integer indicating how many megabytes of memory to run CD-HIT with.
-    '''
-    while True:
-        # Continue condition
-        if binQueue.empty():
-            time.sleep(0.5)
-            continue
-        
-        # Grabbing condition
-        bin = binQueue.get()
-        
-        # Exit condition
-        if bin == None:
-            binQueue.task_done()
-            break
-        
-        # Perform work
-        clusterDict = cluster_bin(bin, transcriptRecords, mem)
-        
-        # Store result in output queue
-        outputQueue.put(clusterDict)
-        
-        # Mark work completion
-        binQueue.task_done()
-
 def bin_self_linker(binCollection):
     '''
     Receives a BinCollection that has potentially been created through multiple
@@ -704,9 +720,7 @@ def multithread_bin_cluster(binCollectionList, threads, mem, transcriptRecords,
     
     # Start up threads for clustering of bins
     for _ in range(threads):
-        worker = Thread(
-            target=bin_clustering_worker,
-            args=(workerQueue, outputQueue, transcriptRecords, mem))
+        worker = WorkerThread(workerQueue, outputQueue, transcriptRecords, mem)
         worker.setDaemon(True)
         worker.start()
     
