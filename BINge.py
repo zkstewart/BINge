@@ -458,12 +458,13 @@ def bin_by_gmap(gmapFile, binCollection):
     
     return novelBinCollection, chimeras
 
-def cluster_bin(bin, transcriptRecords):
+def cluster_bin(bin, transcriptRecords, mem):
     '''
     Parameters:
         bin -- a Bin object which should be clustered with CD-HIT.
         transcriptRecords -- a pyfaidx Fasta object containing all the sequences
                              we'll want to cluster from our bins.
+        mem -- an integer indicating how many megabytes of memory to run CD-HIT with.
     Returns:
         clusterDict -- a dictionary result of clustering with structure like:
                        {
@@ -488,13 +489,14 @@ def cluster_bin(bin, transcriptRecords):
         clusterer.set_shorter_cov_pct(0.2)
         clusterer.set_longer_cov_pct(0.0)
         clusterer.set_local()
+        clusterer.mem = mem
         clusterer.get_cdhit_results(returnFASTA=False, returnClusters=True) # throw away the temporary file return value
         
         clusterDict = clusterer.resultClusters
     
     return clusterDict
 
-def bin_clustering_worker(binQueue, outputQueue, transcriptRecords):
+def bin_clustering_worker(binQueue, outputQueue, transcriptRecords, mem):
     '''
     Parameters:
         binQueue -- a queue.Queue object containing Bin objects for clustering.
@@ -502,6 +504,7 @@ def bin_clustering_worker(binQueue, outputQueue, transcriptRecords):
                        of this worker thread.
         transcriptRecords -- a pyfaidx Fasta object containing all the sequences
                              we'll want to cluster from our bins.
+        mem -- an integer indicating how many megabytes of memory to run CD-HIT with.
     '''
     while True:
         # Continue condition
@@ -661,7 +664,7 @@ def iterative_bin_self_linking(binCollection, convergenceIters):
         prevCollectionCount = len(binCollection.bins)
     return binCollection
 
-def multithread_bin_cluster(binCollectionList, threads, transcriptRecords,
+def multithread_bin_cluster(binCollectionList, threads, mem, transcriptRecords,
                             outputFileName, clusterType="binned"):
     '''
     This code has been pulled out into a function solely to ensure the main() function
@@ -678,10 +681,11 @@ def multithread_bin_cluster(binCollectionList, threads, transcriptRecords,
     genes (which aren't actually the _same_ gene).
     
     Parameters:
-        binCollectionList -- a list containing BinCollection's
-        threads -- an integer indicating how many threads to run
+        binCollectionList -- a list containing BinCollections.
+        threads -- an integer indicating how many threads to run.
+        mem -- an integer indicating how many megabytes of memory to run CD-HIT with.
         transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
-                             sequences
+                             sequences.
         outputFileName -- a string indicating the location to write output clustering
                           results to.
         clusterType -- a string to put in an output column indicating what source of
@@ -690,7 +694,7 @@ def multithread_bin_cluster(binCollectionList, threads, transcriptRecords,
                        GMAP alignment, or "unbinned" to indicate that it has been
                        binned solely via CD-HIT clustering.
     Returns:
-
+        numClusters -- an integer indicating how many clusters have been created.
     '''
     # Set up queueing system for multi-threading
     workerQueue = queue.Queue(maxsize=int(threads * 10)) # allow queue to scale with threads
@@ -700,7 +704,7 @@ def multithread_bin_cluster(binCollectionList, threads, transcriptRecords,
     for _ in range(threads):
         worker = Thread(
             target=bin_clustering_worker,
-            args=(workerQueue, outputQueue, transcriptRecords))
+            args=(workerQueue, outputQueue, transcriptRecords, mem))
         worker.setDaemon(True)
         worker.start()
     
@@ -927,7 +931,7 @@ def main():
     
     # Cluster each bin with CD-HIT to separate overlapping genes
     numClusters = multithread_bin_cluster([binCollection],
-                                          args.threads, transcriptRecords,
+                                          args.threads, args.mem, transcriptRecords,
                                           args.outputFileName, clusterType="binned")
     
     # Cluster remaining unbinned sequences
