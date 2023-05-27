@@ -521,7 +521,7 @@ def bin_clustering_worker(binQueue, outputQueue, transcriptRecords, mem):
             break
         
         # Perform work
-        clusterDict = cluster_bin(bin, transcriptRecords)
+        clusterDict = cluster_bin(bin, transcriptRecords, mem)
         
         # Store result in output queue
         outputQueue.put(clusterDict)
