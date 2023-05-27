@@ -155,7 +155,16 @@ class OutputWorkerThread(Thread):
     '''
     This provides a modified Thread which allows for the output worker to return a value
     indicating how many clusters it wrote to file. This will save a little bit of time later
-    when we want to append more cluster results to the same file
+    when we want to append more cluster results to the same file.
+    
+    Parameters:
+        outputQueue -- a queue.Queue object that receives outputs from worker threads.
+        outputFileName -- a string indicating the location to write results to.
+        clusterType -- a string to put in an output column indicating what source of
+                    evidence led to this cluster's formation; usually, this will
+                    have the value of "binned" to indicate that it was binned via
+                    GMAP alignment, or "unbinned" to indicate that it has been
+                    binned solely via CD-HIT clustering.
     '''
     def __init__(self, outputQueue, outputFileName, clusterType):
         Thread.__init__(self)
@@ -166,7 +175,42 @@ class OutputWorkerThread(Thread):
         self.numClusters = None
     
     def run(self):
-        self.numClusters = output_worker(self.outputQueue, self.outputFileName, self.clusterType)
+        '''
+        Receives Bin objects via self.outputQueue and writes them to file.
+        Iterates self.numClusters to keep tally of how many clusters we've
+        written. Because of the nature of this process, the value at the
+        point of thread closure will be +1 higher than the actual number
+        of written clusters.
+        '''
+        self.numClusters = 1
+        with open(self.outputFileName, "w") as fileOut:
+            # Write header
+            fileOut.write("#BINge clustering information file\n")
+            fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
+            
+            # Write content lines as they become available
+            while True:
+                # Continue condition
+                if self.outputQueue.empty():
+                    time.sleep(0.5)
+                    continue
+                
+                # Grabbing condition
+                clusterDict = self.outputQueue.get()
+                
+                # Exit condition
+                if clusterDict == None:
+                    self.outputQueue.task_done()
+                    break
+                
+                # Perform work
+                for clusterIDs in clusterDict.values():
+                    for seqID in clusterIDs:
+                        fileOut.write(f"{self.numClusters}\t{seqID}\t{self.clusterType}\n")
+                    self.numClusters += 1
+                
+                # Mark work completion
+                self.outputQueue.task_done()
 
 # Define functions
 def validate_args(args):
@@ -529,48 +573,6 @@ def bin_clustering_worker(binQueue, outputQueue, transcriptRecords, mem):
         # Mark work completion
         binQueue.task_done()
 
-def output_worker(outputQueue, outputFileName, clusterType):
-    '''
-    Parameters:
-        outputQueue -- a queue.Queue object that receives outputs from worker threads.
-        outputFileName -- a string indicating the location to write results to.
-        clusterType -- a string to put in an output column indicating what source of
-                       evidence led to this cluster's formation; usually, this will
-                       have the value of "binned" to indicate that it was binned via
-                       GMAP alignment, or "unbinned" to indicate that it has been
-                       binned solely via CD-HIT clustering.
-    '''
-    clusterNum = 1
-    with open(outputFileName, "w") as fileOut:
-        # Write header
-        fileOut.write("#BINge clustering information file\n")
-        fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
-        
-        # Write content lines as they become available
-        while True:
-            # Continue condition
-            if outputQueue.empty():
-                time.sleep(0.5)
-                continue
-            
-            # Grabbing condition
-            clusterDict = outputQueue.get()
-            
-            # Exit condition
-            if clusterDict == None:
-                outputQueue.task_done()
-                break
-            
-            # Perform work
-            for clusterIDs in clusterDict.values():
-                for seqID in clusterIDs:
-                    fileOut.write(f"{clusterNum}\t{seqID}\t{clusterType}\n")
-                clusterNum += 1
-            
-            # Mark work completion
-            outputQueue.task_done()
-    return clusterNum - 1 # -1 to return the amount of clusters we actually wrote
-
 def bin_self_linker(binCollection):
     '''
     Receives a BinCollection that has potentially been created through multiple
@@ -726,7 +728,7 @@ def multithread_bin_cluster(binCollectionList, threads, mem, transcriptRecords,
     outputQueue.put(None) # marker for the output thead to stop
     outputQueue.join()
     
-    return outputWorker.numClusters
+    return outputWorker.numClusters - 1 # -1 to return the amount of clusters we actually wrote
 
 def find_missing_sequence_id(binCollectionList, transcriptRecords):
     '''
@@ -975,11 +977,6 @@ def main():
     unbinnedClusterDict = cluster_unbinned_sequences(
         unbinnedIDs, transcriptRecords, args.threads, args.cdhitMem,
         args.cdhitIdentity, args.cdhitShortCov, args.cdhitLongCov)
-    
-    ## TESTING ##
-    with open("BINge_testing.pkl", "wb") as fileOut:
-        pickle.dump([binCollection, numClusters, unbinnedClusterDict], fileOut)
-    ## END TESTING ##
     
     # Write output of clustering to file
     with open(args.outputFileName, "a") as fileOut:
