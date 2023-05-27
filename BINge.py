@@ -728,6 +728,29 @@ def multithread_bin_cluster(binCollectionList, threads, mem, transcriptRecords,
     
     return outputWorker.numClusters
 
+def find_missing_sequence_id(binCollectionList, transcriptRecords):
+    '''
+    Compares one or more BinCollection objects against the transcript sequences
+    to see if any sequences indicated in the BinCollection do not exist in
+    transcriptRecords. If any are found to be missing, the first one will be returned
+    as an exemplar.
+    
+    Parameters:
+        binCollectionList -- a list containing BinCollection's
+        transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
+                             sequences
+    Returns:
+        missingSeqID -- a string of the first sequence encountered in our BinCollections
+                        that could not be found in transcriptRecords.
+    '''
+    for binCollection in binCollectionList:
+        for interval in binCollection:
+            bin = interval.data
+            for seqID in bin.ids:
+                if seqID not in transcriptRecords:
+                    return seqID
+    return None
+
 def get_unbinned_sequence_ids(binCollectionList, transcriptRecords):
     '''
     Compares one or more BinCollection objects against the transcript sequences
@@ -810,6 +833,10 @@ def main():
     
     Note: For each annotation GFF3 (-ga) you should provide a matching GMAP GFF3 alignment
     file (-gm). These values should be ordered equivalently.
+    
+    Extra note: Your -i transcriptomeFile should contain not just your transcripts, but ALSO
+    your reference sequences from the GFF3(s). You might need to concatenate these files
+    beforehand.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
@@ -929,9 +956,18 @@ def main():
     # Load transcripts into memory for quick access
     transcriptRecords = Fasta(args.transcriptomeFile)
     
+    # Check that this transcriptome file contains the reference gene models
+    missingSeqID = find_missing_sequence_id([binCollection], transcriptRecords)
+    if missingSeqID != None:
+        print(f"ERROR: '{missingSeqID}' was binned from GMAP or the annotation GFF3, " +
+              "but does not exist in your input transcriptome FASTA.")
+        print("A possible error is that your transcriptome lacks the reference sequences.")
+        print("This error cannot be reconciled, so the program will exit now.")
+        quit()
+    
     # Cluster each bin with CD-HIT to separate overlapping genes
-    numClusters = multithread_bin_cluster([binCollection],
-                                          args.threads, args.mem, transcriptRecords,
+    numClusters = multithread_bin_cluster([binCollection], # TBD: Exit program if thread fails
+                                          args.threads, args.cdhitMem, transcriptRecords,
                                           args.outputFileName, clusterType="binned")
     
     # Cluster remaining unbinned sequences
