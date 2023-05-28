@@ -23,6 +23,29 @@ def validate_args(args):
         print(f'I am unable to locate the cluster file ({args.clusterFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    
+    # Validate input file format
+    with open(args.clusterFile, "r") as fileIn:
+        # Get the first two lines out of the file
+        firstLine = fileIn.readline().rstrip("\r\n ")
+        secondLine = fileIn.readline().rstrip("\r\n ")
+        
+        # Check if it conforms to BINge cluster file expectations
+        if firstLine.startswith("#BINge clustering information file") \
+            and secondLine.startswith("\t".join(["cluster_num", "sequence_id", "cluster_type"])):
+                args.isBinge = True
+        
+        # Check if it conforms to CD-HIT file expectations
+        elif firstLine.startswith(">Cluster 0") and secondLine.startswith("0"):
+            args.isBinge = False
+        
+        # Raise an error otherwise
+        else:
+            print(f"The input file '{args.clusterFile}' does not appear to be a BINge or " + 
+                    "CD-HIT cluster file")
+            print("You should check your inputs and try again.")
+            quit()
+    
     # Validate output file location
     if os.path.isfile(args.outputFileName):
         print(f'File already exists at output location ({args.outputFileName})')
@@ -49,6 +72,9 @@ def main():
     Note that (for the first purpose) the identity value will be difficult to assess since
     multi-subspecies use will necessitate a lower identity threshold than clustering same
     species genes. But the remaining parameters should hold true.
+    
+    Lastly, this program will automatically detect whether the given cluster file comes
+    from BINge or CD-HIT.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
@@ -70,11 +96,6 @@ def main():
                    FASTA file to have IDs like 'XM_009121514.3' but the GFF3 would index that
                    as 'rna-XM_009121514.3'. So you would specify 'rna-' here to address that.""",
                    default="")
-    p.add_argument("--binge", dest="isBinge",
-                   required=False,
-                   action="store_true",
-                   help="Set this flag if the input file is a BINge file, not CD-HIT.",
-                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -83,21 +104,26 @@ def main():
     gff3 = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False)
     
     # Derive a cluster dict from the GFF3 to use as our true labels
-    clusterNum = 1
+    numGeneClusters = 0
     trueDict = {} # stores our 'true' cluster assignments based on the annotation itself
     for geneFeature in gff3.types["gene"]:
         if hasattr(geneFeature, "mRNA"):
             for mrnaFeature in geneFeature.mRNA:
-                trueDict[mrnaFeature.ID] = clusterNum
-            clusterNum += 1
+                trueDict[mrnaFeature.ID] = numGeneClusters
+            numGeneClusters += 1
     
     # Parse the CD-HIT / BINge cluster file, changing cluster IDs to not overlap
-    idOffset = max(trueDict.values()) # adding this number means our cluster numbers won't overlap
     if args.isBinge:
         testDict = parse_binge_clusters(args.clusterFile) # we will 'test' this against our ground truth
     else:
         testDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.clusterFile) 
-    testDict = { f"{args.seqPrefix}{seqID}":clustNum+idOffset+1 for clustNum, idList in testDict.items() for seqID in idList } # flip the dict around
+    
+    # Flip the dict around and +numGeneClusters to prevent cluster number overlap
+    testDict = {
+        f"{args.seqPrefix}{seqID}" : clustNum+numGeneClusters
+        for clustNum, idList in testDict.items()
+        for seqID in idList
+    }
     
     # Drop any sequences in testDict that aren't in our trueDict
     "Must have the exact same sequences for comparison"
@@ -134,8 +160,8 @@ def main():
         fileOut.write(f"Annotation file\t{args.gff3File}\n")
         fileOut.write(f"Cluster file\t{args.clusterFile}\n")
         fileOut.write(f"Number of sequences\t{len(trueList)}\n")
-        fileOut.write(f"Number of genes in annotation\t{len(set(trueList))}\n")
-        fileOut.write(f"Number of clusters from CD-HIT\t{len(set(testList))}\n")
+        fileOut.write(f"Number of genes in annotation\t{numGeneClusters}\n")
+        fileOut.write(f"Number of predicted clusters\t{len(set(testList))}\n")
         fileOut.write(f"Adjusted Rand Index Score\t{score}\n")
     
     print(f"Adjusted Rand Index Score = {score}; see output file for more details")
