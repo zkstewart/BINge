@@ -152,22 +152,28 @@ class QuantCollection():
         )
 
 # Define functions
-def validate_args(args):
-    # Validate input file locations
-    if not os.path.isfile(args.bingeResultFile):
-        print(f'I am unable to locate the BINge result file ({args.bingeResultFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
-    for salmonFile in args.salmonFiles:
+def validate_salmon_files(salmonFiles):
+    '''
+    Validates Salmon files for 1) their existence and 2) their consistency of file format.
+    Quits program if validation fails, so be warned!
+    
+    Parameters:
+        salmonFiles -- a list containing strings pointing to Salmon files.
+    Returns:
+        fileFormat -- a string equal to "ec" if input files are equivalence classes,
+                      or "quant" if they are quant.sf files.
+    '''
+    # Validate that salmon files exist
+    for salmonFile in salmonFiles:
         if not os.path.isfile(salmonFile):
             print(f'I am unable to locate the salmon input file ({salmonFile})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
     
-    # Validate input files are all of a consistent format
+    # Validate that input files are all of a consistent format
     isEC = False
     isQuant = False
-    for salmonFile in args.salmonFiles:
+    for salmonFile in salmonFiles:
         thisFileValid = False
         with open(salmonFile, "r") as fileIn:
             # Get the first 3 lines out of the file
@@ -196,8 +202,17 @@ def validate_args(args):
         print("That's too hard for me to figure out, so please only give one type and try again.")
         quit()
     
-    # Set internal flag to mark what type of file we're using
-    args.fileFormat = "ec" if isEC else "quant"
+    return "ec" if isEC else "quant"
+
+def validate_args(args):
+    # Validate input file locations
+    if not os.path.isfile(args.bingeResultFile):
+        print(f'I am unable to locate the BINge result file ({args.bingeResultFile})')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
+    
+    # Validate salmon files and set internal flag to mark what type of file we're using
+    args.fileFormat = validate_salmon_files(args.salmonFiles)
     
     # Validate the input files are logically sound
     if len(args.salmonFiles) != len(args.sampleNames):
@@ -262,13 +277,16 @@ def parse_quants(quantFiles, sampleNames):
         quantCollection.parse_quant_file(quantFile, sample)
     return quantCollection
 
-def parse_binge_clusters(bingeFile):
+def parse_binge_clusters(bingeFile, typeToReturn="all"):
     '''
     Reads in the output file of BINge as a dictionary assocating clusters to their
     sequence members.
     
     Parameters:
         bingeFile -- a string pointing to the location of a BINge cluster output file.
+        typeToReturn -- a string indicating whether to return all clusters ("all"), only
+                        the binned clusters ("binned"), or only the unbinned clusters
+                        ("unbinned")
     Returns:
         clusterDict -- a dictionary with structure like:
                        {
@@ -277,6 +295,8 @@ def parse_binge_clusters(bingeFile):
                              ...
                          }
     '''
+    assert typeToReturn in ["all", "binned", "unbinned"]
+    
     clusterDict = {}
     lineNum = 0
     with open(bingeFile, "r") as fileIn:
@@ -298,8 +318,9 @@ def parse_binge_clusters(bingeFile):
             # Handle content lines
             else:
                 clustNum, seqID, clusterType = int(sl[0]), sl[1], sl[2]
-                clusterDict.setdefault(clustNum, [])
-                clusterDict[clustNum].append(seqID)
+                if typeToReturn == "all" or typeToReturn == clusterType:
+                    clusterDict.setdefault(clustNum, [])
+                    clusterDict[clustNum].append(seqID)
     return clusterDict
 
 ## Main
@@ -329,12 +350,21 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for TSV-formatted results")
+    # Optional
+    p.add_argument("--only_binned", dest="onlyBinned",
+                   required=False,
+                   action="store_true",
+                   help="Optionally, only output counts for binned sequence clusters",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
     
     # Parse the BINge cluster file
-    clusterDict = parse_binge_clusters(args.bingeResultFile)
+    clusterDict = parse_binge_clusters(
+        args.bingeResultFile,
+        "all" if args.onlyBinned == False else "binned"
+    )
     
     # Parse all salmon files
     if args.fileFormat == "ec":
