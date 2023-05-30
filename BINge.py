@@ -10,7 +10,7 @@
 # de novo transcriptome, but leverage the genomic information
 # to group transcripts into genes. That's what this does.
 
-import os, argparse, sys, queue, time, pickle # REMOVE AFTER TESTING
+import os, argparse, sys, queue, time
 import networkx as nx
 
 from intervaltree import IntervalTree, Interval

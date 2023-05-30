@@ -1,15 +1,16 @@
 #! python3
-# BINge.py
+# BINge_representatives.py
 # BIN Genes for Expression analyses - representatives module
 
-## TBD ...
+# Utility program to select a representative sequence for each cluster
+# predicted by BINge making use of (potentially) several lines of evidence.
 
 import os, argparse, sys
 from pyfaidx import Fasta
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from BINge_counter import validate_salmon_files, parse_binge_clusters, \
-    EquivalenceClassCollection, QuantCollection, parse_equivalence_classes, parse_quants
+    parse_equivalence_classes, parse_quants
 from BINge_tuning import validate_cluster_file
 
 from Various_scripts import ZS_BlastIO, ZS_ClustIO
@@ -153,7 +154,6 @@ def format_representative(clusterNum, representativeID, representativeSeq):
                        to file.
     '''
     return f">cluster-{clusterNum} representative={representativeID}\n{representativeSeq}\n"
-
 
 ## Main
 def main():
