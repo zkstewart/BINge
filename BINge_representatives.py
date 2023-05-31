@@ -15,6 +15,39 @@ from BINge_tuning import validate_cluster_file
 
 from Various_scripts import ZS_BlastIO, ZS_ClustIO
 
+# Define classes
+class FastaCollection:
+    '''
+    Wrapper for pyfaidx Fasta objects which allows multiple to be combined
+    and queried as one logical entity.
+    
+    Parameters:
+        fastaFiles -- a list of strings pointing to the locations of FASTA files
+                      which are to be loaded in using pyfaidx.Fasta
+    '''
+    def __init__(self, fastaFiles):
+        self.fastaFiles = fastaFiles
+        self.records = []
+        
+        self._parse_fastas()
+    
+    def _parse_fastas(self):
+        for fastaFile in self.fastaFiles:
+            self.records.append(Fasta(fastaFile))
+    
+    def __getitem__(self, key):
+        for records in self.records:
+            try:
+                return records[key]
+            except:
+                pass
+        raise KeyError(f"'{key}' not found in collection")
+    
+    def __repr__(self):
+        return (f"<FastaCollection object;num_records='{len(self.records)}';" +
+                f"fastaFiles={self.fastaFiles}"
+        )
+
 # Define functions
 def validate_args(args):
     # Validate input file locations
@@ -22,10 +55,11 @@ def validate_args(args):
         print(f'I am unable to locate the BINge cluster file ({args.bingeFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.fastaFile):
-        print(f'I am unable to locate the transcript FASTA file ({args.fastaFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+    for fastaFile in args.fastaFiles:
+        if not os.path.isfile(fastaFile):
+            print(f'I am unable to locate the transcript FASTA file ({fastaFile})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
     
     # Validate cluster file
     args.isBinge = validate_cluster_file(args.bingeFile)
@@ -190,9 +224,10 @@ def main():
     p.add_argument("-i", dest="bingeFile",
                    required=True,
                    help="Input BINge cluster file")
-    p.add_argument("-f", dest="fastaFile",
+    p.add_argument("-f", dest="fastaFiles",
                    required=True,
-                   help="Input FASTA containing transcripts listed in the cluster file")
+                   nargs="+",
+                   help="Input one or more FASTAs containing transcripts listed in the cluster file")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output FASTA file name for representative sequences")
@@ -235,7 +270,7 @@ def main():
         clusterDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.bingeFile)
     
     # Load transcripts into memory for quick access
-    transcriptRecords = Fasta(args.fastaFile)
+    transcriptRecords = FastaCollection(args.fastaFiles)
     
     # Parse BLAST results (if relevant)
     if args.blastFile != None:

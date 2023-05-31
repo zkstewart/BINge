@@ -13,6 +13,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from BINge_counter import validate_salmon_files, parse_binge_clusters, \
     parse_equivalence_classes, parse_quants
 from BINge_tuning import validate_cluster_file
+from BINge_representatives import FastaCollection
 
 from Various_scripts import ZS_BlastIO, ZS_ClustIO, ZS_SeqIO
 
@@ -23,10 +24,11 @@ def validate_args(args):
         print(f'I am unable to locate the BINge cluster file ({args.bingeFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.fastaFile):
-        print(f'I am unable to locate the transcript FASTA file ({args.fastaFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+    for fastaFile in args.fastaFiles:
+        if not os.path.isfile(fastaFile):
+            print(f'I am unable to locate the transcript FASTA file ({fastaFile})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
     
     # Validate cluster file
     args.isBinge = validate_cluster_file(args.bingeFile)
@@ -262,9 +264,10 @@ def main():
     p.add_argument("-i", dest="bingeFile",
                    required=True,
                    help="Input BINge cluster file")
-    p.add_argument("-f", dest="fastaFile",
+    p.add_argument("-f", dest="fastaFiles",
                    required=True,
-                   help="Input FASTA containing transcripts listed in the cluster file")
+                   nargs="+",
+                   help="Input one or more FASTAs containing transcripts listed in the cluster file")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output FASTA file name for representative sequences")
@@ -320,7 +323,7 @@ def main():
         unbinnedDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.bingeFile)
     
     # Load transcripts into memory for quick access
-    transcriptRecords = Fasta(args.fastaFile)
+    transcriptRecords = FastaCollection(args.fastaFiles)
     
     # Parse BLAST results (if relevant)
     if args.blastFile != None:
