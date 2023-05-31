@@ -148,8 +148,95 @@ class GmapBinThread(Thread):
         self.novelBinCollection = None
         self.chimeras = None
     
+    def bin_by_gmap(self):
+        '''
+        Self parameters:
+            gmapFile -- a string pointing to the location of a GMAP GFF3 file
+                        containing transcript alignments.
+            binCollection -- a BinCollection object containing gene feature bins
+                            generated from an official genome annotation.
+        '''
+        # Behavioural parameters (static for now, may change later)
+        OKAY_COVERAGE = 94
+        OKAY_IDENTITY = 92
+        ##
+        ALLOWED_COV_DIFF = 1
+        ALLOWED_IDENT_DIFF = 0.1
+        ##
+        GENE_BIN_OVL_PCT = 0.5
+        NOVEL_BIN_OVL_PCT = 0.5
+        
+        # Parse GMAP file and begin binning
+        novelBinCollection = BinCollection() # holds onto novel bins we create during this process
+        chimeras = set() # holds onto sequences we should filter if we didn't find a good path
+        pathDict = {} # holds onto sequences we've already checked a path for
+            
+        for feature in iterate_through_gff3(self.gmapFile):
+            mrnaFeature = feature.mRNA[0]
+            
+            # Get alignment statistics
+            coverage, identity = float(mrnaFeature.coverage), float(mrnaFeature.identity)
+            
+            # Skip processing if the alignment sucks
+            isGoodAlignment = coverage >= OKAY_COVERAGE and identity >= OKAY_IDENTITY
+            if not isGoodAlignment:
+                continue
+            
+            # See if this path should be skipped because another better one was processed
+            baseID = feature.ID.rsplit(".", maxsplit=1)[0]
+            if baseID in pathDict:
+                prevCov, prevIdent = pathDict[baseID]
+                
+                # Skip if the first path was the best
+                if (coverage + ALLOWED_COV_DIFF) < prevCov \
+                    or (identity + ALLOWED_IDENT_DIFF) < prevIdent:
+                    continue
+            
+            # Now that we've checked if this path is good, we'll store it
+            """This means on the next loop if there's another path for this gene, but it's worse
+            than this current one, we'll just skip it"""
+            pathDict.setdefault(baseID, [coverage, identity])
+            
+            # See if this overlaps an existing bin
+            binOverlap = self.binCollection.find(feature.contig, feature.start, feature.end)
+            
+            # If it does not overlap an existing bin ...
+            if len(binOverlap) == 0:
+                # ... either add it to an existing novel bin or create a new novel bin
+                novel_binner(feature, novelBinCollection, NOVEL_BIN_OVL_PCT)
+            
+            # Exclude any transcripts that overlap multiple genes
+            elif len(binOverlap) > 1:
+                "We expect these occurrences to be chimeric transcripts which should be filtered"
+                if baseID not in pathDict: # we don't want to filter a transcript if it's already
+                    chimeras.add(baseID)   # had a good path found for it
+            
+            # Compare to the existing bin
+            else:
+                geneBin = binOverlap[0]
+                featureOvlPct, binOvlPct = calculate_overlap_percentages(feature, geneBin)
+                shouldJoin = featureOvlPct >= GENE_BIN_OVL_PCT or binOvlPct >= GENE_BIN_OVL_PCT
+                
+                # If this should join the gene bin, do so now
+                if shouldJoin:
+                    geneBin.add(baseID)
+                
+                # Otherwise, add it to an existing novel bin or create a new novel bin
+                else:
+                    novel_binner(feature, novelBinCollection, NOVEL_BIN_OVL_PCT)
+        
+        return novelBinCollection, chimeras
+    
     def run(self):
-        self.novelBinCollection, self.chimeras = bin_by_gmap(self.gmapFile, self.binCollection)
+        try:
+            self.novelBinCollection, self.chimeras = self.bin_by_gmap()
+        except BaseException as e:
+            self.exception = e
+    
+    def join(self):
+        Thread.join(self)
+        if self.exception:
+            raise self.exception
 
 class OutputWorkerThread(Thread):
     '''
@@ -174,7 +261,7 @@ class OutputWorkerThread(Thread):
         self.clusterType = clusterType
         self.numClusters = None
     
-    def run(self):
+    def worker_function(self):
         '''
         Receives Bin objects via self.outputQueue and writes them to file.
         Iterates self.numClusters to keep tally of how many clusters we've
@@ -211,6 +298,17 @@ class OutputWorkerThread(Thread):
                 
                 # Mark work completion
                 self.outputQueue.task_done()
+    
+    def run(self):
+        try:
+            self.worker_function()
+        except BaseException as e:
+            self.exception = e
+    
+    def join(self):
+        Thread.join(self)
+        if self.exception:
+            raise self.exception
 
 class WorkerThread(Thread):
     '''
@@ -233,7 +331,7 @@ class WorkerThread(Thread):
         self.transcriptRecords = transcriptRecords
         self.mem = mem
     
-    def run(self):
+    def worker_function(self):
         '''
         Receives Bin objects via self.binQueue and processes them, adding
         the results in self.outputQueue.
@@ -298,6 +396,17 @@ class WorkerThread(Thread):
             clusterDict = clusterer.resultClusters
         
         return clusterDict
+    
+    def run(self):
+        try:
+            self.worker_function()
+        except BaseException as e:
+            self.exception = e
+    
+    def join(self):
+        Thread.join(self)
+        if self.exception:
+            raise self.exception
 
 # Define functions
 def validate_args(args):
@@ -509,85 +618,6 @@ def novel_binner(feature, novelBinCollection, NOVEL_BIN_OVL_PCT):
     
     # Store this bin in the collection
     novelBinCollection.add(thisBin)
-
-def bin_by_gmap(gmapFile, binCollection):
-    '''
-    Parameters:
-        gmapFile -- a string pointing to the location of a GMAP GFF3 file
-                    containing transcript alignments.
-        binCollection -- a BinCollection object containing gene feature bins
-                         generated from an official genome annotation.
-    '''
-    # Behavioural parameters (static for now, may change later)
-    OKAY_COVERAGE = 94
-    OKAY_IDENTITY = 92
-    ##
-    ALLOWED_COV_DIFF = 1
-    ALLOWED_IDENT_DIFF = 0.1
-    ##
-    GENE_BIN_OVL_PCT = 0.5
-    NOVEL_BIN_OVL_PCT = 0.5
-    
-    # Parse GMAP file and begin binning
-    novelBinCollection = BinCollection() # holds onto novel bins we create during this process
-    chimeras = set() # holds onto sequences we should filter if we didn't find a good path
-    pathDict = {} # holds onto sequences we've already checked a path for
-        
-    for feature in iterate_through_gff3(gmapFile):
-        mrnaFeature = feature.mRNA[0]
-        
-        # Get alignment statistics
-        coverage, identity = float(mrnaFeature.coverage), float(mrnaFeature.identity)
-        
-        # Skip processing if the alignment sucks
-        isGoodAlignment = coverage >= OKAY_COVERAGE and identity >= OKAY_IDENTITY
-        if not isGoodAlignment:
-            continue
-        
-        # See if this path should be skipped because another better one was processed
-        baseID = feature.ID.rsplit(".", maxsplit=1)[0]
-        if baseID in pathDict:
-            prevCov, prevIdent = pathDict[baseID]
-            
-            # Skip if the first path was the best
-            if (coverage + ALLOWED_COV_DIFF) < prevCov \
-                or (identity + ALLOWED_IDENT_DIFF) < prevIdent:
-                continue
-        
-        # Now that we've checked if this path is good, we'll store it
-        """This means on the next loop if there's another path for this gene, but it's worse
-        than this current one, we'll just skip it"""
-        pathDict.setdefault(baseID, [coverage, identity])
-        
-        # See if this overlaps an existing bin
-        binOverlap = binCollection.find(feature.contig, feature.start, feature.end)
-        
-        # If it does not overlap an existing bin ...
-        if len(binOverlap) == 0:
-            # ... either add it to an existing novel bin or create a new novel bin
-            novel_binner(feature, novelBinCollection, NOVEL_BIN_OVL_PCT)
-        
-        # Exclude any transcripts that overlap multiple genes
-        elif len(binOverlap) > 1:
-            "We expect these occurrences to be chimeric transcripts which should be filtered"
-            if baseID not in pathDict: # we don't want to filter a transcript if it's already
-                chimeras.add(baseID)   # had a good path found for it
-        
-        # Compare to the existing bin
-        else:
-            geneBin = binOverlap[0]
-            featureOvlPct, binOvlPct = calculate_overlap_percentages(feature, geneBin)
-            shouldJoin = featureOvlPct >= GENE_BIN_OVL_PCT or binOvlPct >= GENE_BIN_OVL_PCT
-            
-            # If this should join the gene bin, do so now
-            if shouldJoin:
-                geneBin.add(baseID)
-            
-            # Otherwise, add it to an existing novel bin or create a new novel bin
-            else:
-                novel_binner(feature, novelBinCollection, NOVEL_BIN_OVL_PCT)
-    
-    return novelBinCollection, chimeras
 
 def bin_self_linker(binCollection):
     '''

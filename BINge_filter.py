@@ -145,23 +145,6 @@ def parse_text_ids(textFile):
             annotIDs.add(line.rstrip("\r\n "))
     return annotIDs
 
-def format_representative(clusterNum, representativeID, representativeSeq):
-    '''
-    Generates a string representation of a FASTA record with features to indicate
-    the representative sequence.
-    
-    Parameters:
-        clusterNum -- an int or string digit identifying the cluster.
-        representativeID -- a string of the sequence ID of the representative of
-                            this cluster.
-        representativeSeq -- a string of the sequence itself for the representative
-                             of this cluster.
-    Returns:
-        fastaString -- a string of the representative sequence formatted for writing
-                       to file.
-    '''
-    return f">cluster-{clusterNum} representative={representativeID}\n{representativeSeq}\n"
-
 def get_bottom_percentile_of_counts(clusterDictList, salmonCollection, salmonFileFormat,
                                     percentile=50, minCount=0.5):
     '''
