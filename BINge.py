@@ -19,6 +19,7 @@ from threading import Thread
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Various_scripts import ZS_GFF3IO, ZS_ClustIO, ZS_SeqIO
+from BINge_representatives import FastaCollection
 
 # Define classes
 class Bin:
@@ -146,7 +147,6 @@ class GmapBinThread(Thread):
         self.gmapFile = gmapFile
         self.binCollection = binCollection
         self.novelBinCollection = None
-        self.chimeras = None
     
     def bin_by_gmap(self):
         '''
@@ -168,7 +168,6 @@ class GmapBinThread(Thread):
         
         # Parse GMAP file and begin binning
         novelBinCollection = BinCollection() # holds onto novel bins we create during this process
-        chimeras = set() # holds onto sequences we should filter if we didn't find a good path
         pathDict = {} # holds onto sequences we've already checked a path for
             
         for feature in iterate_through_gff3(self.gmapFile):
@@ -208,8 +207,7 @@ class GmapBinThread(Thread):
             # Exclude any transcripts that overlap multiple genes
             elif len(binOverlap) > 1:
                 "We expect these occurrences to be chimeric transcripts which should be filtered"
-                if baseID not in pathDict: # we don't want to filter a transcript if it's already
-                    chimeras.add(baseID)   # had a good path found for it
+                continue
             
             # Compare to the existing bin
             else:
@@ -225,11 +223,11 @@ class GmapBinThread(Thread):
                 else:
                     novel_binner(feature, novelBinCollection, NOVEL_BIN_OVL_PCT)
         
-        return novelBinCollection, chimeras
+        return novelBinCollection
     
     def run(self):
         try:
-            self.novelBinCollection, self.chimeras = self.bin_by_gmap()
+            self.novelBinCollection = self.bin_by_gmap()
         except BaseException as e:
             self.exception = e
     
@@ -411,10 +409,11 @@ class WorkerThread(Thread):
 # Define functions
 def validate_args(args):
     # Validate input file locations
-    if not os.path.isfile(args.transcriptomeFile):
-        print(f'I am unable to locate the transcriptome FASTA file ({args.transcriptomeFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+    for fastaFile in args.fastaFiles:
+        if not os.path.isfile(fastaFile):
+            print(f'I am unable to locate the transcript FASTA file ({fastaFile})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
     for annotationFile in args.annotationFiles:
         if not os.path.isfile(annotationFile):
             print(f'I am unable to locate the genome GFF3 file ({annotationFile})')
@@ -875,20 +874,22 @@ def main():
     de novo-assembled transcripts together on the basis of reference genome alignments.
     This might be necessary when working with multiple subspecies that are expected to
     diverge only slightly from the reference organism. By binning like this, each subspecies
-    can have its gene counts compared fairly during DGE.
+    can have its gene counts compared fairly during DGE, and some of the pitfalls of
+    other approaches e.g., CD-HIT are avoided.
     
     Note: For each annotation GFF3 (-ga) you should provide a matching GMAP GFF3 alignment
     file (-gm). These values should be ordered equivalently.
     
-    Extra note: Your -i transcriptomeFile should contain not just your transcripts, but ALSO
-    your reference sequences from the GFF3(s). You might need to concatenate these files
-    beforehand.
+    Extra note: You may want to provide multiple inputs with -i, one for your transcripts
+    and another for the reference sequences from each of your GFF3(s). All sequences
+    indicated in your -ga and -gm files need to be locateable in the files given to -i.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
-    p.add_argument("-i", dest="transcriptomeFile",
+    p.add_argument("-i", dest="fastaFiles",
                    required=True,
-                   help="Input transcriptome FASTA file (mRNA or CDS).")
+                   nargs="+",
+                   help="Input transcriptome FASTA file(s) (mRNA or CDS).")
     p.add_argument("-ga", dest="annotationFiles",
                    nargs="+",
                    required=True,
@@ -949,7 +950,6 @@ def main():
     
     # Parse GMAP alignments into our bin collection with multiple threads
     novelBinCollection = BinCollection()
-    chimeras = set()
     for i in range(0, len(args.gmapFiles), args.threads): # only process n (threads) files at a time
         processing = []
         for x in range(args.threads): # begin processing n files
@@ -968,12 +968,10 @@ def main():
             
             # Grab the new outputs from this thread
             "Each thread modifies a BinCollection part of collectionList directly"
-            threadNovelBinCollection, threadChimeras = workerThread.novelBinCollection, \
-                workerThread.chimeras
+            threadNovelBinCollection = workerThread.novelBinCollection
             
             # Merge them
             novelBinCollection.merge(threadNovelBinCollection)
-            chimeras = chimeras.union(threadChimeras)
     
     # Merge gene bins together
     binCollection = collectionList[0]
@@ -996,11 +994,8 @@ def main():
     binCollection.merge(novelBinCollection)
     binCollection = iterative_bin_self_linking(binCollection, args.convergenceIters)
     
-    # Resolve chimeras
-    ## For implementation only if chimeras are found in a dataset I can test on
-    
     # Load transcripts into memory for quick access
-    transcriptRecords = Fasta(args.transcriptomeFile)
+    transcriptRecords = FastaCollection(args.fastaFiles)
     
     # Check that this transcriptome file contains the reference gene models
     missingSeqID = find_missing_sequence_id([binCollection], transcriptRecords)

@@ -42,6 +42,10 @@ class FastaCollection:
             except:
                 pass
         raise KeyError(f"'{key}' not found in collection")
+
+    def __iter__(self):
+        for records in self.records:
+            yield from records
     
     def __repr__(self):
         return (f"<FastaCollection object;num_records='{len(self.records)}';" +
