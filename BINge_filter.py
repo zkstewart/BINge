@@ -147,40 +147,74 @@ def parse_text_ids(textFile):
             annotIDs.add(line.rstrip("\r\n "))
     return annotIDs
 
-def get_bottom_percentile_of_counts(clusterDictList, salmonCollection, salmonFileFormat,
-                                    percentile=50, minCount=0.5):
+def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
+                                     salmonCollection, salmonFileFormat):
     '''
-    Parses the sequence IDs out of one or more cluster dictionaries, alongside a salmon
+    Parses the sequence IDs out of the two cluster dictionaries, alongside a salmon
     EquivalenceClassCollection or QuantCollection (with format indicated), and calculates
     the nth percentile of read count values in the dataset.
     
     Parameters:
-        clusterDictList -- a list of one or more cluster dictionaries with format like:
-                           {
-                               1: [ seqid1, seqid2, ... ],
-                               2: [...],
-                               ...
-                           }
+        binnedClusterDict -- a dictionary with format like:
+                             {
+                                 1: [ seqid1, seqid2, ... ],
+                                 2: [...],
+                                 ...
+                             }
+        unbinnedClusterDict -- a dictionary with the same format as binnedClusterDict.
         salmonCollection -- an EquivalenceClassCollection or QuantCollection.
         salmonFileFormat -- a string == "ec" if the collection is an EquivalenceClassCollection,
                             and "quant" if a QuantCollection
-        percentile -- an integer for use with np.percentile.
-        minCount -- a float specifying the minimum value we'll use if the percentile gives
-                    a read count of zero (0).
     '''
-    counts = [
+    # Get counts for each bin dictionary
+    binnedCounts = [
         np.mean(salmonCollection.get_transcript_count(seqID))
         
-        for clusterDict in clusterDictList
-        for seqIDs in clusterDict.values()
+        for seqIDs in binnedClusterDict.values()
         for seqID in seqIDs
         if (salmonFileFormat == "ec" and seqID in salmonCollection.ids)
         or (salmonFileFormat == "quant" and seqID in salmonCollection.quant)
     ]
-    fiftyPercentile = np.percentile(counts, percentile)
-    countCutoff = fiftyPercentile if fiftyPercentile > 0 else minCount # need at least SOME alignment
     
-    return countCutoff
+    unbinnedCounts = [
+        np.mean(salmonCollection.get_transcript_count(seqID))
+        
+        for seqIDs in unbinnedClusterDict.values()
+        for seqID in seqIDs
+        if (salmonFileFormat == "ec" and seqID in salmonCollection.ids)
+        or (salmonFileFormat == "quant" and seqID in salmonCollection.quant)
+    ]
+    
+    # If we have binnedCounts, derive a good cutoff from that
+    percentiles = [20, 30, 40, 50, 60, 70, 80, 90, 99]
+    if binnedCounts != []:
+        # Find out where we first start seeing actual read alignments for binned dict
+        for percentile in percentiles:
+            binnedPercentileMean = np.percentile(binnedCounts, percentile)
+            if binnedPercentileMean > 1: # == 1 read count on average
+                break
+        
+        # Choose a percentile in the unbinned dict that is >= this number of counts
+        for percentile in percentiles:
+            unbinnedPercentileMean = np.percentile(unbinnedCounts, percentile)
+            if unbinnedPercentileMean >= binnedPercentileMean:
+                break
+        
+        # This becomes our countCutoff value
+        "If not even the 99th percentile meets the cutoff, we just take it anyway"
+        return unbinnedPercentileMean
+    
+    # If we do not have binnedCounts, just derive a cutoff de novo
+    else:
+        "This won't work as well, but is only a problem CD-HIT faces"
+        for percentile in percentiles:
+            unbinnedPercentileMean = np.percentile(unbinnedCounts, percentile)
+            if unbinnedPercentileMean >= 1: # == 1 read count on average
+                break
+        
+        # This becomes our countCutoff value (if it is >= 1)
+        "If it doesn't even == 1, we just set 1 so this filter will NEVER save a cluster"
+        return unbinnedPercentileMean if unbinnedPercentileMean >= 1 else 1
 
 def merge_cluster_dicts(binnedDict, unbinnedDict, toDrop):
     '''
@@ -295,14 +329,14 @@ def main():
                    type=float,
                    help="""If you have provided a BLAST file, optionally specify an E-value
                    threshold to use when considering a hit to be statistically significant.""",
-                   default=1e-5)
+                   default=1e-10)
     p.add_argument("--length", dest="minimumLength",
                    required=False,
                    type=int,
                    help="""Specify the minimum length of an ORF (in amino acids) that must
                    be met for a cluster to pass filtration (if it hasn't passed any of the
-                   previous filter checks already).""",
-                   default=50)
+                   previous filter checks already); make this strict!""",
+                   default=150)
     p.add_argument("--filter_binned", dest="filterBinned",
                    required=False,
                    action="store_true",
@@ -355,15 +389,13 @@ def main():
     else:
         salmonCollection = None
     
-    # Get the bottom percentile of read counts to use as a cut-off
+    # Get an appropriate read count value to use as a cut-off
     """Note: we want this to be somewhat strict since each cut-off SAVES a sequence,
     so if this is the only thing that passes on a cluster, we want to be confident
-    that it's actually good. The 50th percentile seems pretty good for deciding this."""
-    countCutoff = get_bottom_percentile_of_counts(
-        [binnedDict, unbinnedDict],
-        salmonCollection,
-        args.salmonFileFormat,
-        50, 0.5
+    that it's actually good."""
+    countCutoff = get_counts_cutoff_by_percentiles(
+        binnedDict, unbinnedDict,
+        salmonCollection, args.salmonFileFormat
     )
     
     # Perform filtration of clusters with available evidence
