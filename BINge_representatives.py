@@ -13,7 +13,7 @@ from BINge_counter import validate_salmon_files, parse_binge_clusters, \
     parse_equivalence_classes, parse_quants
 from BINge_tuning import validate_cluster_file
 
-from Various_scripts import ZS_BlastIO, ZS_ClustIO
+from Various_scripts import ZS_ClustIO
 
 # Define classes
 class FastaCollection:
@@ -172,6 +172,43 @@ def parse_text_ids(textFile):
             annotIDs.add(line.rstrip("\r\n "))
     return annotIDs
 
+def parse_blast_outfmt6(blastFile, evalueCutoff):
+    '''
+    Simply parses a BLAST outfmt6 file to get the best E-value hit for each query sequence.
+    
+    Parameters:
+        blastFile -- a string indicating the location of a BLAST results file in
+                     outfmt6 format.
+    Returns:
+        blastDict -- a dict with structure like:
+                     {
+                         'seqID1': evalue,
+                         'seqID2': evalue,
+                         ...
+                     }
+    '''
+    blastDict = {}
+    
+    with open(blastFile, "r") as fileIn:
+        for line in fileIn:
+            # Extract details
+            sl = line.rstrip("\r\n").split('\t')
+            queryID = sl[0]
+            evalue = float(sl[10])
+            
+            # Skip if evalue isn't significant
+            if evalue > evalueCutoff:
+                continue
+            
+            # Store result if none exist
+            if queryID not in blastDict:
+                blastDict[queryID] = evalue
+            # Overwrite result if this is better
+            elif evalue < blastDict[queryID]:
+                blastDict[queryID] = evalue
+    
+    return blastDict
+
 def format_representative(clusterNum, representativeID, representativeSeq):
     '''
     Generates a string representation of a FASTA record with features to indicate
@@ -274,11 +311,7 @@ def main():
     
     # Parse BLAST results (if relevant)
     if args.blastFile != None:
-        blastResults = ZS_BlastIO.BLAST_Results(args.blastFile)
-        blastResults.evalue = args.evalue
-        blastResults.num_hits = 1 # only need to keep the best hit for each sequence
-        blastResults.parse_blast_hit_coords()
-        blastDict = blastResults.results
+        blastDict = parse_blast_outfmt6(args.blastFile, args.evalue)
     else:
         blastDict = {}
     
@@ -317,7 +350,7 @@ def main():
                 for seqID in seqIDs:
                     thisEvidenceList = [
                         1 if seqID in annotIDs else 0,
-                        blastDict[seqID][0][-1] if seqID in blastDict else 0, # [-1] gives E-value
+                        blastDict[seqID] if seqID in blastDict else 1, # stores E-value
                         sum(salmonCollection.get_transcript_count(seqID)) \
                             if salmonCollection != None else 0,
                         len(str(transcriptRecords[seqID])),
