@@ -348,11 +348,17 @@ def main():
                 
                 # Store all forms of evidence we have at hand for each sequence member
                 for seqID in seqIDs:
+                    # Tolerantly handle counts that can be filtered by salmon
+                    try:
+                        counts = sum(salmonCollection.get_transcript_count(seqID))
+                    except: # this happens if Salmon filtered something out
+                        counts = 0
+                    
+                    # Now store the evidence
                     thisEvidenceList = [
                         1 if seqID in annotIDs else 0,
                         blastDict[seqID] if seqID in blastDict else 1, # stores E-value
-                        sum(salmonCollection.get_transcript_count(seqID)) \
-                            if salmonCollection != None else 0,
+                        counts,
                         len(str(transcriptRecords[seqID])),
                         seqID
                     ]
