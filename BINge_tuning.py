@@ -7,36 +7,14 @@
 
 import os, argparse, sys
 from sklearn.metrics.cluster import adjusted_rand_score
-from BINge_counter import parse_binge_clusters
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Various_scripts import ZS_GFF3IO, ZS_ClustIO
 
-# Define functions
-def validate_cluster_file(clusterFile):
-    with open(clusterFile, "r") as fileIn:
-        # Get the first two lines out of the file
-        firstLine = fileIn.readline().rstrip("\r\n ")
-        secondLine = fileIn.readline().rstrip("\r\n ")
-        
-        # Check if it conforms to BINge cluster file expectations
-        if firstLine.startswith("#BINge clustering information file") \
-            and secondLine.startswith("\t".join(["cluster_num", "sequence_id", "cluster_type"])):
-                isBinge = True
-        
-        # Check if it conforms to CD-HIT file expectations
-        elif firstLine.startswith(">Cluster 0") and secondLine.startswith("0"):
-            isBinge = False
-        
-        # Raise an error otherwise
-        else:
-            print(f"The input file '{clusterFile}' does not appear to be a BINge or " + 
-                    "CD-HIT cluster file")
-            print("You should check your inputs and try again.")
-            quit()
-    
-    return isBinge
+from modules.validation import validate_cluster_file
+from modules.parsing import parse_binge_clusters
 
+# Define functions
 def validate_args(args):
     # Validate input file locations
     if not os.path.isfile(args.gff3File):

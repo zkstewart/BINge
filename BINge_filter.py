@@ -7,15 +7,14 @@
 
 import os, argparse, sys
 import numpy as np
-from pyfaidx import Fasta
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from BINge_counter import validate_salmon_files, parse_binge_clusters, \
-    parse_equivalence_classes, parse_quants
-from BINge_tuning import validate_cluster_file
-from BINge_representatives import FastaCollection
 
-from Various_scripts import ZS_BlastIO, ZS_ClustIO, ZS_SeqIO
+from Various_scripts import ZS_BlastIO, ZS_ClustIO
+
+from modules.fasta_handling import ZS_SeqIO, FastaCollection
+from modules.validation import validate_salmon_files, validate_cluster_file
+from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge_clusters
 
 # Define functions
 def validate_args(args):
