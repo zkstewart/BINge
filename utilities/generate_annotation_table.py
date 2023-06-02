@@ -382,6 +382,123 @@ def query_go_api(goTerm):
     else:
         return None
 
+def update_table_with_seq_details(originalTable, newTable, hitMapDict, 
+                                  representativesFasta, blastFasta):
+    '''
+    Receives a table file which is to be modified with sequence details as obtained from
+    the FASTA file that was BLASTed against. That FASTA file is expected to have RefSeq
+    sequence formatting like:
+    
+        >NP_001158986.1 uncharacterized protein LOC100303959 [Zea mays]
+    
+    Or UniRef sequence formatting like:
+
+        >UniRef90_A0A5A9P0L4 peptidylprolyl isomerase n=1 Tax=Triplophysa tibetana TaxID=1572043 RepID=A0A5A9P0L4_9TELE
+    
+    Any other sequence formats will be assumed to be the reference genome sequence and
+    they won't have any details like gene names obtained, because it's impossible to
+    anticipate every possible FASTA IDs format.
+    
+    Parameters:
+        originalTable -- a string indicating the location of the file table which
+                         will be updated herein.
+        newTable -- a string indicating the location of the new updated table
+                    which we will write to.
+        hitMapDict -- a dictionary with string keys for the sequences that received
+                      BLAST hits and hence we want to obtain sequence details from
+                      the blastFasta file. We don't care what its values are, since
+                      they will be overwritten.
+        representativesFasta -- a string indicating the location of the BINge
+                                representatives FASTA file.
+        blastFasta -- a string indicating the location of the FASTA file that was used
+                      for BLAST; it's expected to RefSeq, UniRef, and/or reference
+                      genome sequences (which won't be handled in any special way)
+    '''
+    refseqRegex = re.compile(r">.+?\s(.+?)\sn=\d+?\sTax=(.+?)\sTaxID=")
+    unirefRegex = re.compile(r">.+?\s(.+?)\s\[(.+?)\]")
+    
+    # Parse the blastFasta file to get details for relevant sequences
+    with open(blastFasta, "r") as fileIn:
+        for line in fileIn:
+            if line.startswith(">"):
+                seqID = line[1:].split(" ")[0]
+                if seqID in hitMapDict:
+                    # See if this sequence has information we can obtain
+                    refseqMatch = refseqRegex.match(line)
+                    unirefMatch = unirefRegex.match(line)
+                    
+                    if refseqMatch != None:
+                        hitMapDict[seqID] = [refseqMatch.group(1), refseqMatch.group(2)]
+                    elif unirefMatch != None:
+                        hitMapDict[seqID] = [unirefMatch.group(1), unirefMatch.group(2)]
+                    else:
+                        hitMapDict[seqID] = [".", "."]
+    
+    # Parse the original table file into a dictionary of lines
+    "This lets us write an ordered output later"
+    originalLines = {}
+    with open(originalTable, "r") as fileIn:
+        for line in fileIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            
+            # Handle header lines
+            if line.startswith("#"):
+                header = sl
+            # Handle content lines
+            else:
+                originalLines[sl[0]] = sl
+    
+    # Piece things together into a final annotation table
+    with open(representativesFasta, "r") as fileIn, open(newTable, "w") as fileOut:
+        # Write updated header
+        originalLength = len(header)
+        
+        accessionIndex = header.index("Target_accession")
+        for text in ["Taxa_names", "Gene_names"]:
+            header.insert(accessionIndex + 1, text)
+        fileOut.write("{0}\n".format("\t".join(header)))
+        
+        # Write content lines
+        for line in fileIn:
+            if line.startswith(">"):
+                clusterID = line[1:].split(" ")[0]
+                
+                # Get an annotation line for this sequence
+                if clusterID in originalLines:
+                    sl = originalLines[clusterID]
+                else:
+                    sl = ["."]*originalLength
+                
+                # If we have BLAST hits, get their information
+                if sl[accessionIndex] != ".":
+                    hitList = sl[accessionIndex].replace(" ", "").replace("]", "").split("[")
+                    seqInfo = [ hitMapDict[hit] for hit in hitList ]
+                    
+                    # Format it for insertion into the split line
+                    geneNames = "".join([
+                        seqInfo[i][0] if i == 0 and len(seqInfo) == 1
+                        else f"{seqInfo[i][0]} " if i == 0
+                        else f"[{seqInfo[i][0]}]"
+                        for i in range(len(seqInfo))
+                    ])
+                    taxaNames = "".join([
+                        seqInfo[i][1] if i == 0 and len(seqInfo) == 1
+                        else f"{seqInfo[i][1]} " if i == 0
+                        else f"[{seqInfo[i][1]}]"
+                        for i in range(len(seqInfo))
+                    ])
+                # Otherwise, just make some dummy information
+                else:
+                    geneNames = "."
+                    taxaNames = "."
+                
+                # Insert data into split line
+                sl.insert(accessionIndex + 1, taxaNames)
+                sl.insert(accessionIndex + 1, geneNames)
+                
+                # Write to file
+                fileOut.write("{0}\n".format("\t".join(sl)))
+
 def main():
     # User input
     usage = """"%(prog)s is intended for use downstream of BINge_representatives and (potentially)
@@ -421,7 +538,7 @@ def main():
                    help="Output annotation table file name.")
     # Optional
     p.add_argument("--db", dest="databaseTag",
-                   required=True,
+                   required=False,
                    choices=["UniRef100", "UniRef90", "UniRef50", "RefSeq", "."],
                    help="""Optionally, specify the database you've queried to store as a column
                    in the TSV file (default == "." if not provided)""",
@@ -467,12 +584,13 @@ def main():
     update_table_with_gos(tmpFileName1, tmpFileName2, hitMapDict, goObo)
     
     # Try to help garbage cleanup to reduce memory consumption
-    os.unlink(tmpFileName1) # also clean up first temporary file now that it has been used
-    hitMapDict = None
+    # os.unlink(tmpFileName1) # also clean up first temporary file now that it has been used
+    # hitMapDict = None
     goObo = None
     
     # Update the annotation table a final time to include sequence details
-    ## TBD
+    update_table_with_seq_details(tmpFileName2, args.outputFileName, hitMapDict,
+                                  args.representativesFasta, args.blastFasta)
     
     # Done!
     print('Program completed successfully!')
