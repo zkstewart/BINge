@@ -260,7 +260,8 @@ def update_table_with_gos(originalTable, newTable, hitMapDict, goObo):
                     # If there were hits, get the best one and process it further
                     else:
                         bestHitID = mappedHits[0]
-                        bestHitGOs = hitMapDict[bestHitID].split("; ")
+                        bestHitGOs = [ bhg.strip(" ") for bhg in hitMapDict[bestHitID].split("; ") ]
+                        bestHitGOs = [ bhg for bhg in bestHitGOs if bhg != "" and bhg != "." ]
                         
                         # Try to fix any obsoletions (if any)
                         fixedGOs = fix_obsoletions(bestHitGOs, goObo, queriedGOs)
