@@ -415,6 +415,7 @@ def update_table_with_seq_details(originalTable, newTable, hitMapDict,
                       for BLAST; it's expected to RefSeq, UniRef, and/or reference
                       genome sequences (which won't be handled in any special way)
     '''
+    nuisanceStrings = ["PREDICTED: ", "LOW QUALITY PROTEIN: "]
     refseqRegex = re.compile(r">.+?\s(.+?)\sn=\d+?\sTax=(.+?)\sTaxID=")
     unirefRegex = re.compile(r">.+?\s(.+?)\s\[(.+?)\]")
     
@@ -422,18 +423,29 @@ def update_table_with_seq_details(originalTable, newTable, hitMapDict,
     with open(blastFasta, "r") as fileIn:
         for line in fileIn:
             if line.startswith(">"):
-                seqID = line[1:].split(" ")[0]
+                seqID = line[1:].rstrip("\r\n ").split(" ")[0]
                 if seqID in hitMapDict:
                     # See if this sequence has information we can obtain
                     refseqMatch = refseqRegex.match(line)
                     unirefMatch = unirefRegex.match(line)
                     
+                    # Extract any possible information
                     if refseqMatch != None:
-                        hitMapDict[seqID] = [refseqMatch.group(1), refseqMatch.group(2)]
+                        geneName, taxaName = refseqMatch.group(1), refseqMatch.group(2)
                     elif unirefMatch != None:
-                        hitMapDict[seqID] = [unirefMatch.group(1), unirefMatch.group(2)]
+                        geneName, taxaName = unirefMatch.group(1), unirefMatch.group(2)
                     else:
-                        hitMapDict[seqID] = [".", "."]
+                        geneName, taxaName = ".", "."
+                    
+                    # Remove any nuisance strings
+                    for string in nuisanceStrings:
+                        geneName = geneName.replace(string, "")
+                    if geneName.strip(" ") == "":
+                        "I don't think this is necessary; it's just a precaution"
+                        geneName = "."
+                    
+                    # Store data
+                    hitMapDict[seqID] = [geneName, taxaName]
     
     # Parse the original table file into a dictionary of lines
     "This lets us write an ordered output later"
@@ -468,7 +480,7 @@ def update_table_with_seq_details(originalTable, newTable, hitMapDict,
                 if clusterID in originalLines:
                     sl = originalLines[clusterID]
                 else:
-                    sl = ["."]*originalLength
+                    sl = [clusterID] + (["."]*(originalLength-1))
                 
                 # If we have BLAST hits, get their information
                 if sl[accessionIndex] != ".":
@@ -583,15 +595,12 @@ def main():
     # Update the annotation table with GOs
     tmpFileName2 = os.path.join(outputDir, f"tmp_annot_table_step2_{hashValue}.tsv")
     update_table_with_gos(tmpFileName1, tmpFileName2, hitMapDict, goObo)
-    
-    # Try to help garbage cleanup to reduce memory consumption
-    # os.unlink(tmpFileName1) # also clean up first temporary file now that it has been used
-    # hitMapDict = None
-    goObo = None
+    os.unlink(tmpFileName1) # also clean up first temporary file now that it has been used
     
     # Update the annotation table a final time to include sequence details
     update_table_with_seq_details(tmpFileName2, args.outputFileName, hitMapDict,
                                   args.representativesFasta, args.blastFasta)
+    os.unlink(tmpFileName2) # now clean up the second temporary file
     
     # Done!
     print('Program completed successfully!')
