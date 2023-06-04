@@ -568,10 +568,10 @@ def main():
                    default=10)
     p.add_argument("--largeTable", dest="largeTable",
                    required=False,
-                   action="store_false",
+                   action="store_true",
                    help="""Optionally create a table with rich BLAST details i.e., inclusive
                    of all outfmt6 fields rather than just identity, E-value, and bitscore""",
-                   default=True)
+                   default=False)
     args = p.parse_args()
     validate_args(args)
     
