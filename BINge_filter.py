@@ -392,7 +392,7 @@ def main():
                    required=False,
                    action="store_true",
                    help="""Optionally, require a transcript in a cluster to have at least 1x
-                   coverage in a single sample to retain the cluster.""",
+                   coverage summed across samples to retain the cluster.""",
                    default=False)
     p.add_argument("--readLength", dest="readLength",
                    required=False,
