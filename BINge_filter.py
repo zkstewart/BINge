@@ -77,6 +77,21 @@ def validate_args(args):
         print("Make sure to fix this and try again.")
         quit()
     
+    # Validate readLength and its logical necessity
+    if args.require1x == False and "--readLength" in sys.argv:
+        print("You've used --readLength despite not giving the --require1x flag.")
+        print("Just in case you're confused about whether you want this filtration to occur " +
+              "or not, I'm going to exit now.")
+        print("Either drop the --readLength parameter, or include --require1x.")
+        quit()
+    if args.readLength < 1:
+        print("--readLength must be a positive integer value (minimum value of 1)")
+        print("Make sure to fix this and try again.")
+        quit()
+    if args.readLength < 50:
+        print(f"--readLength has received an unusually low value ({args.readLength})")
+        print("We will keep running, but this may result in excessive filtration.")
+    
     # Validate salmon files if relevant
     if args.salmonFiles != []:
         args.salmonFileFormat = validate_salmon_files(args.salmonFiles)
@@ -252,6 +267,42 @@ def merge_cluster_dicts(binnedDict, unbinnedDict, toDrop):
     
     return clusterDict
 
+def determine_if_1x_filter(transcriptCounts, seqIDs, transcriptRecords, readLength, sequenceType):
+    '''
+    Calculates if a cluster should be filtered on the basis of whether it has 1x
+    coverage or not across all samples combined.
+    
+    Parameters:
+        transcriptCounts -- a list containing sublists for each transcript in the
+                            cluster, where sublists contain integer values indicating the
+                            amount of read alignments made to that transcript from each
+                            sample.
+        seqIDs -- a list containing strings of transcript identifiers.
+        transcriptRecords -- a pyfaidx.Fasta or FastaCollection which can be indexed to
+                             retrieve all transcripts identified in transcriptIDs.
+        readLength -- an integer indicating the average read length from sequencing.
+        sequenceType -- a string in the list ["nucleotide", "protein"] indicating what type
+                        of sequences we are working with.
+    Returns:
+        has1x -- a boolean indicating whether this cluster contains a transcript which meets
+                 1x coverage criteria or not.
+    '''
+    # Get sequence lengths per transcript as nucleotides
+    transcriptLengths = [ len(str(transcriptRecords[sid])) for sid in seqIDs ]
+    transcriptLengths = [ tl * 3 if sequenceType == "protein" else tl for tl in transcriptLengths ]
+    
+    # Figure out how many reads would be required for 1x coverage
+    readsNeededFor1x = [ tl / readLength for tl in transcriptLengths ]
+    
+    # Calculate if we've reached this threshold across samples
+    has1x = any(
+    [
+        sum(tc) >= readsNeeded
+        for tc, readsNeeded in zip(transcriptCounts, readsNeededFor1x)
+    ])
+    
+    return has1x
+
 ## Main
 def main():
     # User input
@@ -327,14 +378,27 @@ def main():
                    required=False,
                    type=float,
                    help="""If you have provided a BLAST file, optionally specify an E-value
-                   threshold to use when considering a hit to be statistically significant.""",
+                   threshold to use when considering a hit to be statistically significant
+                   (default==1e-10).""",
                    default=1e-10)
     p.add_argument("--length", dest="minimumLength",
                    required=False,
                    type=int,
                    help="""Specify the minimum length of an ORF (in amino acids) that must
                    be met for a cluster to pass filtration (if it hasn't passed any of the
-                   previous filter checks already); make this strict!""",
+                   previous filter checks already); make this strict! (default==150)""",
+                   default=150)
+    p.add_argument("--require1x", dest="require1x",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, require a transcript in a cluster to have at least 1x
+                   coverage in a single sample to retain the cluster.""",
+                   default=False)
+    p.add_argument("--readLength", dest="readLength",
+                   required=False,
+                   type=int,
+                   help="""If specifying --require1x, indicate the length of your reads in
+                   basepairs (default==150; just consider the single end length)""",
                    default=150)
     p.add_argument("--filter_binned", dest="filterBinned",
                    required=False,
@@ -410,33 +474,49 @@ def main():
             if any([ seqID in annotIDs for seqID in seqIDs ]):
                 continue
             
-            # Check 2: Retain if any have a significant E-value
+            # Handle read alignment values
+            if salmonCollection != None:
+                transcriptCounts = [
+                    salmonCollection.get_transcript_count(seqID)
+                    for seqID in seqIDs
+                    if (args.salmonFileFormat == "ec" and seqID in salmonCollection.ids)
+                    or (args.salmonFileFormat == "quant" and seqID in salmonCollection.quant)
+                ]
+                
+                # Check 2: FILTER if it lacks 1x coverage
+                if args.require1x:
+                    has1x = determine_if_1x_filter(transcriptCounts, seqIDs,
+                                   transcriptRecords, args.readLength,
+                                   "protein" if args.sequenceFormat == "protein"
+                                   else "nucleotide")
+                    
+                    if not has1x:
+                        toDrop.add(clusterID)
+                        continue # since we're filtering, we toDrop it then continue
+                
+                # Check 3: Retain if any have good read alignment in >1 sample
+                if len(salmonCollection.samples) > 1:
+                    if any(
+                    [
+                        sum([ countValue > countCutoff for countValue in tc ]) > 1
+                        for tc in transcriptCounts
+                    ]):
+                        continue
+                
+                # Check 3 (alt): Retain if it has good read alignment in the 1 sample
+                else:
+                    if any(
+                    [
+                        tc[0] > countCutoff
+                        for tc in transcriptCounts
+                    ]):
+                        continue
+            
+            # Check 4: Retain if any have a significant E-value
             if any([ seqID in blastDict for seqID in seqIDs ]): # if in blastDict, it has a good E-value
                 continue
             
-            # Check 3: Retain if any have good read alignment in >1 sample
-            if len(salmonCollection.samples) > 1:
-                if any(
-                [
-                    sum([ countValue > countCutoff for countValue in salmonCollection.get_transcript_count(seqID) ]) > 1
-                    for seqID in seqIDs
-                    if (args.salmonFileFormat == "ec" and seqID in salmonCollection.ids)
-                    or (args.salmonFileFormat == "quant" and seqID in salmonCollection.quant)
-                ]):
-                    continue
-            
-            # Check 3 (alt): Retain if it has good read alignment in the 1 sample
-            else:
-                if any(
-                [
-                    salmonCollection.get_transcript_count(seqID)[0] > countCutoff
-                    for seqID in seqIDs
-                    if (args.salmonFileFormat == "ec" and seqID in salmonCollection.ids)
-                    or (args.salmonFileFormat == "quant" and seqID in salmonCollection.quant)
-                ]):
-                    continue
-            
-            # Check 4: Retain if the sequence is long enough
+            # Check 5: Retain if the sequence is long enough
             "Note: we include stop codons in the length calculations here"
             if args.sequenceFormat == "protein":
                 if any(
@@ -480,7 +560,10 @@ def main():
                 fileOut.write(f"{clusterNum}\t{seqID}\t{binType}\n")
     
     # Print some statistics for the user
-    print(f"BINge_filter removed {len(toDrop)} clusters")
+    print("# BINge_filter: Filtration statistics")
+    print(f" > used 1x criteria to filter clusters = {args.require1x}")
+    print(f" > number of reads = {countCutoff} required for read count rescue")
+    print(f" > removed {len(toDrop)} clusters")
     
     print("Program completed successfully!")
 
