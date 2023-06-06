@@ -46,9 +46,9 @@ def present_r_instructions(lengthFile, countFile, abundanceFile):
     from this program into R.
     
     Parameters:
-        lengthFile -- 
-        countFile -- 
-        abundanceFile -- 
+        lengthFile -- a string indicating the location of the .length file
+        countFile -- a string indicating the location of the .counts file
+        abundanceFile -- a string indicating the location of the .abundance file
     '''
     # Convert all paths to posix format
     lengthFile = Path(os.path.abspath(lengthFile)).as_posix()
@@ -82,10 +82,10 @@ def main():
     equivalence class files are not supported, since the EffectiveLength value in the
     quant.sf output is necessary for downstream DGE analysis. This script will produce
     three files ($PREFIX.length, $PREFIX.counts, $PREFIX.abundance) which can be loaded
-    into R to construct a 'txi' object for use with DESeq2's DESeqDataSetFromTximport.
+    into R for use with DESeq2's DESeqDataSetFromTximport.
     
     For each salmon file (-s), you should provide the sample name (-n). The order of these
-    values should be equivalent, and will be reflected in the header of the output TSV file.
+    values should be equivalent, and will be reflected in the header of the output files.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
@@ -102,7 +102,7 @@ def main():
                    help="Input one or more sample names (paired to the Salmon files)")
     p.add_argument("-o", dest="outputPrefix",
                    required=True,
-                   help="Output file prefix for TSV-formatted results")
+                   help="Output file prefix for tximport-formatted results")
     # Optional
     p.add_argument("--only_binned", dest="onlyBinned",
                    required=False,
@@ -145,7 +145,6 @@ def main():
             # Sum counts, abundance, and length across transcripts in this cluster per-sample
             clusterCount = [ 0 for _ in range(len(args.sampleNames)) ]
             clusterAbundance = [ 0 for _ in range(len(args.sampleNames)) ]
-            clusterLength = [ 0 for _ in range(len(args.sampleNames)) ]
             for seqID in clusterIDs:
                 numSeqs += 1
                 try:
@@ -154,9 +153,6 @@ def main():
                     
                     abundances = salmonDGECollection.get_transcript_tpm(seqID)
                     clusterAbundance = [ clusterAbundance[x] + abundances[x] for x in range(len(abundances)) ]
-                    
-                    lengths = salmonDGECollection.get_transcript_effective_length(seqID)
-                    clusterLength = [ clusterLength[x] + lengths[x] for x in range(len(lengths)) ]
                 except: # this happens if Salmon filtered something out
                     misses += 1
                     continue
