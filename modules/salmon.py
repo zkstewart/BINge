@@ -142,3 +142,100 @@ class QuantCollection():
         return "<QuantCollection object;num_samples={0};num_transcripts={1}>".format(
             len(self.samples), self.numTranscripts
         )
+
+class DGEQuantCollection():
+    '''
+    Similar to QuantCollection, but it stores more data which is necessary for DGE
+    analysis i.e., the effective length and TPM values.
+    '''
+    def __init__(self):
+        self.samples = [] # sample names
+        self.quant = {}
+        self.length = {}
+        self.tpm = {}
+        
+        self.numTranscripts = None # for checking quant file compatibility
+    
+    def parse_quant_file(self, quantFile, sample):
+        # Validate input parameters
+        assert os.path.isfile(quantFile), \
+            f"Cannot parse '{quantFile}' as file does not exist!"
+        assert isinstance(sample, str) and not sample in self.samples, \
+            f"Sample name must be a string value that uniquely identifies this sample!"
+        
+        # Parse the file proper
+        firstLine = True
+        thisQuant = {}
+        
+        with open(quantFile, "r") as fileIn:
+            for line in fileIn:
+                sl = line.rstrip("\r\n ").split("\t")
+                
+                # Handle header line
+                if firstLine == True:
+                    assert sl == ["Name", "Length", "EffectiveLength", "TPM", "NumReads"], \
+                        "Quant file appears to lack the expected header? Cannot parse."
+                    firstLine = False
+                # Handle content lines
+                else:
+                    name, _, effectiveLength, tpm, numReads = sl # might error here if file format is bad
+                    thisQuant[name] = [float(numReads), float(effectiveLength), float(tpm)]
+        
+        # Check compatibility of quant file with existing ones
+        if self.numTranscripts == None:
+            self.numTranscripts = len(thisQuant)
+        else:
+            assert self.numTranscripts == len(thisQuant), \
+                "Quant files are incompatible since transcript numbers differ!"
+        
+        # Store relevant parameters now that parsing has completed successfully
+        self.samples.append(sample)
+        
+        # Store counts inside parent structure
+        for name, values in thisQuant.items():
+            self.quant.setdefault(name, [])
+            self.length.setdefault(name, [])
+            self.tpm.setdefault(name, [])
+            
+            numReads, effectiveLength, tpm = values
+            self.quant[name].append(numReads)
+            self.length[name].append(effectiveLength)
+            self.tpm[name].append(tpm)
+    
+    def get_transcript_count(self, seqID):
+        '''
+        Parameters:
+            seqID -- a string identifying the transcript ID you want to get counts for.
+        Returns:
+            transcriptCount -- a list containing each sample's count for
+                               the given transcript; order is equivalent to
+                               self.samples.
+        '''
+        return self.quant[seqID]
+    
+    def get_transcript_effective_length(self, seqID):
+        '''
+        Parameters:
+            seqID -- a string identifying the transcript ID you want to get counts for.
+        Returns:
+            effectiveLength -- a list containing each sample's effective length for
+                               the given transcript; order is equivalent to
+                               self.samples.
+        '''
+        return self.length[seqID]
+    
+    def get_transcript_tpm(self, seqID):
+        '''
+        Parameters:
+            seqID -- a string identifying the transcript ID you want to get counts for.
+        Returns:
+            get_transcript_tpm -- a list containing each sample's TPM abundance for
+                                  the given transcript; order is equivalent to
+                                  self.samples.
+        '''
+        return self.tpm[seqID]
+    
+    def __repr__(self):
+        return "<DGEQuantCollection object;num_samples={0};num_transcripts={1}>".format(
+            len(self.samples), self.numTranscripts
+        )

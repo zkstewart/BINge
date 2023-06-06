@@ -1,4 +1,4 @@
-from .salmon import EquivalenceClassCollection, QuantCollection
+from .salmon import EquivalenceClassCollection, QuantCollection, DGEQuantCollection
 
 def parse_equivalence_classes(equivalenceClassFiles, sampleNames):
     '''
@@ -48,6 +48,30 @@ def parse_quants(quantFiles, sampleNames):
         
         quantCollection.parse_quant_file(quantFile, sample)
     return quantCollection
+
+def parse_dge_quants(quantFiles, sampleNames):
+    '''
+    Parses in one or more quant files from Salmon, producing a DGEQuantCollection
+    object enabling the generation of output files needed for DESeq2 DGE analysis.
+    
+    Parameters:
+        quantFiles -- a list containing strings pointing to the location
+                      of Salmon quant files (quant.sf files).
+        sampleNames -- an equal length list indicating the sample names for each
+                       salmon quant file.
+    '''
+    assert len(quantFiles) == len(sampleNames), \
+        ("parse_dge_quants cannot parse quant files since the number " +
+         f"of files ({len(quantFiles)}) does not match the number of " +
+         f"sample names ({len(sampleNames)})")
+    
+    dgeQuantCollection = DGEQuantCollection()
+    for i in range(len(quantFiles)):
+        quantFile = quantFiles[i]
+        sample = sampleNames[i]
+        
+        dgeQuantCollection.parse_quant_file(quantFile, sample)
+    return dgeQuantCollection
 
 def parse_binge_clusters(bingeFile, typeToReturn="all"):
     '''
