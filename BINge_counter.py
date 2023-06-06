@@ -51,9 +51,9 @@ def present_r_instructions(lengthFile, countFile, abundanceFile):
         abundanceFile -- 
     '''
     # Convert all paths to posix format
-    lengthFile = Path(lengthFile).as_posix()
-    countFile = Path(countFile).as_posix()
-    abundanceFile = Path(abundanceFile).as_posix()
+    lengthFile = Path(os.path.abspath(lengthFile)).as_posix()
+    countFile = Path(os.path.abspath(countFile)).as_posix()
+    abundanceFile = Path(os.path.abspath(abundanceFile)).as_posix()
     
     # Format and print commands needed to load data into R
     instructionFormat = f'''# Locate gene abundance files
@@ -70,8 +70,7 @@ bingeTx = list(
 )
 \n\
 # Create DESeq2 dataset via tximport
-dds <- DESeqDataSetFromTximport(bingeTx, colData = coldata.table, design = ~ 1)
-    '''
+dds <- DESeqDataSetFromTximport(bingeTx, colData = coldata.table, design = ~ 1)'''
     
     return instructionFormat
 
@@ -235,7 +234,7 @@ def main():
             print(f" > In this case, it looks like {zeros} clusters had no read alignment.")
             print(" > FYI - these clusters were NOT written to file.")
             print(" > If the number of clusters with no read alignment is very similar to " +
-                "your total number of sequences, there might be a problem with your files.")
+                "your total number of clusters, there might be a problem with your files.")
             print(" > i.e., your read alignments are of poor quality?")
             print(" > Otherwise no worries!\n")
     
