@@ -186,7 +186,7 @@ def main():
             ][0][:-1]) # trim the '%' symbol and make it a float
             
             # Calculate the proportion of counts represented in a cluster
-            clusterProportion = 1 - (counts[1] / counts[0])
+            clusterProportion = 1 - (counts[1] / sum(counts))
             clusterMapRate = mappingRate * clusterProportion
             
             # Write to file
