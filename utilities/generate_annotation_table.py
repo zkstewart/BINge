@@ -418,6 +418,7 @@ def update_table_with_seq_details(originalTable, newTable, hitMapDict,
     nuisanceStrings = ["PREDICTED: ", "LOW QUALITY PROTEIN: "]
     refseqRegex = re.compile(r">.+?\s(.+?)\sn=\d+?\sTax=(.+?)\sTaxID=")
     unirefRegex = re.compile(r">.+?\s(.+?)\s\[(.+?)\]")
+    prefixRegex = re.compile(r"^UniRef\d{2}_")
     
     # Parse the blastFasta file to get details for relevant sequences
     with open(blastFasta, "r") as fileIn:
@@ -443,6 +444,11 @@ def update_table_with_seq_details(originalTable, newTable, hitMapDict,
                     if geneName.strip(" ") == "":
                         "I don't think this is necessary; it's just a precaution"
                         geneName = "."
+                    
+                    # Remove the UniRef##_ prefix if necessary
+                    prefixMatch = prefixRegex.match(geneName)
+                    if prefixMatch != None:
+                        geneName = geneName[prefixMatch.span()[1]:]
                     
                     # Store data
                     hitMapDict[seqID] = [geneName, taxaName]
