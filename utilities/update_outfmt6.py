@@ -50,6 +50,17 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
+    #### Disable functionality of this code until a better solution is found ####
+    
+    print("update_outfmt6.py has a flaw in its logic")
+    print("If a representative is from a reference genome, it may not have a hit")
+    print("This would result in NO hit showing through in the results")
+    print("You're better off running BLAST/MMSeqs2 again using the output representative sequences" +
+          " to prevent any silent errors in your data")
+    quit()
+    
+    #### ----- ####
+    
     # Associate representatives with their cluster IDs
     clustersDict = {} # don't like this variable name anymore but I need to keep it ...
     with open(args.representativesFasta, "r") as fileIn: # ... consistent with unify_representatives
