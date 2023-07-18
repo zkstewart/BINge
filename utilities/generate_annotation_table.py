@@ -123,6 +123,7 @@ def init_table(blastFile, evalueCutoff, numHits, outputFileName,
             
             ## > Large table formatting
             if largeTable == True:
+                # Encapsulate things in square brackets if they're not the first hit
                 for i in range(len(bestHits)):
                     if i == 0:
                         for x in range(1, 12): # there's 11 columns in the initial output
@@ -130,8 +131,11 @@ def init_table(blastFile, evalueCutoff, numHits, outputFileName,
                     else:
                         for x in range(1, 12):
                             formattedList[x-1].append('[' + bestHits[i][x] + ']')
+                
+                # Format values into a string
+                spacer = " " if len(bestHits) > 1 else "" # add a space inbetween first and second values if relevant
                 for i in range(len(formattedList)):
-                    formattedList[i] = ''.join([formattedList[i][0], ' ', *formattedList[i][1:]])
+                    formattedList[i] = ''.join([formattedList[i][0], spacer, *formattedList[i][1:]])
                 
                 # Handle database tagging and fix blank formattedList if no hits were found
                 if formattedList == []:
@@ -142,6 +146,7 @@ def init_table(blastFile, evalueCutoff, numHits, outputFileName,
             
             ## > Slim table formatting
             else:
+                # Encapsulate things in square brackets if they're not the first hit
                 slimTargetIndices = [1, 2, 10, 11]
                 for i in range(len(bestHits)):
                     if i == 0:
@@ -150,8 +155,11 @@ def init_table(blastFile, evalueCutoff, numHits, outputFileName,
                     else:
                         for x in slimTargetIndices:
                             formattedList[slimTargetIndices.index(x)].append('[' + bestHits[i][x] + ']')
+                
+                # Format values into a string
+                spacer = " " if len(bestHits) > 1 else "" # add a space inbetween first and second values if relevant
                 for i in range(len(formattedList)):
-                    formattedList[i] = ''.join([formattedList[i][0], ' ', *formattedList[i][1:]])
+                    formattedList[i] = ''.join([formattedList[i][0], spacer, *formattedList[i][1:]])
                 
                 # Handle database tagging and fix blank formattedList if no hits were found
                 if formattedList == []:
@@ -428,7 +436,11 @@ def update_table_with_seq_details(originalTable, newTable, hitMapDict,
     with open(blastFasta, "r") as fileIn:
         for line in fileIn:
             if line.startswith(">"):
+                # Extract sequence ID from FASTA line
                 seqID = line[1:].rstrip("\r\n ").split(" ")[0]
+                seqID = seqID.split("_", maxsplit=1)[1] if seqID.startswith("UniRef") else seqID
+                
+                # Store value in dict
                 if seqID in hitMapDict:
                     # See if this sequence has information we can obtain
                     refseqMatch = refseqRegex.match(line)
