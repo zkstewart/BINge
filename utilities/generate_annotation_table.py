@@ -331,10 +331,10 @@ def fix_obsoletions(goList, goObo, queriedGOs):
             if not goTerm in queriedGOs:
                 replacements = query_go_api(goTerm)
                 queriedGOs[goTerm] = replacements
-                
+            
             # Get the API query result
             apiGOs = queriedGOs[goTerm]
-        
+            
             # Store result if we were successful
             if apiGOs != None:
                 fixedGOs += apiGOs
@@ -371,7 +371,7 @@ def query_go_api(goTerm):
         print("However, it is not found in the go.obo file?")
         print("The program will continue, but this error means no ancestor terms " + 
               "will be returned for this GO term")
-        return 
+        return [goTerm]
     
     # Process results and try to find replacements or considers
     else:
