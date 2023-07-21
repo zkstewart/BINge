@@ -17,7 +17,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Various_scripts import ZS_ClustIO
 
 from modules.bins import Bin, BinCollection
-from modules.thread_workers import GmapBinThread, OutputWorkerThread, WorkerThread
+from modules.thread_workers import GmapBinThread, OutputWorkerThread, CDHITWorkerThread
 from modules.gff3_handling import GFF3
 from modules.fasta_handling import ZS_SeqIO, FastaCollection
 
@@ -257,7 +257,7 @@ def multithread_bin_cluster(binCollectionList, threads, mem, transcriptRecords,
     
     # Start up threads for clustering of bins
     for _ in range(threads):
-        worker = WorkerThread(workerQueue, outputQueue, transcriptRecords, mem)
+        worker = CDHITWorkerThread(workerQueue, outputQueue, transcriptRecords, mem)
         worker.setDaemon(True)
         worker.start()
     
@@ -465,18 +465,18 @@ def main():
                 gmapFile = args.gmapFiles[i+x]
                 binCollection = collectionList[i+x]
                 
-                workerThread = GmapBinThread(gmapFile, binCollection)
-                processing.append(workerThread)
-                workerThread.start()
+                gmapWorkerThread = GmapBinThread(gmapFile, binCollection)
+                processing.append(gmapWorkerThread)
+                gmapWorkerThread.start()
         
         # Gather results
-        for workerThread in processing:
+        for gmapWorkerThread in processing:
             # Wait for thread to end
-            workerThread.join()
+            gmapWorkerThread.join()
             
             # Grab the new outputs from this thread
             "Each thread modifies a BinCollection part of collectionList directly"
-            threadNovelBinCollection = workerThread.novelBinCollection
+            threadNovelBinCollection = gmapWorkerThread.novelBinCollection
             
             # Merge them
             novelBinCollection.merge(threadNovelBinCollection)
@@ -502,6 +502,7 @@ def main():
     binCollection.merge(novelBinCollection)
     binCollection = iterative_bin_self_linking(binCollection, args.convergenceIters)
     
+
     # Load transcripts into memory for quick access
     transcriptRecords = FastaCollection(args.fastaFiles)
     

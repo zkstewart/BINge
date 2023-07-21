@@ -19,6 +19,7 @@ class GmapBinThread(Thread):
         self.gmapFile = gmapFile
         self.binCollection = binCollection
         self.novelBinCollection = None
+        self.exception = None
     
     def bin_by_gmap(self):
         '''
@@ -29,8 +30,9 @@ class GmapBinThread(Thread):
                             generated from an official genome annotation.
         '''
         # Behavioural parameters (static for now, may change later)
-        OKAY_COVERAGE = 94
-        OKAY_IDENTITY = 92
+        OKAY_COVERAGE = 96.5
+        OKAY_IDENTITY = 95
+        OKAY_INDEL_PROPORTION = 0.01
         ##
         ALLOWED_COV_DIFF = 1
         ALLOWED_IDENT_DIFF = 0.1
@@ -41,15 +43,22 @@ class GmapBinThread(Thread):
         # Parse GMAP file and begin binning
         novelBinCollection = BinCollection() # holds onto novel bins we create during this process
         pathDict = {} # holds onto sequences we've already checked a path for
-            
+        
         for feature in iterate_through_gff3(self.gmapFile):
             mrnaFeature = feature.mRNA[0]
             
             # Get alignment statistics
             coverage, identity = float(mrnaFeature.coverage), float(mrnaFeature.identity)
+            exonLength = sum([
+                exonFeature.end - exonFeature.start + 1
+                for exonFeature in mrnaFeature.exon
+            ])
+            indelProportion = int(mrnaFeature.indels) / exonLength
             
             # Skip processing if the alignment sucks
-            isGoodAlignment = coverage >= OKAY_COVERAGE and identity >= OKAY_IDENTITY
+            isGoodAlignment = coverage >= OKAY_COVERAGE \
+                              and identity >= OKAY_IDENTITY \
+                              and indelProportion <= OKAY_INDEL_PROPORTION
             if not isGoodAlignment:
                 continue
             
@@ -64,8 +73,8 @@ class GmapBinThread(Thread):
                     continue
             
             # Now that we've checked if this path is good, we'll store it
-            """This means on the next loop if there's another path for this gene, but it's worse
-            than this current one, we'll just skip it"""
+            """This means on the next loop if there's another path for this gene, 
+            but it's worse than this current one, we'll just skip it"""
             pathDict.setdefault(baseID, [coverage, identity])
             
             # See if this overlaps an existing bin
@@ -130,6 +139,7 @@ class OutputWorkerThread(Thread):
         self.outputFileName = outputFileName
         self.clusterType = clusterType
         self.numClusters = None
+        self.exception = None
     
     def worker_function(self):
         '''
@@ -180,7 +190,7 @@ class OutputWorkerThread(Thread):
         if self.exception:
             raise self.exception
 
-class WorkerThread(Thread):
+class CDHITWorkerThread(Thread):
     '''
     This provides a modified Thread which is only being done for code tidiness and OOP
     reasons. Encapsulates the code needed to cluster a Bin using CD-HIT.
@@ -200,6 +210,7 @@ class WorkerThread(Thread):
         self.outputQueue = outputQueue
         self.transcriptRecords = transcriptRecords
         self.mem = mem
+        self.exception = None
     
     def worker_function(self):
         '''
@@ -313,7 +324,7 @@ def _calculate_overlap_percentages(feature, bin):
     Bin should come from a BinCollection.
     '''
     overlapLength = min(feature.end, bin.end) - max(feature.start, bin.start)
-    featureOvlPct = overlapLength / (feature.end - feature.start + 1)
-    binOvlPct = overlapLength / (bin.end - bin.start + 1)
+    featureOvlPct = overlapLength / (feature.end - feature.start)
+    binOvlPct = overlapLength / (bin.end - bin.start)
     
     return featureOvlPct, binOvlPct

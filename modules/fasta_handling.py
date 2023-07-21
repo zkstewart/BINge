@@ -30,7 +30,14 @@ class FastaCollection:
             except:
                 pass
         raise KeyError(f"'{key}' not found in collection")
-
+    
+    def __contains__(self, key):
+        try:
+            self[key] # __getitem__ raises exception if the key isn't found
+            return True
+        except:
+            return False
+    
     def __iter__(self):
         for records in self.records:
             yield from records
