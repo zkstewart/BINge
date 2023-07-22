@@ -1,10 +1,11 @@
 import os, sys, time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts import ZS_SeqIO, ZS_ClustIO
 
-from .bins import BinCollection, Bin
+from .bins import BinCollection, Bin, BinSplitter
 from .gff3_handling import iterate_through_gff3
 from threading import Thread
+
+####
 
 class GmapBinThread(Thread):
     '''
@@ -49,9 +50,10 @@ class GmapBinThread(Thread):
             
             # Get alignment statistics
             coverage, identity = float(mrnaFeature.coverage), float(mrnaFeature.identity)
+            exonList = Bin.format_exons_from_gff3_feature(mrnaFeature)
             exonLength = sum([
-                exonFeature.end - exonFeature.start + 1
-                for exonFeature in mrnaFeature.exon
+                end - start + 1
+                for start, end in exonList
             ])
             indelProportion = int(mrnaFeature.indels) / exonLength
             
@@ -98,7 +100,7 @@ class GmapBinThread(Thread):
                 
                 # If this should join the gene bin, do so now
                 if shouldJoin:
-                    geneBin.add(baseID)
+                    geneBin.add(baseID, exonList)
                 
                 # Otherwise, add it to an existing novel bin or create a new novel bin
                 else:
@@ -109,178 +111,6 @@ class GmapBinThread(Thread):
     def run(self):
         try:
             self.novelBinCollection = self.bin_by_gmap()
-        except BaseException as e:
-            self.exception = e
-    
-    def join(self):
-        Thread.join(self)
-        if self.exception:
-            raise self.exception
-
-class OutputWorkerThread(Thread):
-    '''
-    This provides a modified Thread which allows for the output worker to return a value
-    indicating how many clusters it wrote to file. This will save a little bit of time later
-    when we want to append more cluster results to the same file.
-    
-    Parameters:
-        outputQueue -- a queue.Queue object that receives outputs from worker threads.
-        outputFileName -- a string indicating the location to write results to.
-        clusterType -- a string to put in an output column indicating what source of
-                       evidence led to this cluster's formation; usually, this will
-                       have the value of "binned" to indicate that it was binned via
-                       GMAP alignment, or "unbinned" to indicate that it has been
-                       binned solely via CD-HIT clustering.
-    '''
-    def __init__(self, outputQueue, outputFileName, clusterType):
-        Thread.__init__(self)
-        
-        self.outputQueue = outputQueue
-        self.outputFileName = outputFileName
-        self.clusterType = clusterType
-        self.numClusters = None
-        self.exception = None
-    
-    def worker_function(self):
-        '''
-        Receives Bin objects via self.outputQueue and writes them to file.
-        Iterates self.numClusters to keep tally of how many clusters we've
-        written. Because of the nature of this process, the value at the
-        point of thread closure will be +1 higher than the actual number
-        of written clusters.
-        '''
-        self.numClusters = 1
-        with open(self.outputFileName, "w") as fileOut:
-            # Write header
-            fileOut.write("#BINge clustering information file\n")
-            fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
-            
-            # Write content lines as they become available
-            while True:
-                # Continue condition
-                if self.outputQueue.empty():
-                    time.sleep(0.5)
-                    continue
-                
-                # Grabbing condition
-                clusterDict = self.outputQueue.get()
-                
-                # Exit condition
-                if clusterDict == None:
-                    self.outputQueue.task_done()
-                    break
-                
-                # Perform work
-                for clusterIDs in clusterDict.values():
-                    for seqID in clusterIDs:
-                        fileOut.write(f"{self.numClusters}\t{seqID}\t{self.clusterType}\n")
-                    self.numClusters += 1
-                
-                # Mark work completion
-                self.outputQueue.task_done()
-    
-    def run(self):
-        try:
-            self.worker_function()
-        except BaseException as e:
-            self.exception = e
-    
-    def join(self):
-        Thread.join(self)
-        if self.exception:
-            raise self.exception
-
-class CDHITWorkerThread(Thread):
-    '''
-    This provides a modified Thread which is only being done for code tidiness and OOP
-    reasons. Encapsulates the code needed to cluster a Bin using CD-HIT.
-    
-    Parameters:
-        binQueue -- a queue.Queue object containing Bin objects for clustering.
-        outputQueue -- a queue.Queue object that will receive the processed outputs
-                       of this worker thread.
-        transcriptRecords -- a pyfaidx Fasta object containing all the sequences
-                             we'll want to cluster from our bins.
-        mem -- an integer indicating how many megabytes of memory to run CD-HIT with.
-    '''
-    def __init__(self, binQueue, outputQueue, transcriptRecords, mem):
-        Thread.__init__(self)
-        
-        self.binQueue = binQueue
-        self.outputQueue = outputQueue
-        self.transcriptRecords = transcriptRecords
-        self.mem = mem
-        self.exception = None
-    
-    def worker_function(self):
-        '''
-        Receives Bin objects via self.binQueue and processes them, adding
-        the results in self.outputQueue.
-        '''
-        while True:
-            # Continue condition
-            if self.binQueue.empty():
-                time.sleep(0.5)
-                continue
-            
-            # Grabbing condition
-            bin = self.binQueue.get()
-            
-            # Exit condition
-            if bin == None:
-                self.binQueue.task_done()
-                break
-            
-            # Perform work
-            clusterDict = self.cluster_bin(bin)
-            
-            # Store result in output queue
-            self.outputQueue.put(clusterDict)
-            
-            # Mark work completion
-            self.binQueue.task_done()
-    
-    def cluster_bin(self, bin):
-        '''
-        Performs the work of clustering the sequences in a bin with CD-HIT.
-        
-        Parameters:
-            bin -- a Bin object which should be clustered with CD-HIT.
-        
-        Returns:
-            clusterDict -- a dictionary result of clustering with structure like:
-                        {
-                            0: [seqid1, seqid2, ...],
-                            1: [ ... ],
-                            ...
-                        }
-        '''
-        # Bypass clustering if this bin has only one sequence
-        if len(bin.ids) == 1:
-            clusterDict = {0: list(bin.ids)}
-        else:
-            # Create a FASTA object for the sequences in this bin
-            FASTA_obj = ZS_SeqIO.FASTA(None)
-            for id in bin.ids:
-                FastASeq_obj = ZS_SeqIO.FastASeq(id, str(self.transcriptRecords[id]))
-                FASTA_obj.insert(0, FastASeq_obj)
-            
-            # Cluster it with CD-HIT at lax settings
-            clusterer = ZS_ClustIO.CDHIT(FASTA_obj, "nucleotide")
-            clusterer.identity = 0.8
-            clusterer.set_shorter_cov_pct(0.2)
-            clusterer.set_longer_cov_pct(0.0)
-            clusterer.set_local()
-            clusterer.mem = self.mem
-            clusterer.get_cdhit_results(returnFASTA=False, returnClusters=True) # throw away the temporary file return value
-            
-            clusterDict = clusterer.resultClusters
-        
-        return clusterDict
-    
-    def run(self):
-        try:
-            self.worker_function()
         except BaseException as e:
             self.exception = e
     
@@ -328,3 +158,130 @@ def _calculate_overlap_percentages(feature, bin):
     binOvlPct = overlapLength / (bin.end - bin.start)
     
     return featureOvlPct, binOvlPct
+
+####
+
+class BinSplitWorkerThread(Thread):
+    '''
+    This provides a modified Thread which is only being done for code tidiness and OOP
+    reasons. Encapsulates the code needed to split a bin using the BinSplitter Class.
+    
+    Parameters:
+        binQueue -- a queue.Queue object containing Bin objects for splitting.
+        outputQueue -- a queue.Queue object that will receive the processed outputs
+                       of this worker thread.
+    '''
+    def __init__(self, binQueue, outputQueue):
+        Thread.__init__(self)
+        
+        self.binQueue = binQueue
+        self.outputQueue = outputQueue
+        self.exception = None
+    
+    def worker_function(self):
+        '''
+        Receives Bin objects via self.binQueue and processes them, adding
+        the bin and the BinSplitter results to self.outputQueue.
+        '''
+        while True:
+            # Continue condition
+            if self.binQueue.empty():
+                time.sleep(0.5)
+                continue
+            
+            # Grabbing condition
+            bin = self.binQueue.get()
+            
+            # Exit condition
+            if bin == None:
+                self.binQueue.task_done()
+                break
+            
+            # Perform work
+            splitter = BinSplitter(bin)
+            splitter.cluster()
+            clusterDict = splitter.resultClusters
+            
+            # Store result in output queue
+            self.outputQueue.put([bin, clusterDict])
+            
+            # Mark work completion
+            self.binQueue.task_done()
+    
+    def run(self):
+        try:
+            self.worker_function()
+        except BaseException as e:
+            self.exception = e
+    
+    def join(self):
+        Thread.join(self)
+        if self.exception:
+            raise self.exception
+
+class CollectionWorkerThread(Thread):
+    '''
+    This provides a modified Thread which allows for multiple BinSplitter objects to
+    run in parallel, feeding their output to an instance of this Class which combines
+    their results into a new BinCollection.
+    
+    Parameters:
+        outputQueue -- a queue.Queue object that receives outputs from worker threads.
+    '''
+    def __init__(self, outputQueue):
+        Thread.__init__(self)
+        
+        self.outputQueue = outputQueue
+        self.binCollection = None
+        self.exception = None
+    
+    def worker_function(self):
+        '''
+        Receives Bin objects and their BinSplitter dictionary results via self.outputQueue
+        and stores them in a new BinCollection.
+        '''
+        self.binCollection = BinCollection()
+        
+        # Process results as they become available
+        while True:
+            # Continue condition
+            if self.outputQueue.empty():
+                time.sleep(0.5)
+                continue
+            
+            # Grabbing condition
+            bin, clusterDict = self.outputQueue.get()
+            
+            # Exit condition
+            if clusterDict == None:
+                self.outputQueue.task_done()
+                break
+            
+            # Perform work
+            for clusterIDs in clusterDict.values():
+                # Derive the position of this cluster
+                contig = bin.contig
+                start = min([ start for seqID in clusterIDs for start, end in bin.exons[seqID] ])
+                end = max([ end for seqID in clusterIDs for start, end in bin.exons[seqID] ])
+                exonsDict = { seqID : [] for seqID in clusterIDs } # exons are not needed anymore
+                
+                # Create a bin for this split cluster
+                newBin = Bin(contig, start, end)
+                newBin.union(clusterIDs, exonsDict)
+                
+                # Store it in the BinCollection
+                self.binCollection.add(newBin)
+            
+            # Mark work completion
+            self.outputQueue.task_done()
+    
+    def run(self):
+        try:
+            self.worker_function()
+        except BaseException as e:
+            self.exception = e
+    
+    def join(self):
+        Thread.join(self)
+        if self.exception:
+            raise self.exception

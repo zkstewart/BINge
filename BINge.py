@@ -17,7 +17,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Various_scripts import ZS_ClustIO
 
 from modules.bins import Bin, BinCollection
-from modules.thread_workers import GmapBinThread, OutputWorkerThread, CDHITWorkerThread
+from modules.thread_workers import GmapBinThread, BinSplitWorkerThread, CollectionWorkerThread
 from modules.gff3_handling import GFF3
 from modules.fasta_handling import ZS_SeqIO, FastaCollection
 
@@ -196,7 +196,7 @@ def bin_self_linker(binCollection):
         
         newBin = binDict[connectedBins[0]]
         for index in connectedBins[1:]:
-            newBin.union(binDict[index].ids)
+            newBin.union(binDict[index].ids, binDict[index].exons)
         linkedBinCollection.add(newBin)
     
     return linkedBinCollection
@@ -219,67 +219,59 @@ def iterative_bin_self_linking(binCollection, convergenceIters):
         prevCollectionCount = len(binCollection.bins)
     return binCollection
 
-def multithread_bin_cluster(binCollectionList, threads, mem, transcriptRecords,
-                            outputFileName, clusterType="binned"):
+def multithread_bin_splitter(binCollection, threads):
     '''
-    This code has been pulled out into a function solely to ensure the main() function
-    is cleaner to read.
+    Using a queue system, worker threads will grab bins from the binCollection parameter
+    process with the BinSplitter class. They will put their results into the output
+    worker which will help to format a new BinCollection object as output.
     
-    What it does is set up a queue to store bins. Worker threads will grab bins to
-    process with CD-HIT. They will put their predicted cluster dictionary into the output
-    worker which will write it to file.
-    
-    We use this CD-HIT clustering of bins because each bin is only guaranteed to contain
+    We want to split bins because each bin is only guaranteed to contain
     sequences that generally align well over a predicted genomic region. There's no
     guarantee that they are isoforms of the same gene, or even share any exonic content.
-    This clustering step is very lax and designed just to separate out overlapping
-    genes (which aren't actually the _same_ gene).
+    This splitting step is very lax and designed specifically for separating out nested
+    genes within the introns of what might be considered the "main gene" the
+    bin represents.
     
     Parameters:
-        binCollectionList -- a list containing BinCollections.
+        binCollection -- a BinCollection containing Bins which have aligned against
+                         a reference genome, and hence have informative .exons values.
         threads -- an integer indicating how many threads to run.
-        mem -- an integer indicating how many megabytes of memory to run CD-HIT with.
-        transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
-                             sequences.
-        outputFileName -- a string indicating the location to write output clustering
-                          results to.
         clusterType -- a string to put in an output column indicating what source of
                        evidence led to this cluster's formation; usually, this will
                        have the value of "binned" to indicate that it was binned via
                        GMAP alignment, or "unbinned" to indicate that it has been
                        binned solely via CD-HIT clustering.
     Returns:
-        numClusters -- an integer indicating how many clusters have been created.
+        newBinCollection -- a new BinCollection object to replace the original one.
     '''
     # Set up queueing system for multi-threading
     workerQueue = queue.Queue(maxsize=int(threads * 10)) # allow queue to scale with threads
-    outputQueue = queue.Queue(maxsize=int(threads * 100))
+    outputQueue = queue.Queue(maxsize=int(threads * 20))
     
     # Start up threads for clustering of bins
     for _ in range(threads):
-        worker = CDHITWorkerThread(workerQueue, outputQueue, transcriptRecords, mem)
+        worker = BinSplitWorkerThread(workerQueue, outputQueue)
         worker.setDaemon(True)
         worker.start()
     
-    outputWorker = OutputWorkerThread(outputQueue, outputFileName, clusterType)
+    outputWorker = CollectionWorkerThread(outputQueue)
     outputWorker.setDaemon(True)
     outputWorker.start()
     
     # Put bins in queue for worker threads
-    for binCollection in binCollectionList:
-        for interval in binCollection:
-            bin = interval.data
-            workerQueue.put(bin)
+    for interval in binCollection:
+        bin = interval.data
+        workerQueue.put(bin)
     
     # Close up shop on the threading structures
     for i in range(threads):
         workerQueue.put(None) # this is a marker for the worker threads to stop
     workerQueue.join()
     
-    outputQueue.put(None) # marker for the output thead to stop
+    outputQueue.put([None, None]) # marker for the output thead to stop; needs 2 Nones!
     outputQueue.join()
     
-    return outputWorker.numClusters - 1 # -1 to return the amount of clusters we actually wrote
+    return outputWorker.binCollection
 
 def find_missing_sequence_id(binCollectionList, transcriptRecords):
     '''
@@ -486,6 +478,9 @@ def main():
     for i in range(1, len(collectionList)):
         binCollection.merge(collectionList[i])
     
+    # Split bins containing overlapping (but not exon-sharing) genes e.g., nested genes
+    binCollection = multithread_bin_splitter(binCollection, args.threads)
+    
     # Link and merge bins across genomes / across gene copies
     """Usually linking will unify multiple genomes together, but it may detect
     bins of identical gene copies and link them together which is reasonable
@@ -514,10 +509,19 @@ def main():
         print("This error cannot be reconciled, so the program will exit now.")
         quit()
     
-    # Cluster each bin with CD-HIT to separate overlapping genes
-    numClusters = multithread_bin_cluster([binCollection], # TBD: Exit program if thread fails
-                                          args.threads, args.cdhitMem, transcriptRecords,
-                                          args.outputFileName, clusterType="binned")
+    # Write binned clusters to file
+    with open(args.outputFileName, "w") as fileOut:
+        # Write header
+        fileOut.write("#BINge clustering information file\n")
+        fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
+        
+        # Write content lines
+        numClusters = 0
+        for interval in binCollection:
+            bin = interval.data
+            for seqID in bin.ids:
+                fileOut.write(f"{numClusters+1}\t{seqID}\tbinned\n")
+            numClusters += 1
     
     # Cluster remaining unbinned sequences
     unbinnedIDs = get_unbinned_sequence_ids([binCollection], transcriptRecords)
