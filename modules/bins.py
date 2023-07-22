@@ -11,6 +11,7 @@ class Bin:
         self.end = end
         
         self.ids = set() # set of sequence IDs
+        self.exons = {} # dictionary pairing set IDs to exon lists
     
     @property
     def contig(self):
@@ -45,13 +46,16 @@ class Bin:
             "A Bin must end at a value >= 1 (it behaves 1-based for indexing)"
         self._end = value
     
-    def add(self, idValue):
+    def add(self, idValue, exonList):
         assert isinstance(idValue, str)
         self.ids.add(idValue)
+        self.exons[idValue] = exonList
     
-    def union(self, ids):
+    def union(self, ids, exons):
         assert isinstance(ids, list) or isinstance(ids, set)
+        assert isinstance(exons, dict)
         self.ids = self.ids.union(ids)
+        self.exons.update(exons)
     
     def merge(self, otherBin):
         assert self.contig == otherBin.contig, \
@@ -59,12 +63,48 @@ class Bin:
         
         self.start = min(self.start, otherBin.start)
         self.end = max(self.end, otherBin.end)
-        self.ids = self.ids.union(otherBin.ids)
+        self.union(otherBin.ids, otherBin.exons)
     
     def __repr__(self):
         return (f"<Bin object;contig='{self.contig}';start={self.start};" +
                 f"end={self.end};num_ids={len(self.ids)}"
         )
+    
+    @staticmethod
+    def format_exons_from_gff3_feature(gff3Feature):
+        '''
+        Helper function for getting exons from a GFF3 feature when creating
+        a Bin object. For mRNAs, this is simple - we just get the .exon coordinates.
+        For genes, we use the IntervalTree class to merge overlapping coordinate
+        ranges.
+        
+        Parameters:
+            gff3Feature -- a GFF3.Feature for a gene or mRNA object
+        '''
+        assert gff3Feature.type in ["gene", "mRNA"], \
+            "Can only format exons from a GFF3 feature that is a gene or mRNA!"
+        
+        if gff3Feature.type == "gene":
+            assert hasattr(gff3Feature, "mRNA"), \
+                "Gene GFF3 feature does not have mRNA attribute; cannot format exons..."
+            
+            tree = IntervalTree.from_tuples([
+                exonFeature.coords
+                for mrnaFeature in gff3Feature.mRNA
+                for exonFeature in mrnaFeature.exon
+            ])
+            tree.merge_overlaps()
+            exons = sorted([
+                [interval.begin, interval.end]
+                for interval in tree
+            ])
+        else:
+            exons = sorted([
+                exonFeature.coords
+                for exonFeature in gff3Feature.exon
+            ])
+
+        return exons
 
 class BinCollection:
     '''

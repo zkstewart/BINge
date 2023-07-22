@@ -99,7 +99,7 @@ def generate_bin_collections(annotationFiles):
             
             # Create a bin for this feature
             featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
-            featureBin.add(geneFeature.ID)
+            featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
             
             # See if this overlaps an existing bin
             binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
@@ -502,7 +502,6 @@ def main():
     binCollection.merge(novelBinCollection)
     binCollection = iterative_bin_self_linking(binCollection, args.convergenceIters)
     
-
     # Load transcripts into memory for quick access
     transcriptRecords = FastaCollection(args.fastaFiles)
     

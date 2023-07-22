@@ -83,7 +83,7 @@ class GmapBinThread(Thread):
             # If it does not overlap an existing bin ...
             if len(binOverlap) == 0:
                 # ... either add it to an existing novel bin or create a new novel bin
-                _novel_binner(feature, novelBinCollection, NOVEL_BIN_OVL_PCT)
+                _novel_binner(mrnaFeature, novelBinCollection, NOVEL_BIN_OVL_PCT) # pass mRNA
             
             # Exclude any transcripts that overlap multiple genes
             elif len(binOverlap) > 1:
@@ -102,7 +102,7 @@ class GmapBinThread(Thread):
                 
                 # Otherwise, add it to an existing novel bin or create a new novel bin
                 else:
-                    _novel_binner(feature, novelBinCollection, NOVEL_BIN_OVL_PCT)
+                    _novel_binner(mrnaFeature, novelBinCollection, NOVEL_BIN_OVL_PCT)
         
         return novelBinCollection
     
@@ -289,23 +289,23 @@ class CDHITWorkerThread(Thread):
         if self.exception:
             raise self.exception
 
-def _novel_binner(feature, novelBinCollection, NOVEL_BIN_OVL_PCT):
+def _novel_binner(mrnaFeature, novelBinCollection, NOVEL_BIN_OVL_PCT):
     '''
     Helper function pulled out to prevent code repetition. It will
     take a feature that has been determined to be "novel" and handle
     whether it should be binned with another novel bin or become
     a new bin itself.
     '''
-    baseID = feature.ID.rsplit(".", maxsplit=1)[0]
+    baseID = mrnaFeature.ID.rsplit(".", maxsplit=1)[0]
     
-    thisBin = Bin(feature.contig, feature.start, feature.end) # create a novel bin
-    thisBin.add(baseID) # we don't want the .path# suffix attached to this bin
+    thisBin = Bin(mrnaFeature.contig, mrnaFeature.start, mrnaFeature.end) # create a novel bin
+    thisBin.add(baseID, Bin.format_exons_from_gff3_feature(mrnaFeature)) # we don't want the .path# / .mrna# suffix attached to this bin
     
     # ... see if this overlaps a novel bin that it should join
-    novelBinOverlap = novelBinCollection.find(feature.contig, feature.start, feature.end)
+    novelBinOverlap = novelBinCollection.find(mrnaFeature.contig, mrnaFeature.start, mrnaFeature.end)
     binsToJoin = []
     for novelBin in novelBinOverlap:
-        featureOvlPct, binOvlPct = _calculate_overlap_percentages(feature, novelBin)
+        featureOvlPct, binOvlPct = _calculate_overlap_percentages(mrnaFeature, novelBin)
         shouldJoin = featureOvlPct >= NOVEL_BIN_OVL_PCT or binOvlPct >= NOVEL_BIN_OVL_PCT
         if shouldJoin:
             binsToJoin.append(novelBin)
