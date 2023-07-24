@@ -14,7 +14,7 @@ import os, argparse, sys, queue
 import networkx as nx
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from Various_scripts import ZS_ClustIO
+from Various_scripts import ZS_ClustIO, ZS_BlastIO
 
 from modules.bins import Bin, BinCollection
 from modules.thread_workers import GmapBinThread, BinSplitWorkerThread, CollectionWorkerThread
@@ -39,13 +39,15 @@ def validate_args(args):
             print(f'I am unable to locate the GMAP GFF3 file ({gmapFile})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
+    
     # Validate the input files are logically sound
     if len(args.annotationFiles) != len(args.gmapFiles):
         print("Your genome annotation and GMAP files are incompatible!")
         print(f"I'm seeing {len(args.annotationFiles)} annotation files and {len(args.gmapFiles)} GMAP files")
         print("These numbers should be the same. You need to fix this up and try again.")
         quit()
-    # Validate numeric inputs
+    
+    # Validate optional BINge parameters
     if args.threads < 1:
         print("--threads should be given a value >= 1")
         print("Fix this and try again.")
@@ -54,10 +56,37 @@ def validate_args(args):
         print("--convergence_iters should be given a value >= 1")
         print("Fix this and try again.")
         quit()
-    if not 0.0 < args.cdhitIdentity <= 1.0:
-        print("--cdhit_identity should be given a value greater than zero, and equal or less than 1")
+    if not 0.0 < args.identity <= 1.0:
+        print("--identity should be given a value greater than zero, and equal to " + 
+              "or less than 1")
         print("Fix this and try again.")
         quit()
+        
+    # Validate optional MMseqs2 parameters
+    if args.unbinnedClusterer in ["mmseqs-cascade", "mmseqs-linclust"]:
+        if args.mmseqsDir == None:
+            print(f"--mmseqs must be specified if you're using '{args.unbinnedClusterer}'")
+            quit()
+        if not os.path.isdir(args.mmseqsDir):
+            print(f'I am unable to locate the MMseqs2 directory ({args.mmseqsDir})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+        "--tmpDir is validated by the MM_DB Class"
+        if args.evalue < 0:
+            print("--evalue must be greater than or equal to 0")
+            quit()
+        if not 0 <= args.coverage <= 1.0:
+            print("--coverage must be a float in the range 0.0 -> 1.0")
+            quit()
+        "--mode is controlled by argparse choices"
+        
+        # Validate "MMS-CASCADE" parameters
+        "--sensitivity is controlled by argparse choices"
+        if args.steps < 1:
+            print("--steps must be greater than or equal to 1")
+            quit()
+    
+    # Validate optional CD-HIT parameters
     if not 0.0 <= args.cdhitShortCov <= 1.0:
         print("--cdhit_shortcov should be given a value in the range of 0 -> 1 (inclusive)")
         print("Fix this and try again.")
@@ -70,6 +99,7 @@ def validate_args(args):
         print("--cdhit_mem should be given a value at least greater than 100 (megabytes)")
         print("Fix this and try again.")
         quit()
+    
     # Validate output file location
     if os.path.isfile(args.outputFileName):
         print(f'File already exists at output location ({args.outputFileName})')
@@ -306,6 +336,9 @@ def get_unbinned_sequence_ids(binCollectionList, transcriptRecords):
         binCollectionList -- a list containing BinCollection's
         transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
                              sequences
+    Returns:
+        unbinnedIDs -- a set containing string value for sequence IDs that were not
+                       binned by BINge's main clustering process.
     '''
     binnedIDs = []
     for binCollection in binCollectionList:
@@ -314,14 +347,14 @@ def get_unbinned_sequence_ids(binCollectionList, transcriptRecords):
             binnedIDs.extend(bin.ids)
     binnedIDs = set(binnedIDs)
     
-    unbinnedIDs = []
+    unbinnedIDs = set()
     for record in transcriptRecords:
         if record.name not in binnedIDs:
-            unbinnedIDs.append(record.name)
+            unbinnedIDs.add(record.name)
+    
     return unbinnedIDs
 
-def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, threads, mem,
-                               IDENTITY=0.85, SHORTER_COV_PCT=0.6, LONGER_COV_PCT=0.3):
+def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args):
     '''
     Runs CD-HIT on the unbinned sequences in order to assign them to a cluster.
     It's not ideal, but the alternative is to exclude these sequences which may
@@ -333,15 +366,127 @@ def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, threads, mem,
     into "genes" or the closest thing we have to them without proper genomic evidence.
     
     Parameters:
-        unbinnedIDs -- a list containg sequence IDs that exist in transcriptRecords
-                       which should be clustered with CD-HIT.
+        unbinnedIDs -- a set containg sequence IDs that exist in transcriptRecords
+                       which should be clustered with an external algorithm.
         transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
                              sequences.
+        args -- an argparse ArgumentParser object with attributes as set by BINge's
+                main argument parsing process.
+    '''
+    # Generate a temporary FASTA file containing unbinned transcripts
+    tmpFileName = write_unbinned_fasta(unbinnedIDs, transcriptRecords)
+    
+    # Cluster the unbinned transcripts depending on BINge parameters
+    if args.unbinnedClusterer in ["mmseqs-cascade", "mmseqs-linclust"]:
+        resultClusters = mmseqs_clustering(tmpFileName, args.unbinnedClusterer, 
+                                           args.mmseqsDir, args.tmpDir,
+                                           args.threads, args.evalue, args.identity,
+                                           args.coverage, args.mode, args.sensitivity,
+                                           args.steps)
+    else:
+        resultClusters = cdhit_clustering(tmpFileName, args.cdhitDir, args.threads,
+                                          args.cdhitMem, args.identity,
+                                          args.cdhitShortCov, args.cdhitLongCov)
+    
+    # Clean up temporary file
+    os.unlink(tmpFileName)
+    
+    # Return cluster dictionary results
+    return resultClusters
+
+def mmseqs_clustering(fastaFile, algorithm, mmseqsDir, tmpDir, threads, evalue, identity,
+                      coverage, mode, sensitivity, steps):
+    '''
+    Parameters:
+        fastaFile -- a FASTA file containing nucleotide sequences for clustering.
+        algorithm -- a string in the list ["mmseqs-cascade", "mmseqs-linclust"] indicating
+                     which clustering algorithm should be used.
+        mmseqsDir -- a string indicating the location where the mmseqs executable is found.
+        tmpDir -- a string location for where MMseqs2 should keep temp files.
+        threads -- a positive integer for how many threads to use when running MMseqs2
+                   clustering.
+        evalue -- a positive float with a minimum of 0.0 controlling the E-value threshold
+                  for clustering.
+        identity -- a positive float in the range 0.0 -> 1.0 controlling the sequence identity
+                    threshold for clustering.
+        coverage -- a positive float in the range 0.0 -> 1.0 controlling the amount of aligned
+                    residues in both shorter and longer sequences.
+        mode -- a string in the list ["set-cover", "connected-component", "greedy"],
+                corresponding to modes 0, 1, and 2,3 of MMseqs2.
+    '''
+    # Generate the MMseqs2 sequence database
+    mmDB = ZS_BlastIO.MM_DB(fastaFile, mmseqsDir, tmpDir, threads)
+    mmDB.generate()
+    mmDB.index()
+    
+    # Cluster the unbinned transcripts
+    if algorithm == "mmseqs-cascade":
+        clusterer = ZS_ClustIO.MM_Cascade(
+            mmDB, evalue, identity, coverage,
+            mode, threads, tmpDir,
+            sensitivity, steps
+        )
+    else:
+        clusterer = ZS_ClustIO.MM_Linclust(
+            mmDB, evalue, identity, coverage,
+            mode, threads, tmpDir
+        )
+    clusterer.cluster()
+    
+    # Generate the tabular output
+    tmpFileName = "tmp_BINge_mms2clusttable_{0}.tsv".format(
+        ZS_SeqIO.Conversion.get_hash_for_input_sequences(fastaFile)
+    )
+    clusterer.tabulate(tmpFileName)
+    
+    # Parse it into a form that BINge can use
+    resultClusters = clusterer.parse_tsv(tmpFileName)
+    
+    # Clean up temporary file
+    os.unlink(tmpFileName)
+    
+    # Return cluster dictionary results
+    return resultClusters
+
+def cdhit_clustering(fastaFile, cdhitDir, threads, mem, identity, shorterCovPct, longerCovPct):
+    '''
+    Runs CD-HIT on the unbinned sequences in order to assign them to a cluster.
+    It's not ideal, but the alternative is to exclude these sequences which may
+    not be in line with the user's aims. By noting the source of clustering in
+    the output file, they can decide if they'd like to exclude these or not.
+    
+    Note: the default CD-HIT parameter values have been derived from some limited
+    testing which suggests that these values may work optimally to cluster sequences
+    into "genes" or the closest thing we have to them without proper genomic evidence.
+    
+    Parameters:
+        fastaFile -- a FASTA file containing nucleotide sequences for clustering.
+        cdhitDir -- a string indicating the location where cd-hit-est is found.
         threads -- an integer value indicating how many threads to run CD-HIT with.
         mem -- an integer value indicating how many megabytes of memory to run CD-HIT with.
-        IDENTITY -- a float value indicating what identity value to run CD-HIT with.
-        SHORTER_COV_PCT -- a float value setting the -aS parameter of CD-HIT.
-        LONGER_COV_PCT -- a float value setting the -aL parameter of CD-HIT.
+        identity -- a float value indicating what identity value to run CD-HIT with.
+        shorterCovPct -- a float value setting the -aS parameter of CD-HIT.
+        longerCovPct -- a float value setting the -aL parameter of CD-HIT.
+    '''
+    # Cluster the unbinned transcripts
+    clusterer = ZS_ClustIO.CDHIT(fastaFile, "nucleotide", cdhitDir)
+    clusterer.identity = identity
+    clusterer.set_shorter_cov_pct(shorterCovPct)
+    clusterer.set_longer_cov_pct(longerCovPct)
+    clusterer.threads = threads
+    clusterer.mem = mem
+    clusterer.get_cdhit_results(returnFASTA=False, returnClusters=True)
+    
+    # Return cluster dictionary results
+    return clusterer.resultClusters
+
+def write_unbinned_fasta(unbinnedIDs, transcriptRecords):
+    '''
+    A helper function which creates a temporary FASTA file containing all unbinned
+    sequences. This file will be used for clustering, after which it can be deleted.
+    
+    Parameters:
+        unbinnedIDs -- a 
     '''
     # Generate a temporary FASTA file containing unbinned transcripts
     tmpFileName = "tmp_BINge_unbinned_{0}.fasta".format(
@@ -352,39 +497,53 @@ def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, threads, mem,
             record = transcriptRecords[seqID]
             fileOut.write(f">{record.name}\n{str(record)}\n")
     
-    # Cluster the unbinned transcripts
-    clusterer = ZS_ClustIO.CDHIT(tmpFileName, "nucleotide")
-    clusterer.identity = IDENTITY
-    clusterer.set_shorter_cov_pct(SHORTER_COV_PCT)
-    clusterer.set_longer_cov_pct(LONGER_COV_PCT)
-    clusterer.threads = threads
-    clusterer.mem = mem
-    clusterer.get_cdhit_results(returnFASTA=False, returnClusters=True)
-    
-    # Clean up temporary file(s)
-    os.unlink(tmpFileName)
-    
-    # Return cluster dictionary results
-    return clusterer.resultClusters
+    return tmpFileName
 
 ## Main
 def main():
+    showHiddenArgs = '--help-long' in sys.argv
+    
     # User input
-    usage = """%(prog)s (BIN Genes for Expression analyses) is a program which bins
+    usageShort = """Quick notes for the use of %(prog)s: 1) For each annotation GFF3 (-ga)
+    you should provide a matching GMAP GFF3 alignment (-gm). 2) One or more inputs can be
+    provided with -i, which are looked at internally as a single file; all sequences in the
+    -ga files must be provided with -i (i.e., sequences with the same ID as the GFF3 IDs must
+    be given) as well all any sequences used for GMAP alignment. 3) Unbinned sequences will be
+    cascade clustered using MMseqs2 by default which is recommended; you can choose Linclust
+    or CD-HIT if desired. 4) Some parameters are hidden in this short help format since their
+    defaults are adequate; specify --help-long to see information for those options.
+    """
+    
+    usageLong = """%(prog)s (BIN Genes for Expression analyses) is a program which bins
     de novo-assembled transcripts together on the basis of reference genome alignments.
     This might be necessary when working with multiple subspecies that are expected to
     diverge only slightly from the reference organism. By binning like this, each subspecies
     can have its gene counts compared fairly during DGE, and some of the pitfalls of
     other approaches e.g., CD-HIT are avoided.
-    
-    Note: For each annotation GFF3 (-ga) you should provide a matching GMAP GFF3 alignment
+    ###
+    Prior to running BINge, you need to run GMAP alignment of your de novo transcriptome
+    against one of more reference genomes. Running GMAP with parameters '-f 2 -n 6' is 
+    suggested (-f 2 is required to have GFF3 format output!).
+    ###
+    Note 1: For each annotation GFF3 (-ga) you should provide a matching GMAP GFF3 alignment
     file (-gm). These values should be ordered equivalently.
-    
-    Extra note: You may want to provide multiple inputs with -i, one for your transcripts
+    ###
+    Note 2: You may want to provide multiple inputs with -i, one for your transcripts
     and another for the reference sequences from each of your GFF3(s). All sequences
     indicated in your -ga and -gm files need to be locateable in the files given to -i.
+    ###
+    Note 3: Sequences which do not align against the genome are considered to be "unbinned".
+    These will be clustered with MMseqs2 cascaded clustering by default, which is the recommended
+    choice. You can use Linclust (also okay) or CD-HIT (potentially very slow) if wanted.
+    ###
+    Note 4: You're seeing the --help-long format of this message, which means you may want to
+    configure the way clustering of unbinned sequences works. Behavioural parameters of
+    the algorithms can be tuned here, but the defaults are expected to work most of the time.
+    The main exception is CD-HIT's memory utilisation, which probably should be set depending
+    on what you have available. tldr; change these if you know what you're doing.
     """
-    p = argparse.ArgumentParser(description=usage)
+    
+    p = argparse.ArgumentParser(description=usageLong if showHiddenArgs else usageShort)
     # Required
     p.add_argument("-i", dest="fastaFiles",
                    required=True,
@@ -401,7 +560,7 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for TSV-formatted results")
-    # Optional
+    # Optional - BINge
     p.add_argument("--threads", dest="threads",
                    required=False,
                    type=int,
@@ -415,35 +574,104 @@ def main():
                    bin convergence to be achieved (default==5); in most cases results will
                    converge in fewer than 5 iterations, so setting a maximum acts merely as
                    a safeguard against edge cases I have no reason to believe will ever
-                   happen.""",
+                   happen."""
+                   if showHiddenArgs else argparse.SUPPRESS,
                    default=5)
-    p.add_argument("--cdhit_identity", dest="cdhitIdentity",
+    # Optional - program behavioural controls
+    p.add_argument("--clusterer", dest="unbinnedClusterer",
+                   required=False,
+                   choices=["mmseqs-cascade", "mmseqs-linclust", "cd-hit"],
+                   help="""Specify which algorithm to use for clustering of unbinned sequences
+                   (default=='mmseqs-cascade')""",
+                   default="mmseqs-cascade")
+    p.add_argument("--mmseqs", dest="mmseqsDir",
+                   required=False,
+                   help="""If using MMseqs2-based clustering, specify the directory containing
+                   the mmseqs executable""")
+    p.add_argument("--cdhit", dest="cdhitDir",
+                   required=False,
+                   help="""If using CD-HIT clustering, specify the directory containing
+                   the cd-hit-est executable""")
+    p.add_argument("--identity", dest="identity",
                    required=False,
                    type=float,
-                   help="""Optionally, when clustering unbinned sequences, specify what
-                   identity value (-c) to provide CD-HIT (default==0.85)""",
+                   help="""ALL CLUSTERERS: Specify the identity threshold for clustering
+                   (default==0.85)"""
+                   if showHiddenArgs else argparse.SUPPRESS,
                    default=0.85)
+    # Optional - MMseqs2
+    p.add_argument("--tmpDir", dest="tmpDir",
+                   required=False,
+                   help="""MMSEQS: Specify the tmpDir for MMseqs2 running; default='mms2_tmp'
+                   in your current working directory"""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default="mms2_tmp")
+    p.add_argument("--evalue", dest="evalue",
+                   required=False,
+                   type=float,
+                   help="MMSEQS: Specify the evalue threshold for clustering (default==1e-3)"
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=1e-3)
+    p.add_argument("--coverage", dest="coverage",
+                   required=False,
+                   type=float,
+                   help="MMSEQS: Specify the coverage ratio for clustering (default==0.4)"
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=0.4)
+    p.add_argument("--mode", dest="mode",
+                   required=False,
+                   choices=["set-cover", "connected-component", "greedy"],
+                   help="MMSEQS: Specify the clustering mode (default=='connected-component')"
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default="connected-component")
+    p.add_argument("--sensitivity", dest="sensitivity",
+                   required=False,
+                   choices=[4,5,5.7,6,7,7.5],
+                   help="MMSEQS-CASCADE: Specify the sensitivity value (default==7.5)"
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=7.5)
+    p.add_argument("--steps", dest="steps",
+                   required=False,
+                   type=int,
+                   help="""MMSEQS-CASCADE: Specify the number of cascaded clustering steps 
+                   (default==3)"""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=3)
+    # Optional - CD-HIT
     p.add_argument("--cdhit_shortcov", dest="cdhitShortCov",
                    required=False,
                    type=float,
-                   help="""Optionally, when clustering unbinned sequences, specify what
-                   -aS parameter to provide CD-HIT (default==0.6)""",
+                   help="""CDHIT: Specify what -aS parameter to provide
+                   CD-HIT (default==0.6)"""
+                   if showHiddenArgs else argparse.SUPPRESS,
                    default=0.6)
     p.add_argument("--cdhit_longcov", dest="cdhitLongCov",
                    required=False,
                    type=float,
-                   help="""Optionally, when clustering unbinned sequences, specify what
-                   -aL parameter to provide CD-HIT (default==0.3)""",
+                   help="""CDHIT: Specify what -aL parameter to provide
+                   CD-HIT (default==0.3)"""
+                   if showHiddenArgs else argparse.SUPPRESS,
                    default=0.3)
     p.add_argument("--cdhit_mem", dest="cdhitMem",
                    required=False,
                    type=int,
-                   help="""Optionally, when clustering unbinned sequences, specify how
-                   many megabytes of memory to provide CD-HIT (default==5000)""",
-                   default=5000)
+                   help="""CDHIT: Specify how many megabytes of memory to
+                   provide CD-HIT (default==6000)"""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=6000)
+    # Help controller
+    p.add_argument("--help-long", dest="help-long",
+                   action="help",
+                   help="""Show all options, including those that are not
+                   recommended to be changed."""
+                   if not showHiddenArgs else argparse.SUPPRESS)
     
     args = p.parse_args()
     validate_args(args)
+    
+    # Load indexed transcripts for quick access
+    "Load this upfront since it may be a memory limitation, and causing errors early is better than late"
+    transcriptRecords = FastaCollection(args.fastaFiles)
     
     # Parse each GFF3 into a bin collection structure
     collectionList = generate_bin_collections(args.annotationFiles) # keep genome bins separate to multi-thread later
@@ -478,6 +706,15 @@ def main():
     for i in range(1, len(collectionList)):
         binCollection.merge(collectionList[i])
     
+    # Check that this transcriptome file contains the reference gene models
+    missingSeqID = find_missing_sequence_id([binCollection, novelBinCollection], transcriptRecords)
+    if missingSeqID != None:
+        print(f"ERROR: '{missingSeqID}' was binned from GMAP or the annotation GFF3, " +
+              "but does not exist in your input transcriptome FASTA.")
+        print("A possible error is that your transcriptome lacks the reference sequences.")
+        print("This error cannot be reconciled, so the program will exit now.")
+        quit()
+    
     # Split bins containing overlapping (but not exon-sharing) genes e.g., nested genes
     binCollection = multithread_bin_splitter(binCollection, args.threads)
     
@@ -497,18 +734,6 @@ def main():
     binCollection.merge(novelBinCollection)
     binCollection = iterative_bin_self_linking(binCollection, args.convergenceIters)
     
-    # Load transcripts into memory for quick access
-    transcriptRecords = FastaCollection(args.fastaFiles)
-    
-    # Check that this transcriptome file contains the reference gene models
-    missingSeqID = find_missing_sequence_id([binCollection], transcriptRecords)
-    if missingSeqID != None:
-        print(f"ERROR: '{missingSeqID}' was binned from GMAP or the annotation GFF3, " +
-              "but does not exist in your input transcriptome FASTA.")
-        print("A possible error is that your transcriptome lacks the reference sequences.")
-        print("This error cannot be reconciled, so the program will exit now.")
-        quit()
-    
     # Write binned clusters to file
     with open(args.outputFileName, "w") as fileOut:
         # Write header
@@ -525,9 +750,7 @@ def main():
     
     # Cluster remaining unbinned sequences
     unbinnedIDs = get_unbinned_sequence_ids([binCollection], transcriptRecords)
-    unbinnedClusterDict = cluster_unbinned_sequences(
-        unbinnedIDs, transcriptRecords, args.threads, args.cdhitMem,
-        args.cdhitIdentity, args.cdhitShortCov, args.cdhitLongCov)
+    unbinnedClusterDict = cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args)
     
     # Write output of clustering to file
     with open(args.outputFileName, "a") as fileOut:
