@@ -491,7 +491,7 @@ def update_table_with_seq_details(originalTable, newTable, hitMapDict,
         # Write content lines
         for line in fileIn:
             if line.startswith(">"):
-                clusterID = line[1:].split(" ")[0]
+                clusterID = line[1:].rstrip("\r\n").split(" ")[0]
                 
                 # Get an annotation line for this sequence
                 if clusterID in originalLines:
