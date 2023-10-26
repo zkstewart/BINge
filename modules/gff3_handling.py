@@ -30,6 +30,18 @@ def _create_feature_from_sl(sl):
     
     return feature
 
+def _build_feature_to_yield(thisFeature):
+    feature = _create_feature_from_sl(thisFeature[0])
+    mrnaFeature = _create_feature_from_sl(thisFeature[1])
+    feature.add_child(mrnaFeature)
+    
+    # Add subfeatures to base
+    for _sl in thisFeature[2:]:
+        _feature = _create_feature_from_sl(_sl)
+        mrnaFeature.add_child(_feature)
+    
+    return feature
+
 def iterate_through_gff3(gff3File):
     '''
     Provides a simple iterator for a GFF3 file which yields GFF3
@@ -39,6 +51,8 @@ def iterate_through_gff3(gff3File):
         gff3File -- a string indicating the location of a GFF3 formatted
                     file that is sorted.
     '''
+    
+    
     thisFeature = []
     with open(gff3File, "r") as fileIn:
         for line in fileIn:
@@ -54,15 +68,7 @@ def iterate_through_gff3(gff3File):
                 
                 # Yield a completed gene feature
                 if featureType == "gene" and thisFeature != []:
-                    # Create the base gene and mRNA features
-                    feature = _create_feature_from_sl(thisFeature[0])
-                    mrnaFeature = _create_feature_from_sl(thisFeature[1])
-                    feature.add_child(mrnaFeature)
-                    
-                    # Add subfeatures to base
-                    for _sl in thisFeature[2:]:
-                        _feature = _create_feature_from_sl(_sl)
-                        mrnaFeature.add_child(_feature)
+                    feature = _build_feature_to_yield(thisFeature)
                     
                     # Reset our feature storage, and yield result now
                     thisFeature = []
@@ -70,3 +76,7 @@ def iterate_through_gff3(gff3File):
                 
                 # Build an ongoing feature
                 thisFeature.append(sl)
+    
+    # Yield the last feature in the GFF3
+    feature = _build_feature_to_yield(thisFeature)
+    yield feature
