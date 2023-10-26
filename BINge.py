@@ -156,6 +156,54 @@ def generate_bin_collections(annotationFiles):
     
     return collectionList
 
+def populate_bin_collections(collectionList, gmapFiles, threads):
+    '''
+    Receives a list of BinCollection objects, alongside a matching list
+    of GMAP GFF3 file locations, and uses multiple threads to parse the GMAP
+    files and add them into an existing bin, or into a novel bin collection
+    which is returned.
+    
+    Parameters:
+        collectionList -- a list of BinCollection objects as resulting from
+                          generate_bin_collections().
+        gmapFiles -- a list of strings pointing to GMAP GFF3 files; they should
+                     be ordered the same as the files which were used as input to
+                     generate_bin_collections().
+        threads -- an integer indicating how many threads to run; this code is
+                   parallelised in terms of processing multiple GMAP files at a time,
+                   if you have only 1 GMAP file then only 1 thread will be used.
+    Modifies:
+        collectionList -- the BinCollection objects in this list will have alignment IDs
+                          added to the contained Bin objects.
+    Returns:
+        novelBinCollection -- a BinCollection containing Bins which did not overlap existing
+                              Bins part of the input collectionList.
+    '''
+    novelBinCollection = BinCollection()
+    for i in range(0, len(gmapFiles), threads): # only process n (threads) files at a time
+        processing = []
+        for x in range(threads): # begin processing n files
+            if i+x < len(gmapFiles): # parent loop may excess if n > the number of GMAP files
+                gmapFile = gmapFiles[i+x]
+                binCollection = collectionList[i+x]
+                
+                gmapWorkerThread = GmapBinThread(gmapFile, binCollection)
+                processing.append(gmapWorkerThread)
+                gmapWorkerThread.start()
+        
+        # Gather results
+        for gmapWorkerThread in processing:
+            # Wait for thread to end
+            gmapWorkerThread.join()
+            
+            # Grab the new outputs from this thread
+            "Each thread modifies a BinCollection part of collectionList directly"
+            threadNovelBinCollection = gmapWorkerThread.novelBinCollection
+            
+            # Merge them
+            novelBinCollection.merge(threadNovelBinCollection)
+    return novelBinCollection
+
 def bin_self_linker(binCollection):
     '''
     Receives a BinCollection that has potentially been created through multiple
@@ -677,29 +725,7 @@ def main():
     collectionList = generate_bin_collections(args.annotationFiles) # keep genome bins separate to multi-thread later
     
     # Parse GMAP alignments into our bin collection with multiple threads
-    novelBinCollection = BinCollection()
-    for i in range(0, len(args.gmapFiles), args.threads): # only process n (threads) files at a time
-        processing = []
-        for x in range(args.threads): # begin processing n files
-            if i+x < len(args.gmapFiles): # parent loop may excess if n > the number of GMAP files
-                gmapFile = args.gmapFiles[i+x]
-                binCollection = collectionList[i+x]
-                
-                gmapWorkerThread = GmapBinThread(gmapFile, binCollection)
-                processing.append(gmapWorkerThread)
-                gmapWorkerThread.start()
-        
-        # Gather results
-        for gmapWorkerThread in processing:
-            # Wait for thread to end
-            gmapWorkerThread.join()
-            
-            # Grab the new outputs from this thread
-            "Each thread modifies a BinCollection part of collectionList directly"
-            threadNovelBinCollection = gmapWorkerThread.novelBinCollection
-            
-            # Merge them
-            novelBinCollection.merge(threadNovelBinCollection)
+    novelBinCollection = populate_bin_collections(collectionList, args.gmapFiles, args.threads)
     
     # Merge gene bins together
     binCollection = collectionList[0]
