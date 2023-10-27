@@ -20,6 +20,7 @@ class GmapBinThread(Thread):
         self.gmapFile = gmapFile
         self.binCollection = binCollection
         self.novelBinCollection = None
+        self.multiOverlaps = None
         self.exception = None
     
     def bin_by_gmap(self):
@@ -44,6 +45,7 @@ class GmapBinThread(Thread):
         # Parse GMAP file and begin binning
         novelBinCollection = BinCollection() # holds onto novel bins we create during this process
         pathDict = {} # holds onto sequences we've already checked a path for
+        multiOverlaps = []
         
         for feature in iterate_through_gff3(self.gmapFile):
             mrnaFeature = feature.mRNA[0]
@@ -90,6 +92,7 @@ class GmapBinThread(Thread):
             # Exclude any transcripts that overlap multiple genes
             elif len(binOverlap) > 1:
                 "We expect these occurrences to be chimeric transcripts which should be filtered"
+                multiOverlaps.append(feature)
                 continue
             
             # Compare to the existing bin
@@ -106,11 +109,11 @@ class GmapBinThread(Thread):
                 else:
                     _novel_binner(mrnaFeature, novelBinCollection, NOVEL_BIN_OVL_PCT)
         
-        return novelBinCollection
+        return novelBinCollection, multiOverlaps
     
     def run(self):
         try:
-            self.novelBinCollection = self.bin_by_gmap()
+            self.novelBinCollection, self.multiOverlaps = self.bin_by_gmap()
         except BaseException as e:
             self.exception = e
     

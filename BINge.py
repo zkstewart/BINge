@@ -180,6 +180,7 @@ def populate_bin_collections(collectionList, gmapFiles, threads):
                               Bins part of the input collectionList.
     '''
     novelBinCollection = BinCollection()
+    multiOverlaps = []
     for i in range(0, len(gmapFiles), threads): # only process n (threads) files at a time
         processing = []
         for x in range(threads): # begin processing n files
@@ -199,10 +200,11 @@ def populate_bin_collections(collectionList, gmapFiles, threads):
             # Grab the new outputs from this thread
             "Each thread modifies a BinCollection part of collectionList directly"
             threadNovelBinCollection = gmapWorkerThread.novelBinCollection
+            multiOverlaps.append(gmapWorkerThread.multiOverlaps)
             
             # Merge them
             novelBinCollection.merge(threadNovelBinCollection)
-    return novelBinCollection
+    return novelBinCollection, multiOverlaps
 
 def bin_self_linker(binCollection):
     '''
@@ -281,8 +283,8 @@ def bin_self_linker(binCollection):
 
 def iterative_bin_self_linking(binCollection, convergenceIters):
     '''
-    Links a bin to itself iteratively until it converges or
-    convergenceIters is reached.
+    Links the bins in a BinCollection to themselves iteratively until
+    it converges or convergenceIters is reached.
     
     Parameters:
         binCollection -- a BinCollection object
@@ -350,9 +352,241 @@ def multithread_bin_splitter(binCollection, threads):
         worker.join() # need to call .join() on the workers themselves, not the queue!
     
     outputQueue.put([None, None]) # marker for the output thead to stop; needs 2 Nones!
-    outputQueue.join()
+    outputWorker.join()
     
     return outputWorker.binCollection
+
+def bin_fragment_merger(binCollection, multiOverlap):
+    '''
+    Receives a BinCollection that has potentially been created through multiple
+    genome, multiple subspecies transcriptomics. Despite this confusion, it will
+    attempt to merge bins within genomes that are likely to be fragmentary.
+    
+    It does this using 'multiOverlap', a list of GMAP alignment Features which
+    overlap more than one Bin. It is assumed that these Bins have been previously
+    seeded from the genome's annotation, and hence this function will help us to
+    identify situations where the genome annotation has flaws.
+    
+    The method of performing this is similar to that seen in bin_self_linker()
+    where it's leveraging the graph-based approach to model bins which should
+    merge. Merging decisions are made based on comparing the 'weight' of an edge
+    (i.e., how many GMAP alignments support the bin's merging) to the number of
+    IDs which do not support the merging (i.e., how many GMAP alignments only
+    overlapped a single bin). The vote threshold decides whether we should merge
+    or not.
+    
+    Note: this function is not guaranteed to produce a stable output i.e., if
+    you feed its result back in, you may get different results. It should
+    eventually converge on a stable solution, but there might theoretically
+    be an edge case where that never happens.
+    
+    Parameters:
+        binCollection -- a BinCollection object containing an assortment
+                         of bins from different genomes and/or genes that
+                         are (at a sequence level) indistinguishable and
+                         hence confounding for DGE.
+        multiOverlap -- a list containing GFF3 Features which were found to
+                        overlap more than one Bin in the binCollection.
+    Returns:
+        linkedBinCollection -- a BinCollection object where bins have been
+                               merged where deemed appropriate.
+    '''
+    VOTE_THRESHOLD = 0.5
+    
+    # Format bins into a dictionary
+    binDict = {}
+    numBins = 0
+    for bin in binCollection:
+        binDict[bin.data.sha256()] = bin.data
+        numBins += 1
+    assert len(binDict) == numBins, \
+        "Hash collision occurred! I can't handle this, and you should buy a lottery ticket..."
+    
+    # Model links between bins as a graph structure
+    binGraph = nx.Graph()
+    binGraph.add_nodes_from(binDict.keys())
+    
+    # Process bins that are multi-overlapped
+    for overlappingFeature in multiOverlap:
+        # Find the bins which are overlapped
+        binOverlap = binCollection.find(overlappingFeature.contig, overlappingFeature.start, overlappingFeature.end)
+        assert len(binOverlap) > 1, "Found a non-multi-overlapper somehow?"
+        binOverlap = [ bin.sha256() for bin in binOverlap ]
+        
+        # Add edges between overlapped bins
+        for i in range(0, len(binOverlap)-1):
+            for x in range(i+1, len(binOverlap)):
+                baseID = overlappingFeature.ID.rsplit(".", maxsplit=1)[0]
+                exons = Bin.format_exons_from_gff3_feature(overlappingFeature)
+                
+                # Add new edge
+                if not binGraph.has_edge(binOverlap[i], binOverlap[x]):
+                    binGraph.add_edge(binOverlap[i], binOverlap[x],
+                                    weight=1, ids=[baseID],
+                                    exons={baseID: exons})
+                
+                # Increase weight of existing edge
+                else:
+                    binGraph[binOverlap[i]][binOverlap[x]]["weight"] += 1
+                    binGraph[binOverlap[i]][binOverlap[x]]["ids"].append(baseID)
+                    binGraph[binOverlap[i]][binOverlap[x]]["exons"][baseID] = exons
+    
+    # Create a new network with edges set if they exceed the unlinked number of IDs
+    finalGraph = nx.Graph()
+    finalGraph.add_nodes_from(binDict.keys())
+    
+    for connectedBins in nx.connected_components(binGraph):
+        connectedBins = list(connectedBins)
+        
+        for i in range(0, len(connectedBins)-1):
+            for x in range(i+1, len(connectedBins)):
+                binHash1 = connectedBins[i]
+                binHash2 = connectedBins[x]
+                edgeWeight = binGraph[binHash1][binHash2]["weight"]
+                distanceWeight = sum([
+                    len(binDict[binHash1].ids), len(binDict[binHash2].ids)
+                ])
+                
+                mergeVote = edgeWeight / (edgeWeight + distanceWeight)
+                if mergeVote >= VOTE_THRESHOLD:
+                    finalGraph.add_edge(binHash1, binHash2,
+                                        ids = binGraph[binHash1][binHash2]["ids"],
+                                        exons = binGraph[binHash1][binHash2]["exons"])
+    
+    # Merge bins on the basis of link identification
+    linkedBinCollection = BinCollection()
+    for connectedBins in nx.connected_components(finalGraph):
+        connectedBins = list(connectedBins)
+        
+        newBin = binDict[connectedBins[0]]
+        binHash1 = connectedBins[0]
+        for binHash2 in connectedBins[1:]:
+            newBin2 = Bin(newBin.contig, binDict[binHash2].start, binDict[binHash2].end)
+            newBin2.ids = set(finalGraph[binHash1][binHash2]["ids"]).union(binDict[binHash2].ids)
+            
+            newBin2.exons = finalGraph[binHash1][binHash2]["exons"]
+            newBin2.exons.update(binDict[binHash2].exons)
+            
+            newBin.merge(newBin2)
+        linkedBinCollection.add(newBin)
+    
+    return linkedBinCollection
+
+def bin_chimera_splitter(binCollection, multiOverlap):
+    '''
+    Receives a BinCollection that has potentially been created through multiple
+    genome, multiple subspecies transcriptomics. Despite this confusion, it will
+    attempt to split bins within genomes that are likely to be chimeric.
+    
+    It does this using 'multiOverlap', a list of GMAP alignment Features which
+    overlap more than one Bin. It is assumed that these Bins have been previously
+    seeded from the genome's annotation, and hence this function will help us to
+    identify situations where the genome annotation has flaws.
+    
+    The method of performing this is similar to that seen in bin_self_linker()
+    where it's leveraging the graph-based approach to model bins which should
+    merge. Merging decisions are made based on comparing the 'weight' of an edge
+    (i.e., how many GMAP alignments support the bin's merging) to the number of
+    IDs which do not support the merging (i.e., how many GMAP alignments only
+    overlapped a single bin). The vote threshold decides whether we should merge
+    or not.
+    
+    Note: this function is not guaranteed to produce a stable output i.e., if
+    you feed its result back in, you may get different results. It should
+    eventually converge on a stable solution, but there might theoretically
+    be an edge case where that never happens.
+    
+    Parameters:
+        binCollection -- a BinCollection object containing an assortment
+                         of bins from different genomes and/or genes that
+                         are (at a sequence level) indistinguishable and
+                         hence confounding for DGE.
+        multiOverlap -- a list containing GFF3 Features which were found to
+                        overlap more than one Bin in the binCollection.
+    Returns:
+        linkedBinCollection -- a BinCollection object where bins have been
+                               merged where deemed appropriate.
+    '''
+    VOTE_THRESHOLD = 0.5
+    
+    # Format bins into a dictionary
+    binDict = {}
+    numBins = 0
+    for bin in binCollection:
+        binDict[bin.data.sha256()] = bin.data
+        numBins += 1
+    assert len(binDict) == numBins, \
+        "Hash collision occurred! I can't handle this, and you should buy a lottery ticket..."
+    
+    # Model links between bins as a graph structure
+    binGraph = nx.Graph()
+    binGraph.add_nodes_from(binDict.keys())
+    
+    # Process bins that are multi-overlapped
+    for overlappingFeature in multiOverlap:
+        # Find the bins which are overlapped
+        binOverlap = binCollection.find(overlappingFeature.contig, overlappingFeature.start, overlappingFeature.end)
+        assert len(binOverlap) > 1, "Found a non-multi-overlapper somehow?"
+        binOverlap = [ bin.sha256() for bin in binOverlap ]
+        
+        # Add edges between overlapped bins
+        for i in range(0, len(binOverlap)-1):
+            for x in range(i+1, len(binOverlap)):
+                baseID = overlappingFeature.ID.rsplit(".", maxsplit=1)[0]
+                exons = Bin.format_exons_from_gff3_feature(overlappingFeature)
+                
+                # Add new edge
+                if not binGraph.has_edge(binOverlap[i], binOverlap[x]):
+                    binGraph.add_edge(binOverlap[i], binOverlap[x],
+                                    weight=1, ids=[baseID],
+                                    exons={baseID: exons})
+                
+                # Increase weight of existing edge
+                else:
+                    binGraph[binOverlap[i]][binOverlap[x]]["weight"] += 1
+                    binGraph[binOverlap[i]][binOverlap[x]]["ids"].append(baseID)
+                    binGraph[binOverlap[i]][binOverlap[x]]["exons"][baseID] = exons
+    
+    # Create a new network with edges set if they exceed the unlinked number of IDs
+    finalGraph = nx.Graph()
+    finalGraph.add_nodes_from(binDict.keys())
+    
+    for connectedBins in nx.connected_components(binGraph):
+        connectedBins = list(connectedBins)
+        
+        for i in range(0, len(connectedBins)-1):
+            for x in range(i+1, len(connectedBins)):
+                binHash1 = connectedBins[i]
+                binHash2 = connectedBins[x]
+                edgeWeight = binGraph[binHash1][binHash2]["weight"]
+                distanceWeight = sum([
+                    len(binDict[binHash1].ids), len(binDict[binHash2].ids)
+                ])
+                
+                mergeVote = edgeWeight / (edgeWeight + distanceWeight)
+                if mergeVote >= VOTE_THRESHOLD:
+                    finalGraph.add_edge(binHash1, binHash2,
+                                        ids = binGraph[binHash1][binHash2]["ids"],
+                                        exons = binGraph[binHash1][binHash2]["exons"])
+    
+    # Merge bins on the basis of link identification
+    linkedBinCollection = BinCollection()
+    for connectedBins in nx.connected_components(finalGraph):
+        connectedBins = list(connectedBins)
+        
+        newBin = binDict[connectedBins[0]]
+        binHash1 = connectedBins[0]
+        for binHash2 in connectedBins[1:]:
+            newBin2 = Bin(newBin.contig, binDict[binHash2].start, binDict[binHash2].end)
+            newBin2.ids = set(finalGraph[binHash1][binHash2]["ids"]).union(binDict[binHash2].ids)
+            
+            newBin2.exons = finalGraph[binHash1][binHash2]["exons"]
+            newBin2.exons.update(binDict[binHash2].exons)
+            
+            newBin.merge(newBin2)
+        linkedBinCollection.add(newBin)
+    
+    return linkedBinCollection
 
 def find_missing_sequence_id(binCollectionList, transcriptRecords):
     '''
@@ -728,7 +962,14 @@ def main():
     collectionList = generate_bin_collections(args.annotationFiles) # keep genome bins separate to multi-thread later
     
     # Parse GMAP alignments into our bin collection with multiple threads
-    novelBinCollection = populate_bin_collections(collectionList, args.gmapFiles, args.threads)
+    novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, args.gmapFiles, args.threads)
+    
+    # Merge bins resulting from fragmented annotation models
+    for i in range(len(collectionList)):
+        binCollection = bin_fragment_merger(collectionList[i], multiOverlaps[i])
+        collectionList[i] = binCollection
+        #binCollection = bin_chimera_splitter(collectionList[i], multiOverlaps[i])
+        #collectionList[i] = binCollection
     
     # Merge gene bins together
     binCollection = collectionList[0]

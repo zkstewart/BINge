@@ -1,5 +1,6 @@
 from intervaltree import IntervalTree, Interval
 import networkx as nx
+from hashlib import sha256
 
 class Bin:
     '''
@@ -70,6 +71,25 @@ class Bin:
         return (f"<Bin object;contig='{self.contig}';start={self.start};" +
                 f"end={self.end};num_ids={len(self.ids)}"
         )
+    
+    def __hash__(self):
+        return hash((self.contig, self.start, self.end,
+                     tuple(self.ids), hash(tuple(map(tuple, self.exons)))))
+    
+    def sha256(self):
+        h = sha256()
+        for s in (
+                self.contig.encode(), str(self.start).encode(), str(self.end).encode(),
+                str(self.ids).encode(), str(self.exons).encode()
+        ):
+            h.update(s)
+
+        return h.hexdigest()
+    
+    def __eq__(self, other):
+        if isinstance(other, Bin):
+            return self.sha256() == other.sha256()
+        return False
     
     @staticmethod
     def format_exons_from_gff3_feature(gff3Feature):
