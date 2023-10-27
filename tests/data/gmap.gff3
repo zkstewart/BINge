@@ -1,0 +1,58 @@
+## contig1.1; normal gene
+contig1	gmap	gene	1	50	.	+	.	ID=contig1.1.path1;Name=contig1.1
+contig1	gmap	mRNA	1	50	.	+	.	ID=contig1.1.mrna1;Parent=contig1.1.path1;Name=contig1.1;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	1	50	98	+	.	ID=contig1.1.mrna1.exon1;Parent=contig1.1.mrna1;Name=contig1.1
+contig1	gmap	CDS	1	50	98	+	0	ID=contig1.1.mrna1.cds1;Parent=contig1.1.mrna1;Name=contig1.1
+## contig1.2; normal gene
+contig1	gmap	gene	51	100	.	+	.	ID=contig1.2.path1;Name=contig1.2
+contig1	gmap	mRNA	51	100	.	+	.	ID=contig1.2.mrna1;Parent=contig1.2.path1;Name=contig1.2;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	51	100	98	+	.	ID=contig1.2.mrna1.exon1;Parent=contig1.2.mrna1;Name=contig1.2
+contig1	gmap	CDS	51	100	98	+	0	ID=contig1.2.mrna1.cds1;Parent=contig1.2.mrna1;Name=contig1.2
+###
+## contig1.3; adjacent genes
+contig1	.	gene	110	150	.	+	.	ID=contig1.3.path1;Name=contig1.3
+contig1	.	mRNA	110	150	.	+	.	ID=contig1.3.mrna1;Parent=contig1.3.path1;Name=contig1.3.mrna1;coverage=100.0;identity=98.5;indels=0
+contig1	.	exon	110	150	.	+	.	ID=contig1.3.mrna1.exon1;Parent=contig1.3.mrna1;Name=contig1.3.exon1
+contig1	.	CDS	110	150	.	+	.	ID=contig1.3.mrna1.cds1;;Parent=contig1.3.mrna1;Name=contig1.3.mrna1.cds1;
+## contig1.4; adjacent genes
+contig1	.	gene	151	200	.	-	.	ID=contig1.4.path1;Name=contig1.4
+contig1	.	mRNA	151	200	.	-	.	ID=contig1.4.mrna1;Parent=contig1.4.path1;Name=contig1.4.mrna1;coverage=100.0;identity=98.5;indels=0
+contig1	.	exon	151	200	.	-	.	ID=contig1.4.mrna1.exon1;Parent=contig1.4.mrna1;Name=contig1.4.exon1
+contig1	.	CDS	151	200	.	-	.	ID=contig1.4.mrna1.cds1;;Parent=contig1.4.mrna1;Name=contig1.4.mrna1.cds1;
+## contig1.5; nested genes 1
+contig1	.	gene	210	300	.	+	.	ID=contig1.5.path1;Name=contig1.5
+contig1	.	mRNA	210	300	.	+	.	ID=contig1.5.mrna1;Parent=contig1.5.path1;Name=contig1.5.mrna1;coverage=100.0;identity=98.5;indels=0
+contig1	.	exon	210	240	.	+	.	ID=contig1.5.mrna1.exon1;Parent=contig1.5.mrna1;Name=contig1.5.exon1
+contig1	.	exon	280	300	.	+	.	ID=contig1.5.mrna1.exon2;Parent=contig1.5.mrna1;Name=contig1.5.exon2
+contig1	.	CDS	210	240	.	+	.	ID=contig1.5.mrna1.cds1;;Parent=contig1.5.mrna1;Name=contig1.5.mrna1.cds1;
+contig1	.	CDS	280	300	.	+	.	ID=contig1.5.mrna1.cds2;;Parent=contig1.5.mrna1;Name=contig1.5.mrna1.cds2;
+## contig1.6.1; nested genes 1.1
+contig1	.	gene	241	279	.	+	.	ID=contig1.6.1.path1;Name=contig1.6.1
+contig1	.	mRNA	241	279	.	+	.	ID=contig1.6.1.mrna1;Parent=contig1.6.1.path1;Name=contig1.6.1.mrna1;coverage=100.0;identity=98.5;indels=0
+contig1	.	exon	241	279	.	+	.	ID=contig1.6.1.mrna1.exon1;Parent=contig1.6.1.mrna1;Name=contig1.6.1.exon1
+contig1	.	CDS	241	279	.	+	.	ID=contig1.6.1.mrna1.cds1;;Parent=contig1.6.1.mrna1;Name=contig1.6.1.mrna1.cds1;
+## contig1.6.2; nested genes 1.2
+contig1	.	gene	241	279	.	-	.	ID=contig1.6.2.path1;Name=contig1.6.2
+contig1	.	mRNA	241	279	.	-	.	ID=contig1.6.2.mrna1;Parent=contig1.6.2.path1;Name=contig1.6.2.mrna1;coverage=100.0;identity=98.5;indels=0
+contig1	.	exon	241	279	.	-	.	ID=contig1.6.2.mrna1.exon1;Parent=contig1.6.2.mrna1;Name=contig1.6.2.exon1
+contig1	.	CDS	241	279	.	-	.	ID=contig1.6.2.mrna1.cds1;;Parent=contig1.6.2.mrna1;Name=contig1.6.2.mrna1.cds1;
+## contig1.7; overlapping genes 1
+contig1	.	gene	310	351	.	+	.	ID=contig1.7.path1;Name=contig1.7
+contig1	.	mRNA	310	351	.	+	.	ID=contig1.7.mrna1;Parent=contig1.7.path1;Name=contig1.7.mrna1;coverage=100.0;identity=98.5;indels=0
+contig1	.	exon	310	351	.	+	.	ID=contig1.7.mrna1.exon1;Parent=contig1.7.mrna1;Name=contig1.7.exon1
+contig1	.	CDS	310	351	.	+	.	ID=contig1.7.mrna1.cds1;;Parent=contig1.7.mrna1;Name=contig1.7.mrna1.cds1;
+## contig1.8; overlapping genes 1
+contig1	.	gene	350	400	.	+	.	ID=contig1.8.path1;Name=contig1.8
+contig1	.	mRNA	350	400	.	+	.	ID=contig1.8.mrna1;Parent=contig1.8.path1;Name=contig1.8.mrna1;coverage=100.0;identity=98.5;indels=0
+contig1	.	exon	350	400	.	+	.	ID=contig1.8.mrna1.exon1;Parent=contig1.8.mrna1;Name=contig1.8.exon1
+contig1	.	CDS	350	400	.	+	.	ID=contig1.8.mrna1.cds1;;Parent=contig1.8.mrna1;Name=contig1.8.mrna1.cds1;
+## contig1.9; overlapping genes 2
+contig1	.	gene	310	351	.	-	.	ID=contig1.9.path1;Name=contig1.9
+contig1	.	mRNA	310	351	.	-	.	ID=contig1.9.mrna1;Parent=contig1.9.path1;Name=contig1.9.mrna1;coverage=100.0;identity=98.5;indels=0
+contig1	.	exon	310	351	.	-	.	ID=contig1.9.mrna1.exon1;Parent=contig1.9.mrna1;Name=contig1.9.exon1
+contig1	.	CDS	310	351	.	-	.	ID=contig1.9.mrna1.cds1;;Parent=contig1.9.mrna1;Name=contig1.9.mrna1.cds1;
+## contig1.10; overlapping genes 2
+contig1	.	gene	350	400	.	-	.	ID=contig1.10.path1;Name=contig1.10
+contig1	.	mRNA	350	400	.	-	.	ID=contig1.10.mrna1;Parent=contig1.10.path1;Name=contig1.10.mrna1;coverage=100.0;identity=98.5;indels=0
+contig1	.	exon	350	400	.	-	.	ID=contig1.10.mrna1.exon1;Parent=contig1.10.mrna1;Name=contig1.10.exon1
+contig1	.	CDS	350	400	.	-	.	ID=contig1.10.mrna1.cds1;;Parent=contig1.10.mrna1;Name=contig1.10.mrna1.cds1;

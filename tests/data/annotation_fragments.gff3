@@ -1,0 +1,10 @@
+## contig1.1; fragmented gene
+contig1	.	gene	1	50	.	+	.	ID=contig1.1;Name=contig1.1
+contig1	.	mRNA	1	50	.	+	.	ID=contig1.1.mrna;Parent=contig1.1;Name=contig1.1.mrna
+contig1	.	exon	1	50	.	+	.	ID=contig1.1.exon1;Parent=contig1.1.mrna;Name=contig1.1.exon1
+contig1	.	CDS	1	50	.	+	.	ID=contig1.1.cds1;Parent=contig1.1.mrna;Name=contig1.1.cds1
+## contig1.2; fragmented gene
+contig1	.	gene	60	100	.	+	.	ID=contig1.2;Name=contig1.2
+contig1	.	mRNA	60	100	.	+	.	ID=contig1.2.mrna;Parent=contig1.2;Name=contig1.2.mrna
+contig1	.	exon	60	100	.	+	.	ID=contig1.2.exon1;Parent=contig1.2.mrna;Name=contig1.2.exon1
+contig1	.	CDS	60	100	.	+	.	ID=contig1.2.cds1;Parent=contig1.2.mrna;Name=contig1.2.cds1

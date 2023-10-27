@@ -1,0 +1,10 @@
+## contig1.1; normal gene
+contig1	gmap	gene	1	50	.	+	.	ID=contig1.1.path1;Name=contig1.1
+contig1	gmap	mRNA	1	50	.	+	.	ID=contig1.1.mrna1;Parent=contig1.1.path1;Name=contig1.1;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	1	50	98	+	.	ID=contig1.1.mrna1.exon1;Parent=contig1.1.mrna1;Name=contig1.1
+contig1	gmap	CDS	1	50	98	+	0	ID=contig1.1.mrna1.cds1;Parent=contig1.1.mrna1;Name=contig1.1
+## contig1.2; normal gene
+contig1	gmap	gene	51	100	.	+	.	ID=contig1.2.path1;Name=contig1.2
+contig1	gmap	mRNA	51	100	.	+	.	ID=contig1.2.mrna1;Parent=contig1.2.path1;Name=contig1.2;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	51	100	98	+	.	ID=contig1.2.mrna1.exon1;Parent=contig1.2.mrna1;Name=contig1.2
+contig1	gmap	CDS	51	100	98	+	0	ID=contig1.2.mrna1.cds1;Parent=contig1.2.mrna1;Name=contig1.2

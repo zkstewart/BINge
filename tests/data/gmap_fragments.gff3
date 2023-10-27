@@ -1,0 +1,20 @@
+## contig1.1; fragmented gene
+contig1	gmap	gene	1	50	.	+	.	ID=contig1.1.path1;Name=contig1.1
+contig1	gmap	mRNA	1	50	.	+	.	ID=contig1.1.mrna1;Parent=contig1.1.path1;Name=contig1.1;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	1	50	98	+	.	ID=contig1.1.mrna1.exon1;Parent=contig1.1.mrna1;Name=contig1.1
+contig1	gmap	CDS	1	50	98	+	0	ID=contig1.1.mrna1.cds1;Parent=contig1.1.mrna1;Name=contig1.1
+## contig1.2; fragmented gene
+contig1	gmap	gene	60	100	.	+	.	ID=contig1.2.path1;Name=contig1.2
+contig1	gmap	mRNA	60	100	.	+	.	ID=contig1.2.mrna1;Parent=contig1.2.path1;Name=contig1.2;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	60	100	98	+	.	ID=contig1.2.mrna1.exon1;Parent=contig1.2.mrna1;Name=contig1.2
+contig1	gmap	CDS	60	100	98	+	0	ID=contig1.2.mrna1.cds1;Parent=contig1.2.mrna1;Name=contig1.2
+## contig1.3; fused gene
+contig1	gmap	gene	1	100	.	+	.	ID=contig1.3.path1;Name=contig1.3
+contig1	gmap	mRNA	1	100	.	+	.	ID=contig1.3.mrna1;Parent=contig1.3.path1;Name=contig1.3;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	1	100	98	+	.	ID=contig1.3.mrna1.exon1;Parent=contig1.3.mrna1;Name=contig1.3
+contig1	gmap	CDS	1	100	98	+	0	ID=contig1.3.mrna1.cds1;Parent=contig1.3.mrna1;Name=contig1.3
+## contig1.4; fused gene
+contig1	gmap	gene	1	100	.	+	.	ID=contig1.4.path1;Name=contig1.4
+contig1	gmap	mRNA	1	100	.	+	.	ID=contig1.4.mrna1;Parent=contig1.4.path1;Name=contig1.4;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	1	100	98	+	.	ID=contig1.4.mrna1.exon1;Parent=contig1.4.mrna1;Name=contig1.4
+contig1	gmap	CDS	1	100	98	+	0	ID=contig1.4.mrna1.cds1;Parent=contig1.4.mrna1;Name=contig1.4
