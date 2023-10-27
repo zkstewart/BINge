@@ -327,13 +327,15 @@ def multithread_bin_splitter(binCollection, threads):
     outputQueue = queue.Queue(maxsize=int(threads * 20))
     
     # Start up threads for clustering of bins
+    workers = []
     for _ in range(threads):
         worker = BinSplitWorkerThread(workerQueue, outputQueue)
-        worker.setDaemon(True)
+        worker.daemon = True
         worker.start()
+        workers.append(worker)
     
     outputWorker = CollectionWorkerThread(outputQueue)
-    outputWorker.setDaemon(True)
+    outputWorker.daemon = True
     outputWorker.start()
     
     # Put bins in queue for worker threads
@@ -344,7 +346,8 @@ def multithread_bin_splitter(binCollection, threads):
     # Close up shop on the threading structures
     for i in range(threads):
         workerQueue.put(None) # this is a marker for the worker threads to stop
-    workerQueue.join()
+    for worker in workers:
+        worker.join() # need to call .join() on the workers themselves, not the queue!
     
     outputQueue.put([None, None]) # marker for the output thead to stop; needs 2 Nones!
     outputQueue.join()

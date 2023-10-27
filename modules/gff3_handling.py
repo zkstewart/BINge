@@ -78,5 +78,8 @@ def iterate_through_gff3(gff3File):
                 thisFeature.append(sl)
     
     # Yield the last feature in the GFF3
-    feature = _build_feature_to_yield(thisFeature)
+    if thisFeature != []:
+        feature = _build_feature_to_yield(thisFeature)
+    else:
+        raise Exception(f"'{gff3File}' does not appear to be a valid GFF3 file!")
     yield feature
