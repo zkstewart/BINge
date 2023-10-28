@@ -9,7 +9,7 @@ from modules.fasta_handling import FastaCollection
 from modules.bins import BinCollection, Bin
 from modules.gff3_handling import iterate_through_gff3
 from BINge import generate_bin_collections, populate_bin_collections, \
-    multithread_bin_splitter, iterative_bin_self_linking, bin_fragment_merger
+    multithread_bin_splitter, iterative_bin_self_linking
 from test_scenarios import get_binCollection_in_range, binge_runner
 
 # Specify data locations
@@ -324,7 +324,7 @@ class TestFragmentMerger(unittest.TestCase):
         origNumIDs = [ len(bin.data.ids) for bin in binCollection ]
         
         for i in range(len(binCollectionList)):
-            binCollection = bin_fragment_merger(binCollectionList[i], multiOverlaps[i])
+            binCollection = binCollectionList[i].fix_fragments(multiOverlaps[i])
             binCollectionList[i] = binCollection
         
         newNumBins = len(binCollection)

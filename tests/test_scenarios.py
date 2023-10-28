@@ -7,7 +7,7 @@ from Various_scripts import ZS_GFF3IO
 from modules.fasta_handling import FastaCollection
 from modules.bins import BinCollection
 from BINge import generate_bin_collections, populate_bin_collections, \
-    multithread_bin_splitter, iterative_bin_self_linking, bin_fragment_merger
+    multithread_bin_splitter, iterative_bin_self_linking
 
 # Specify data locations
 dataDir = os.path.join(os.getcwd(), "data")
@@ -17,7 +17,7 @@ def binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5):
     novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles, threads)
     
     for i in range(len(binCollectionList)):
-        binCollection = bin_fragment_merger(binCollectionList[i], multiOverlaps[i])
+        binCollection = binCollectionList[i].fix_fragments(multiOverlaps[i])
         binCollectionList[i] = binCollection
     
     binCollection = binCollectionList[0]
