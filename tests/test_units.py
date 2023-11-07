@@ -337,5 +337,39 @@ class TestFragmentMerger(unittest.TestCase):
         self.assertEqual(origNumIDs, [1, 1], "Should contain 2 bins with 1 ID each")
         self.assertEqual(newNumIDs, [4], "Should contain 1 bin with 4 IDs")
 
+class TestChimeraFixer(unittest.TestCase):
+    def test_chimera_fixer(self):
+        '''
+        This test should result in the chimeric bin being split apart.
+        '''
+        return None
+    
+        # Arrange
+        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation_chimer.gff3")])
+        binCollection = binCollectionList[0]
+        gmapFiles = [os.path.join(dataDir, "gmap_chimer.gff3")]
+        
+        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles, threads=1)
+        
+        self = binCollection
+        
+        # Act
+        origNumBins = len(binCollection)
+        origNumIDs = [ len(bin.data.ids) for bin in binCollection ]
+        
+        for i in range(len(binCollectionList)):
+            binCollection = binCollectionList[i].fix_fragments(multiOverlaps[i])
+            binCollectionList[i] = binCollection
+        
+        newNumBins = len(binCollection)
+        newNumIDs = [ len(bin.data.ids) for bin in binCollection ]
+        
+        # Assert
+        self.assertEqual(origNumBins, 2, "Should contain 2 bins")
+        self.assertEqual(newNumBins, 1, "Should contain 1 bin")
+        
+        self.assertEqual(origNumIDs, [1, 1], "Should contain 2 bins with 1 ID each")
+        self.assertEqual(newNumIDs, [4], "Should contain 1 bin with 4 IDs")
+
 if __name__ == '__main__':
     unittest.main()

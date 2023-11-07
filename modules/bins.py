@@ -260,14 +260,18 @@ class BinCollection:
         overlapped a single bin). The vote threshold decides whether we should merge
         or not.
         
-        Note: this function is not guaranteed to produce a stable output i.e., if
-        you feed its result back in, you may get different results. It should
-        eventually converge on a stable solution, but there might theoretically
-        be an edge case where that never happens.
+        Note: it's unsure if this function will produce a stable output i.e., it's
+        possible that, if you feed its result back in, you may get different results.
+        Theoretically, the first pass of this function should capture just about
+        everything so it probably doesn't need to be run iteratively.
         
         Parameters:
             multiOverlap -- a list containing GFF3 Features which were found to
                             overlap more than one Bin in the binCollection.
+            VOTE_THRESHOLD -- a float value in the range of 0 < VOTE_THRESHOLD <= 1.0
+                              determining what percentage (e.g., 0.5 = 50%) of GMAP
+                              alignments should support bin merging via overlap before
+                              we actually merge the bins together.
         Returns:
             linkedBinCollection -- a NEW BinCollection object where bins from the
                                    current object have been merged where deemed
@@ -355,34 +359,21 @@ class BinCollection:
         
         return linkedBinCollection
     
-    def fix_chimeras(self, multiOverlap, VOTE_THRESHOLD = 0.5):
+    def fix_chimeras(self, VOTE_THRESHOLD = 0.5):
         '''
         Attempt to fragment bins that are likely to be chimeric. This is different
         than what BinSplitter does, as it's not merely separating bin members into
         2 or more individual bins. Instead, it's cutting one or more lines through
-        a bin, and 
+        a bin, and ...
         
-        It does this using 'multiOverlap', a list of GMAP alignment Features which
-        overlap more than one Bin. It is assumed that these Bins have been previously
-        seeded from the genome's annotation, and hence this function will help us to
-        identify situations where the genome annotation has flaws.
-        
-        The method of performing this is similar to that seen in bin_self_linker()
-        where it's leveraging the graph-based approach to model bins which should
-        merge. Merging decisions are made based on comparing the 'weight' of an edge
-        (i.e., how many GMAP alignments support the bin's merging) to the number of
-        IDs which do not support the merging (i.e., how many GMAP alignments only
-        overlapped a single bin). The vote threshold decides whether we should merge
-        or not.
-        
-        Note: this function is not guaranteed to produce a stable output i.e., if
-        you feed its result back in, you may get different results. It should
-        eventually converge on a stable solution, but there might theoretically
-        be an edge case where that never happens.
+        I think this function is too hard to implement here. It's really deserving
+        of being its own fully fledged program.
         
         Parameters:
-            multiOverlap -- a list containing GFF3 Features which were found to
-                            overlap more than one Bin in the binCollection.
+            VOTE_THRESHOLD -- a float value in the range of 0 < VOTE_THRESHOLD <= 1.0
+                              determining what percentage (e.g., 0.5 = 50%) of GMAP
+                              alignments should support bin merging via overlap before
+                              we actually merge the bins together.
         Returns:
             linkedBinCollection -- a NEW BinCollection object where bins from the
                                    current object have been merged where deemed

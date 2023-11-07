@@ -1,0 +1,24 @@
+## contig1.1; constituent gene 1
+contig1	gmap	gene	1	100	.	+	.	ID=contig1.1.path1;Name=contig1.1
+contig1	gmap	mRNA	1	100	.	+	.	ID=contig1.1.mrna1;Parent=contig1.1.path1;Name=contig1.1;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	1	100	98	+	.	ID=contig1.1.mrna1.exon1;Parent=contig1.1.mrna1;Name=contig1.1
+contig1	gmap	CDS	1	100	98	+	0	ID=contig1.1.mrna1.cds1;Parent=contig1.1.mrna1;Name=contig1.1
+## contig1.2; constituent gene 2
+contig1	gmap	gene	200	300	.	+	.	ID=contig1.2.path1;Name=contig1.2
+contig1	gmap	mRNA	200	300	.	+	.	ID=contig1.2.mrna1;Parent=contig1.2.path1;Name=contig1.2;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	200	300	98	+	.	ID=contig1.2.mrna1.exon1;Parent=contig1.2.mrna1;Name=contig1.2
+contig1	gmap	CDS	200	300	98	+	0	ID=contig1.2.mrna1.cds1;Parent=contig1.2.mrna1;Name=contig1.2
+## contig1.3; constituent gene 3
+contig1	gmap	gene	400	500	.	+	.	ID=contig1.3.path1;Name=contig1.3
+contig1	gmap	mRNA	400	500	.	+	.	ID=contig1.3.mrna1;Parent=contig1.3.path1;Name=contig1.3;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	400	500	98	+	.	ID=contig1.3.mrna1.exon1;Parent=contig1.3.mrna1;Name=contig1.3
+contig1	gmap	CDS	400	500	98	+	0	ID=contig1.3.mrna1.cds1;Parent=contig1.3.mrna1;Name=contig1.3
+## contig1.4; chimeric gene
+contig1	gmap	gene	1	500	.	+	.	ID=contig1.4.path1;Name=contig1.4
+contig1	gmap	mRNA	1	500	.	+	.	ID=contig1.4.mrna1;Parent=contig1.4.path1;Name=contig1.4;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	1	100	98	+	.	ID=contig1.4.mrna1.exon1;Parent=contig1.4.mrna1;Name=contig1.4
+contig1	gmap	CDS	1	100	98	+	0	ID=contig1.4.mrna1.cds1;Parent=contig1.4.mrna1;Name=contig1.4
+contig1	gmap	exon	200	300	98	+	.	ID=contig1.4.mrna1.exon2;Parent=contig1.4.mrna1;Name=contig1.4
+contig1	gmap	CDS	200	300	98	+	0	ID=contig1.4.mrna1.cds2;Parent=contig1.4.mrna1;Name=contig1.4
+contig1	gmap	exon	400	500	98	+	.	ID=contig1.4.mrna1.exon3;Parent=contig1.4.mrna1;Name=contig1.4
+contig1	gmap	CDS	400	500	98	+	0	ID=contig1.4.mrna1.cds3;Parent=contig1.4.mrna1;Name=contig1.4

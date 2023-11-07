@@ -1,0 +1,9 @@
+## contig1.1; chimeric gene
+contig1	gmap	gene	1	500	.	+	.	ID=contig.chimer1;Name=contig.chimer1
+contig1	gmap	mRNA	1	500	.	+	.	ID=contig.chimer1.mrna;Parent=contig.chimer1;Name=contig.chimer1;coverage=100.0;identity=98.5;indels=0
+contig1	gmap	exon	1	100	98	+	.	ID=contig.chimer1.mrna.exon1;Parent=contig.chimer1.mrna;Name=contig.chimer1
+contig1	gmap	CDS	1	100	98	+	0	ID=contig.chimer1.mrna.cds1;Parent=contig.chimer1.mrna;Name=contig.chimer1
+contig1	gmap	exon	200	300	98	+	.	ID=contig.chimer1.mrna.exon2;Parent=contig.chimer1.mrna;Name=contig.chimer1
+contig1	gmap	CDS	200	300	98	+	0	ID=contig.chimer1.mrna.cds2;Parent=contig.chimer1.mrna;Name=contig.chimer1
+contig1	gmap	exon	400	500	98	+	.	ID=contig.chimer1.mrna.exon3;Parent=contig.chimer1.mrna;Name=contig.chimer1
+contig1	gmap	CDS	400	500	98	+	0	ID=contig.chimer1.mrna.cds3;Parent=contig.chimer1.mrna;Name=contig.chimer1
