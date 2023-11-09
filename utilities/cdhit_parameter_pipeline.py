@@ -37,9 +37,14 @@ def validate_args(args):
         quit()
     # Validate CD-HIT parameters
     for x in args.identity:
-        if not 0 < x <= 1.0:
-            print(f"Identity value must be in the range 0 < {x} <= 1.0")
-            quit()
+        if args.isProtein:
+            if not 0.40 <= x <= 1.0:
+                print(f"For proteins, identity value must be in the range 0.40 <= {x} <= 1.0")
+                quit()
+        else:
+            if not 0.80 <= x <= 1.0:
+                print(f"For nucleotides, identity value must be in the range 0.80 <= {x} <= 1.0")
+                quit()
     for x in args.shortCov:
         if not 0 < x <= 1.0:
             print(f"shortCov value must be in the range 0 < {x} <= 1.0")
@@ -193,6 +198,7 @@ def main():
     p.add_argument("-aL", dest="longCov",
                    required=False,
                    type=float,
+                   nargs="+",
                    help="""Specify one or more -aL parameters to provide
                    CD-HIT""")
     # Optional
