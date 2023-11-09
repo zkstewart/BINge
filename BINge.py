@@ -542,7 +542,8 @@ def mmseqs_clustering(fastaFile, algorithm, mmseqsDir, tmpDir, threads, evalue, 
     # Return cluster dictionary results
     return resultClusters
 
-def cdhit_clustering(fastaFile, cdhitDir, threads, mem, identity, shorterCovPct, longerCovPct):
+def cdhit_clustering(fastaFile, cdhitDir, threads, mem,
+                     identity, shorterCovPct, longerCovPct, molecule="nucleotide"):
     '''
     Runs CD-HIT on the unbinned sequences in order to assign them to a cluster.
     It's not ideal, but the alternative is to exclude these sequences which may
@@ -561,9 +562,14 @@ def cdhit_clustering(fastaFile, cdhitDir, threads, mem, identity, shorterCovPct,
         identity -- a float value indicating what identity value to run CD-HIT with.
         shorterCovPct -- a float value setting the -aS parameter of CD-HIT.
         longerCovPct -- a float value setting the -aL parameter of CD-HIT.
+        molecule -- a string of "nucleotide" or "protein" indicating what molecule
+                    the FASTA file sequences are.
     '''
+    assert molecule == "nucleotide" or "protein", \
+        f"{molecule} must be 'nucleotide' or 'protein'!"
+    
     # Cluster the unbinned transcripts
-    clusterer = ZS_ClustIO.CDHIT(fastaFile, "nucleotide", cdhitDir)
+    clusterer = ZS_ClustIO.CDHIT(fastaFile, molecule, cdhitDir)
     clusterer.identity = identity
     clusterer.set_shorter_cov_pct(shorterCovPct)
     clusterer.set_longer_cov_pct(longerCovPct)
