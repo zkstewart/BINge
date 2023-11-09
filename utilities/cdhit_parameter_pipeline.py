@@ -14,7 +14,6 @@ from threading import Thread
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts import ZS_ClustIO
-from BINge import cdhit_clustering
 
 # Define functions
 def validate_args(args):

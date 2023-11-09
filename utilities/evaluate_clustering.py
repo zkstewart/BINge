@@ -1,9 +1,12 @@
 #! python3
-# BINge_tuning.py
-# BIN Genes for Expression analyses - CD-HIT tuning module
+# evaluate_clustering.py
 
-# Utility program for tuning CD-HIT parameters prior to clustering of
-# unbinned sequences.
+# Utility program to evaluate a clustering solution of
+# a reference genome against the selfsame reference genome.
+# It is intended to allow for the tuning of CD-HIT parameters
+# prior to clustering of unbinned sequences. However, it is
+# equally useful for merely assessing a clustering solution
+# from BINge as well, which makes it useful for program benchmarking.
 
 import os, argparse, sys
 from sklearn.metrics.cluster import adjusted_rand_score
@@ -38,25 +41,26 @@ def validate_args(args):
 ## Main
 def main():
     # User input
-    usage = """%(prog)s is a module intended for two primary purposes.
+    usage = """%(prog)s is a utility program intended for two primary purposes.
     
-    First, it can be used to fine-tune CD-HIT's parameters prior to BINge's clustering.
-    Specifically, the final step of BINge clustering is to use CD-HIT to cluster any
-    unbinned sequences de novo, without using the genome. Having CD-HIT correctly tuned
-    to render good results is important for the reliability of its results.
-    
-    Second, it can be used to test CD-HIT's or BINge's clustering on an existing genome
-    annotation. Provide a GFF3 file for a species related to yours which has a high-quality
-    annotation inclusive of alternatively spliced isoforms. Additionally, provide the .clstr
-    of CD-HIT or the .tsv output of BINge that you've run beforehand on the isoform transcripts
+    Firstly, it can be used to test CD-HIT's or BINge's clustering on an existing genome
+    annotation. Provide a GFF3 file for a species with a high-quality annotation inclusive
+    of alternatively spliced isoforms. Additionally, provide the .clstr of CD-HIT or the
+    .tsv output of BINge that you've run beforehand on the isoform transcripts
     for that same genome. This script will then assess how well the clusterer was able to
     re-discover the gene groupings.
     
-    Note that (for the first purpose) the identity value will be difficult to assess since
-    multi-subspecies use will necessitate a lower identity threshold than clustering same
-    species genes. But the remaining parameters should hold true.
+    Secondly, it can be used to fine-tune CD-HIT's parameters prior to BINge's clustering.
+    Specifically, the final step of BINge clustering can use CD-HIT to cluster any
+    unbinned sequences de novo, without using the genome. Having CD-HIT correctly tuned
+    to render good results is important for the reliability of its results.
     
-    Lastly, this program will automatically detect whether the given cluster file comes
+    Note that (for the second purpose) the identity value may be difficult to assess when
+    performing multi-subspecies clustering as that will necessitate a lower identity threshold
+    than what would provide optimal results when clustering same species genes. But the remaining
+    parameters should hold true.
+    
+    Note: this program will automatically detect whether the given cluster file comes
     from BINge or CD-HIT.
     """
     p = argparse.ArgumentParser(description=usage)
@@ -137,12 +141,12 @@ def main():
     # Write and print output
     with open(args.outputFileName, "w") as fileOut:
         # Write header
-        fileOut.write("#BINge_tuning clustering comparison\n")
+        fileOut.write("#evaluate_clustering.py clustering comparison results\n")
         
         # Write details
         fileOut.write(f"Annotation file\t{args.gff3File}\n")
         fileOut.write(f"Cluster file\t{args.clusterFile}\n")
-        fileOut.write(f"Number of sequences\t{len(trueList)}\n")
+        fileOut.write(f"Number of mRNAs in annotation\t{len(trueList)}\n")
         fileOut.write(f"Number of genes in annotation\t{numGeneClusters}\n")
         fileOut.write(f"Number of predicted clusters\t{len(set(testList))}\n")
         fileOut.write(f"Adjusted Rand Index Score\t{score}\n")
