@@ -9,7 +9,7 @@
 # from BINge as well, which makes it useful for program benchmarking.
 
 import os, argparse, sys
-from sklearn.metrics.cluster import adjusted_rand_score
+from sklearn.metrics.cluster import adjusted_rand_score, rand_score
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts import ZS_GFF3IO, ZS_ClustIO
@@ -116,27 +116,40 @@ def main():
     "Must have the exact same sequences for comparison"
     for seqID in list(testDict.keys()):
         if not seqID in trueDict:
+            print(seqID)
             del testDict[seqID]
     
     # Ensure that things are okay, erroring out if they are not
-    if len(testDict) != len(gff3.types["mRNA"]):
+    if len(testDict) != len(trueDict):
         print("I wasn't able to make the cluster and GFF3 files match each other.")
-        print("Specifically, I see {0} mRNA features in the GFF3".format(len(gff3.types["mRNA"])))
+        print("Specifically, I see {0} testable mRNA features in the GFF3".format(len(trueDict)))
         print(f"I see {len(testDict)} sequences in the cluster file (after pruning to match the GFF3)")
         print("Unless these numbers are identical, an evaluation cannot occur.")
         print("This might be a problem with your input files, or maybe I have a bug...")
         print("If the former, fix things and try again. If the latter - sorry.")
         quit()
+    elif len(testDict) == 0:
+        print("I'm not sure why, but I've found zero (0) sequences to test.")
+        print("If this helps to debug, I see {0} testable mRNA features in the GFF3".format(len(trueDict)))
+        print("Either the reference GFF3 is unusual, or your cluster file doesn't match?")
+        print("Unable to continue from this point, so program will exit now.")
+        quit()
+    else:
+        print("I see {0} mRNA features in the GFF3".format(len(gff3.types["mRNA"])))
+        print("From that, I've found {0} testable mRNA features".format(len(trueDict)))
+        print(f"And I see {len(testDict)} sequences in the cluster file (after pruning to match the GFF3)")
+        print("I will continue the evaluation, but if these numbers look odd then something may have gone wrong.")
     
     # Derive clustering labels for comparison
     trueList = []
     testList = []
-    for mrnaFeature in gff3.types["mRNA"]:
-        trueList.append(trueDict[mrnaFeature.ID])
-        testList.append(testDict[mrnaFeature.ID])
+    for mrnaID in trueDict.keys():
+        trueList.append(trueDict[mrnaID])
+        testList.append(testDict[mrnaID])
     
     # Score the clustering result
-    score = adjusted_rand_score(trueList, testList)
+    arscore = adjusted_rand_score(trueList, testList)
+    score = rand_score(trueList, testList)
     
     # Write and print output
     with open(args.outputFileName, "w") as fileOut:
@@ -146,12 +159,13 @@ def main():
         # Write details
         fileOut.write(f"Annotation file\t{args.gff3File}\n")
         fileOut.write(f"Cluster file\t{args.clusterFile}\n")
-        fileOut.write(f"Number of mRNAs in annotation\t{len(trueList)}\n")
-        fileOut.write(f"Number of genes in annotation\t{numGeneClusters}\n")
+        fileOut.write(f"Number of testable mRNAs in annotation\t{len(trueList)}\n")
+        fileOut.write(f"Number of testable genes in annotation\t{numGeneClusters}\n")
         fileOut.write(f"Number of predicted clusters\t{len(set(testList))}\n")
-        fileOut.write(f"Adjusted Rand Index Score\t{score}\n")
+        fileOut.write(f"Rand Index Score\t{score}\n")
+        fileOut.write(f"Adjusted Rand Index Score\t{arscore}\n")
     
-    print(f"Adjusted Rand Index Score = {score}; see output file for more details")
+    print(f"Rand Index Score = {score}; Adjusted Rand Index Score = {arscore}; see output file for more details")
     
     print("Program completed successfully!")
 
