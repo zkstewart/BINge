@@ -129,7 +129,11 @@ def generate_bin_collections(annotationFiles):
             
             # Create a bin for this feature
             featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
-            featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
+            try:
+                featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
+            except:
+                "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
+                continue
             
             # See if this overlaps an existing bin
             binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
@@ -536,8 +540,10 @@ def mmseqs_clustering(fastaFile, algorithm, mmseqsDir, tmpDir, threads, evalue, 
     # Parse it into a form that BINge can use
     resultClusters = clusterer.parse_tsv(tmpFileName)
     
-    # Clean up temporary file
-    os.unlink(tmpFileName)
+    # Clean up temporary files
+    os.unlink(tmpFileName) # clean up tabular output
+    mmDB.clean_all() # clean up sequence database generation and indexing
+    clusterer.clean_all() # clean up clustering outputs
     
     # Return cluster dictionary results
     return resultClusters
@@ -607,8 +613,8 @@ def main():
     usageShort = """Quick notes for the use of %(prog)s: 1) For each annotation GFF3 (-ga)
     you should provide a matching GMAP GFF3 alignment (-gm). 2) One or more inputs can be
     provided with -i, which are looked at internally as a single file; all sequences in the
-    -ga files must be provided with -i (i.e., sequences with the same ID as the GFF3 IDs must
-    be given) as well all any sequences used for GMAP alignment. 3) Unbinned sequences will be
+    -ga files must be provided with -i (i.e., sequences with the same ID as the GFF3 gene IDs
+    must be given) as well as any sequences used for GMAP alignment. 3) Unbinned sequences will be
     cascade clustered using MMseqs2 by default which is recommended; you can choose Linclust
     or CD-HIT if desired. 4) Some parameters are hidden in this short help format since their
     defaults are adequate; specify --help-long to see information for those options.
