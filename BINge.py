@@ -839,7 +839,12 @@ def main():
     
     # Cluster remaining unbinned sequences
     unbinnedIDs = get_unbinned_sequence_ids([binCollection], transcriptRecords)
-    unbinnedClusterDict = cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args)
+    if len(unbinnedIDs) == 1:
+        unbinnedClusterDict = { 0: list(unbinnedIDs)[0] }
+    elif len(unbinnedIDs) > 0:
+        unbinnedClusterDict = cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args)
+    else:
+        unbinnedClusterDict = {} # blank to append nothing to output file
     
     # Write output of clustering to file
     with open(args.outputFileName, "a") as fileOut:

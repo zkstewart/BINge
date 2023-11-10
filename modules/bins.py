@@ -325,6 +325,20 @@ class BinCollection:
         for connectedBins in nx.connected_components(binGraph):
             connectedBins = list(connectedBins)
             
+            # Check that this bin is fully connected
+            "Non-fully connected graphs at this stage are dodgy"
+            allConnected = True
+            for i in range(0, len(connectedBins)-1):
+                for x in range(i+1, len(connectedBins)):
+                    try:
+                        binGraph[binHash1][binHash2]
+                    except:
+                        allConnected = False
+                        break # small speed up, won't fully exit loop
+            if allConnected == False:
+                continue
+            
+            # Check weights for voting and making connections between nodes
             for i in range(0, len(connectedBins)-1):
                 for x in range(i+1, len(connectedBins)):
                     binHash1 = connectedBins[i]
