@@ -69,9 +69,8 @@ def validate_cluster_file(clusterFile):
         
         # Raise an error otherwise
         else:
-            print(f"The input file '{clusterFile}' does not appear to be a BINge or " + 
-                    "CD-HIT cluster file")
-            print("You should check your inputs and try again.")
-            quit()
-    
+            errorMsg = (f"The input file '{clusterFile}' does not appear to be a BINge or " + 
+                        "CD-HIT cluster file.\nYou should check your inputs and try again.")
+            raise ValueError(errorMsg)
+
     return isBinge

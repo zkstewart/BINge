@@ -59,10 +59,9 @@ def validate_cluster_tsv_file(fileName):
             if l != "":
                 sl = l.split("\t")
                 if len(sl) != 2:
-                    print(f"The input file '{fileName}' does not appear to be a BINge, CD-HIT, " + 
-                    "or TSV (e.g., Corset) cluster file")
-                    print("You should check your inputs and try again.")
-                    quit()
+                    errorMsg = (f"The input file '{fileName}' does not appear to be a BINge, CD-HIT, " + 
+                        "or TSV (e.g., Corset) cluster file.\nYou should check your inputs and try again.")
+                    raise ValueError(errorMsg)
     return True
 
 def parse_corset_clusters(fileName):
