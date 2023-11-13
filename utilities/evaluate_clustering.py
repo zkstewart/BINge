@@ -30,7 +30,12 @@ def validate_args(args):
         quit()
     
     # Validate input file format
-    args.isBinge = validate_cluster_file(args.clusterFile)
+    try:
+        args.isBinge = validate_cluster_file(args.clusterFile)
+        args.isTSV = False
+    except:
+        args.isBinge = False
+        args.isTSV = validate_cluster_tsv_file(args.clusterFile)
     
     # Validate output file location
     if os.path.isfile(args.outputFileName):
@@ -38,17 +43,65 @@ def validate_args(args):
         print('Make sure you specify a unique file name and try again.')
         quit()
 
+def validate_cluster_tsv_file(fileName):
+    '''
+    Validation function specifically for handling Corset-like cluster results.
+    The file is expected to strictly conform to there being only two columns.
+    
+    Parameters:
+        fileName -- a string indicating the location of the TSV file for validation.
+    Returns:
+        isValid -- a boolean that will be True; the alternative is quit() being called.
+    '''
+    with open(fileName, "r") as fileIn:
+        for line in fileIn:
+            l = line.rstrip("\r\n ")
+            if l != "":
+                sl = l.split("\t")
+                if len(sl) != 2:
+                    print(f"The input file '{fileName}' does not appear to be a BINge, CD-HIT, " + 
+                    "or TSV (e.g., Corset) cluster file")
+                    print("You should check your inputs and try again.")
+                    quit()
+    return True
+
+def parse_corset_clusters(fileName):
+    '''
+    After a corset TSV has been validated, this function will parse it to a dictionary
+    structure. The left column of the TSV must be the sequence ID, with the right
+    column being the cluster ID.
+    
+    Parameters:
+        fileName -- a string indicating the location of the Corset TSV file for parsing.
+    Returns:
+        clusterDict -- a dictionary with structure like:
+                       {
+                           'cluster-id1': ['seqID1', 'seqID2'],
+                           'cluster-id2': ['seqID3'],
+                           ...
+                       }
+    '''
+    clusterDict = {}
+    with open(fileName, "r") as fileIn:
+        for line in fileIn:
+            l = line.rstrip("\r\n ")
+            if l != "":
+                seqID, clustID = l.split("\t")
+                clusterDict.setdefault(clustID, [])
+                clusterDict[clustID].append(seqID)
+    return clusterDict
+
 ## Main
 def main():
     # User input
     usage = """%(prog)s is a utility program intended for two primary purposes.
     
-    Firstly, it can be used to test CD-HIT's or BINge's clustering on an existing genome
-    annotation. Provide a GFF3 file for a species with a high-quality annotation inclusive
-    of alternatively spliced isoforms. Additionally, provide the .clstr of CD-HIT or the
-    .tsv output of BINge that you've run beforehand on the isoform transcripts
-    for that same genome. This script will then assess how well the clusterer was able to
-    re-discover the gene groupings.
+    Firstly, it can be used to test CD-HIT's, BINge's, or Corset's clustering on an existing 
+    genome annotation. Provide a GFF3 file for a species with a high-quality annotation inclusive
+    of alternatively spliced isoforms. Additionally, provide the .clstr of CD-HIT, the .tsv
+    output of BINge, or the Corset results-clusters.txt that you've run beforehand on the 
+    isoform transcripts for that same genome. This script will then assess how well the 
+    clusterer was able to re-discover the gene groupings.
     
     Secondly, it can be used to fine-tune CD-HIT's parameters prior to BINge's clustering.
     Specifically, the final step of BINge clustering can use CD-HIT to cluster any
@@ -61,7 +114,8 @@ def main():
     parameters should hold true.
     
     Note: this program will automatically detect whether the given cluster file comes
-    from BINge or CD-HIT.
+    from BINge, CD-HIT, or Corset. The Corset file format is a TSV without header with two
+    columns; the first contains sequence IDs, and the second contains the cluster labels.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
@@ -122,6 +176,8 @@ def main():
     # Parse the CD-HIT / BINge cluster file, changing cluster IDs to not overlap
     if args.isBinge:
         testDict = parse_binge_clusters(args.clusterFile) # we will 'test' this against our ground truth
+    elif args.isTSV:
+        testDict = parse_corset_clusters(args.clusterFile)
     else:
         testDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.clusterFile) 
     
