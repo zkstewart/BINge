@@ -91,6 +91,13 @@ def main():
                    to differences between the GFF3 and cluster file. You should only do this
                    if you find that the errors are not significant!""",
                    default="")
+    p.add_argument("--noMRNA", dest="noMRNA",
+                   required=False,
+                   help="""Optionally, if your genome is bacterial or archaeal, then your GFF3
+                   likely does not have mRNA features; it lists CDS directly under the gene
+                   feature. Specify this flag to allow for that behaviour ONLY if you are
+                   looking at one of these organisms.""",
+                   default="")
     
     args = p.parse_args()
     validate_args(args)
@@ -105,6 +112,9 @@ def main():
         if hasattr(geneFeature, "mRNA"):
             for mrnaFeature in geneFeature.mRNA:
                 trueDict[mrnaFeature.ID] = numGeneClusters
+            numGeneClusters += 1
+        elif args.noMRNA == True:
+            trueDict[geneFeature.ID] = numGeneClusters
             numGeneClusters += 1
     
     # Parse the CD-HIT / BINge cluster file, changing cluster IDs to not overlap
@@ -124,7 +134,7 @@ def main():
     "Must have the exact same sequences for comparison"
     for seqID in list(testDict.keys()):
         if not seqID in trueDict:
-            print(seqID)
+            print(f"Dropped {seqID} from test labels as it has no match in true labels")
             del testDict[seqID]
     
     # Ensure that things are okay, erroring out if they are not
@@ -137,7 +147,7 @@ def main():
             # Drop any sequences in trueDict that aren't in our testDict
             for seqID in list(trueDict.keys()):
                 if not seqID in testDict:
-                    print(seqID)
+                    print(f"Dropped {seqID} from TRUE labels as it has no match in test labels")
                     del trueDict[seqID]
             
             print("--beTolerant was specified, which means I've tried to make these numbers match.")
