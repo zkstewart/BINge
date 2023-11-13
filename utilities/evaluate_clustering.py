@@ -83,6 +83,14 @@ def main():
                    FASTA file to have IDs like 'XM_009121514.3' but the GFF3 would index that
                    as 'rna-XM_009121514.3'. So you would specify 'rna-' here to address that.""",
                    default="")
+    p.add_argument("--beTolerant", dest="beTolerant",
+                   required=False,
+                   help="""Optionally, if you are finding that this script errors out when 
+                   comparing the number of sequences in your GFF3 to your cluster file, you
+                   can provide this flag to prevent the error and make this program tolerant
+                   to differences between the GFF3 and cluster file. You should only do this
+                   if you find that the errors are not significant!""",
+                   default="")
     
     args = p.parse_args()
     validate_args(args)
@@ -124,10 +132,36 @@ def main():
         print("I wasn't able to make the cluster and GFF3 files match each other.")
         print("Specifically, I see {0} testable mRNA features in the GFF3".format(len(trueDict)))
         print(f"I see {len(testDict)} sequences in the cluster file (after pruning to match the GFF3)")
-        print("Unless these numbers are identical, an evaluation cannot occur.")
-        print("This might be a problem with your input files, or maybe I have a bug...")
-        print("If the former, fix things and try again. If the latter - sorry.")
-        quit()
+        # Change behaviour depending on whether we're tolerant or not
+        if args.beTolerant:
+            # Drop any sequences in trueDict that aren't in our testDict
+            for seqID in list(trueDict.keys()):
+                if not seqID in testDict:
+                    print(seqID)
+                    del trueDict[seqID]
+            
+            print("--beTolerant was specified, which means I've tried to make these numbers match.")
+            print(f"I've subset testable mRNAs in the GFF3 down to {len(trueDict)} features")
+            
+            if len(trueDict) == 0:
+                print("After doing this, I now find zero (0) sequences to test.")
+                print("Either the reference GFF3 is unusual, or your cluster file doesn't match?")
+                print("Unable to continue from this point, so program will exit now.")
+                quit()
+            elif len(testDict) == len(trueDict):
+                print("These numbers now match, so I can continue the evaluation.")
+                print("But, if these numbers look odd, then something may have gone wrong.")
+            else:
+                print("These numbers still do not match, so I cannot continue with the evaluation.")
+                print("This might be a problem with your input files, or maybe I have a bug...")
+                print("If the former, fix things and try again. If the latter - sorry.")
+                quit()
+        else:
+            print("--beTolerant was not specficied; hence, unless these numbers are identical, " +
+                  "an evaluation cannot occur.")
+            print("This might be a problem with your input files, or maybe I have a bug...")
+            print("If the former, fix things and try again. If the latter - sorry.")
+            quit()
     elif len(testDict) == 0:
         print("I'm not sure why, but I've found zero (0) sequences to test.")
         print("If this helps to debug, I see {0} testable mRNA features in the GFF3".format(len(trueDict)))
