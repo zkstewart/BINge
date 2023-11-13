@@ -81,13 +81,19 @@ def parse_corset_clusters(fileName):
                        }
     '''
     clusterDict = {}
+    clusterNum = -1
+    lastCluster = None
     with open(fileName, "r") as fileIn:
         for line in fileIn:
             l = line.rstrip("\r\n ")
             if l != "":
                 seqID, clustID = l.split("\t")
-                clusterDict.setdefault(clustID, [])
-                clusterDict[clustID].append(seqID)
+                if clustID != lastCluster:
+                    clusterNum += 1
+                lastCluster = clustID
+                
+                clusterDict.setdefault(clusterNum, [])
+                clusterDict[clusterNum].append(seqID)
     return clusterDict
 
 ## Main
