@@ -85,19 +85,21 @@ def main():
                    default="")
     p.add_argument("--beTolerant", dest="beTolerant",
                    required=False,
+                   action="store_true",
                    help="""Optionally, if you are finding that this script errors out when 
                    comparing the number of sequences in your GFF3 to your cluster file, you
                    can provide this flag to prevent the error and make this program tolerant
                    to differences between the GFF3 and cluster file. You should only do this
                    if you find that the errors are not significant!""",
-                   default="")
+                   default=False)
     p.add_argument("--noMRNA", dest="noMRNA",
                    required=False,
+                   action="store_true",
                    help="""Optionally, if your genome is bacterial or archaeal, then your GFF3
                    likely does not have mRNA features; it lists CDS directly under the gene
                    feature. Specify this flag to allow for that behaviour ONLY if you are
                    looking at one of these organisms.""",
-                   default="")
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
