@@ -30,12 +30,18 @@ def validate_args(args):
         quit()
     
     # Validate input file format
-    try:
-        args.isBinge = validate_cluster_file(args.clusterFile)
-        args.isTSV = False
-    except:
-        args.isBinge = False
-        args.isTSV = validate_cluster_tsv_file(args.clusterFile)
+    if args.clusterer == "binge":
+        isBinge = validate_cluster_file(args.clusterFile)
+        if not isBinge:
+            raise ValueError("The input file was not validated as a BINge file!")
+    elif args.clusterer == "cdhit":
+        isBinge = validate_cluster_file(args.clusterFile)
+        if isBinge:
+            raise ValueError("The input file was not validated as a CD-HIT file!")
+    elif args.clusterer == "corset" or args.clusterer == "mmseqs":
+        isTSV = validate_cluster_tsv_file(args.clusterFile)
+    else:
+        raise NotImplementedError()
     
     # Validate output file location
     if os.path.isfile(args.outputFileName):
@@ -45,7 +51,7 @@ def validate_args(args):
 
 def validate_cluster_tsv_file(fileName):
     '''
-    Validation function specifically for handling Corset-like cluster results.
+    Validation function specifically for handling Corset-like or MMseqs2 cluster results.
     The file is expected to strictly conform to there being only two columns.
     
     Parameters:
@@ -59,8 +65,8 @@ def validate_cluster_tsv_file(fileName):
             if l != "":
                 sl = l.split("\t")
                 if len(sl) != 2:
-                    errorMsg = (f"The input file '{fileName}' does not appear to be a BINge, CD-HIT, " + 
-                        "or TSV (e.g., Corset) cluster file.\nYou should check your inputs and try again.")
+                    errorMsg = (f"The input file '{fileName}' does not appear to be a TSV (e.g., Corset) " +
+                        "cluster file.\nYou should check your inputs and try again.")
                     raise ValueError(errorMsg)
     return True
 
@@ -75,8 +81,8 @@ def parse_corset_clusters(fileName):
     Returns:
         clusterDict -- a dictionary with structure like:
                        {
-                           'cluster-id1': ['seqID1', 'seqID2'],
-                           'cluster-id2': ['seqID3'],
+                           0: ['seqID1', 'seqID2'],
+                           1: ['seqID3'],
                            ...
                        }
     '''
@@ -88,6 +94,38 @@ def parse_corset_clusters(fileName):
             l = line.rstrip("\r\n ")
             if l != "":
                 seqID, clustID = l.split("\t")
+                if clustID != lastCluster:
+                    clusterNum += 1
+                lastCluster = clustID
+                
+                clusterDict.setdefault(clusterNum, [])
+                clusterDict[clusterNum].append(seqID)
+    return clusterDict
+
+def parse_mmseqs_clusters(fileName):
+    '''
+    After a MMseqs2 TSV has been validated, this function will parse it to a dictionary
+    structure. The left column of the TSV must be the cluster representative ID, with the
+    right column being the member sequence ID.
+    
+    Parameters:
+        fileName -- a string indicating the location of the Corset TSV file for parsing.
+    Returns:
+        clusterDict -- a dictionary with structure like:
+                       {
+                           0: ['seqID1', 'seqID2'],
+                           1: ['seqID3'],
+                           ...
+                       }
+    '''
+    clusterDict = {}
+    clusterNum = -1
+    lastCluster = None
+    with open(fileName, "r") as fileIn:
+        for line in fileIn:
+            l = line.rstrip("\r\n ")
+            if l != "":
+                clustID, seqID = l.split("\t")
                 if clustID != lastCluster:
                     clusterNum += 1
                 lastCluster = clustID
@@ -118,9 +156,9 @@ def main():
     than what would provide optimal results when clustering same species genes. But the remaining
     parameters should hold true.
     
-    Note: this program will automatically detect whether the given cluster file comes
-    from BINge, CD-HIT, or Corset. The Corset file format is a TSV without header with two
-    columns; the first contains sequence IDs, and the second contains the cluster labels.
+    Note: you must specify which program generaed the clustering output file. The Corset file format
+    is a TSV without header with two columns; the first contains sequence IDs, and the second contains
+    the cluster labels. This can be hackily coopted if needed.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
@@ -133,6 +171,10 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for text results")
+    p.add_argument("-c", dest="clusterer",
+                   required=True,
+                   choices=["binge", "cdhit", "corset", "mmseqs"],
+                   help="Specify which clusterer's results you are providing.")
     # Optional
     p.add_argument("--seq_prefix", dest="seqPrefix",
                    required=False,
@@ -179,12 +221,16 @@ def main():
             numGeneClusters += 1
     
     # Parse the CD-HIT / BINge cluster file, changing cluster IDs to not overlap
-    if args.isBinge:
+    if args.clusterer == "binge":
         testDict = parse_binge_clusters(args.clusterFile) # we will 'test' this against our ground truth
-    elif args.isTSV:
-        testDict = parse_corset_clusters(args.clusterFile)
-    else:
+    elif args.clusterer == "cdhit":
         testDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.clusterFile) 
+    elif args.clusterer == "corset":
+        testDict = parse_corset_clusters(args.clusterFile)
+    elif args.clusterer == "mmseqs":
+        testDict = parse_mmseqs_clusters(args.clusterFile)
+    else:
+        raise NotImplementedError()
     
     # Flip the dict around and +numGeneClusters to prevent cluster number overlap
     testDict = {
