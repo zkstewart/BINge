@@ -171,7 +171,7 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for text results")
-    p.add_argument("-c", dest="clusterer",
+    p.add_argument("-p", dest="clusterer",
                    required=True,
                    choices=["binge", "cdhit", "corset", "mmseqs"],
                    help="Specify which clusterer's results you are providing.")
