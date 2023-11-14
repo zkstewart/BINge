@@ -2,7 +2,7 @@ import os, sys
 from pyfaidx import Fasta
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts import ZS_SeqIO # expose this to any callers
+from Various_scripts.Function_packages import ZS_SeqIO # expose this to any callers
 
 class FastaCollection:
     '''

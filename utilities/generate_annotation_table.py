@@ -11,7 +11,7 @@ from goatools import obo_parser
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from Various_scripts import ZS_SeqIO
+from Various_scripts.Function_packages import ZS_SeqIO
 
 # Define functions
 def validate_args(args):

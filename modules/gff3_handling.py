@@ -1,6 +1,6 @@
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts import ZS_GFF3IO
+from Various_scripts.Function_packages import ZS_GFF3IO
 
 from ZS_GFF3IO import GFF3 # expose this to any callers
 

@@ -4,7 +4,7 @@ import os, sys, unittest
 import networkx as nx
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts import ZS_GFF3IO
+from Various_scripts.Function_packages import ZS_GFF3IO
 from modules.fasta_handling import FastaCollection
 from modules.bins import BinCollection, Bin
 from modules.gff3_handling import iterate_through_gff3

@@ -12,7 +12,7 @@ import os, argparse, sys
 from sklearn.metrics.cluster import adjusted_rand_score, rand_score
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts import ZS_GFF3IO, ZS_ClustIO
+from Various_scripts.Function_packages import ZS_GFF3IO, ZS_ClustIO
 
 from modules.validation import validate_cluster_file
 from modules.parsing import parse_binge_clusters

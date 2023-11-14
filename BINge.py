@@ -14,7 +14,7 @@ import os, argparse, sys, queue
 import networkx as nx
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from Various_scripts import ZS_ClustIO, ZS_BlastIO
+from Various_scripts.Function_packages import ZS_ClustIO, ZS_BlastIO
 
 from modules.bins import Bin, BinCollection
 from modules.thread_workers import GmapBinThread, BinSplitWorkerThread, CollectionWorkerThread

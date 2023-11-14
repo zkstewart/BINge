@@ -9,8 +9,7 @@ import os, argparse, sys
 import numpy as np
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from Various_scripts import ZS_BlastIO, ZS_ClustIO
+from Various_scripts.Function_packages import ZS_BlastIO, ZS_ClustIO
 
 from modules.fasta_handling import ZS_SeqIO, FastaCollection
 from modules.validation import validate_salmon_files, validate_cluster_file

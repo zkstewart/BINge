@@ -3,7 +3,7 @@
 import os, sys, unittest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts import ZS_GFF3IO
+from Various_scripts.Function_packages import ZS_GFF3IO
 from modules.fasta_handling import FastaCollection
 from modules.bins import BinCollection
 from BINge import generate_bin_collections, populate_bin_collections, \

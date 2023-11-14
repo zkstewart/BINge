@@ -13,7 +13,7 @@ from itertools import product
 from threading import Thread
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts import ZS_ClustIO
+from Various_scripts.Function_packages import ZS_ClustIO
 
 # Define functions
 def validate_args(args):
