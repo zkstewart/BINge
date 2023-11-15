@@ -9,7 +9,8 @@
 # from BINge as well, which makes it useful for program benchmarking.
 
 import os, argparse, sys
-from sklearn.metrics.cluster import adjusted_rand_score, rand_score
+from sklearn.metrics.cluster import adjusted_rand_score, rand_score, \
+    normalized_mutual_info_score, adjusted_mutual_info_score
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages import ZS_GFF3IO, ZS_ClustIO
@@ -302,7 +303,9 @@ def main():
     
     # Score the clustering result
     arscore = adjusted_rand_score(trueList, testList)
-    score = rand_score(trueList, testList)
+    rscore = rand_score(trueList, testList)
+    nmiscore = normalized_mutual_info_score(trueList, testList)
+    amiscore = adjusted_mutual_info_score(trueList, testList)
     
     # Write and print output
     with open(args.outputFileName, "w") as fileOut:
@@ -315,10 +318,13 @@ def main():
         fileOut.write(f"Number of testable mRNAs in annotation\t{len(trueList)}\n")
         fileOut.write(f"Number of testable genes in annotation\t{numGeneClusters}\n")
         fileOut.write(f"Number of predicted clusters\t{len(set(testList))}\n")
-        fileOut.write(f"Rand Index Score\t{score}\n")
+        fileOut.write(f"Rand Index Score\t{rscore}\n")
         fileOut.write(f"Adjusted Rand Index Score\t{arscore}\n")
+        fileOut.write(f"NMI Score\t{nmiscore}\n")
+        fileOut.write(f"AMI Score\t{amiscore}\n")
     
-    print(f"Rand Index Score = {score}; Adjusted Rand Index Score = {arscore}; see output file for more details")
+    print(f"Rand Index Score = {rscore}; Adjusted Rand Index Score = {arscore}; " + 
+          f"NMI score = {nmiscore}; AMI score = {amiscore}; see output file for more details")
     
     print("Program completed successfully!")
 
