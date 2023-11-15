@@ -82,7 +82,11 @@ def validate_args(args):
         "--mode is controlled by argparse choices"
         
         # Validate "MMS-CASCADE" parameters
-        "--sensitivity is controlled by argparse choices"
+        if args.sensitivity in ["5.7", "7.5"]:
+            args.sensitivity = float(args.sensitivity)
+        else:
+            args.sensitivity = int(args.sensitivity)
+        
         if args.steps < 1:
             print("--steps must be greater than or equal to 1")
             quit()
@@ -580,6 +584,7 @@ def cdhit_clustering(fastaFile, cdhitDir, threads, mem,
     clusterer.identity = identity
     clusterer.set_shorter_cov_pct(shorterCovPct)
     clusterer.set_longer_cov_pct(longerCovPct)
+    clusterer.set_local()
     clusterer.threads = threads
     clusterer.mem = mem
     clusterer.get_cdhit_results(returnFASTA=False, returnClusters=True)
@@ -756,10 +761,10 @@ def main():
                    default="connected-component")
     p.add_argument("--sensitivity", dest="sensitivity",
                    required=False,
-                   choices=[4,5,5.7,6,7,7.5],
-                   help="MMSEQS-CASCADE: Specify the sensitivity value (default==7.5)"
+                   choices=["4","5","5.7","6","7","7.5"],
+                   help="MMSEQS-CASCADE: Specify the sensitivity value (default==5.7)"
                    if showHiddenArgs else argparse.SUPPRESS,
-                   default=7.5)
+                   default="5.7")
     p.add_argument("--steps", dest="steps",
                    required=False,
                    type=int,
@@ -772,14 +777,14 @@ def main():
                    required=False,
                    type=float,
                    help="""CDHIT: Specify what -aS parameter to provide
-                   CD-HIT (default==0.6)"""
+                   CD-HIT (default==0.4)"""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=0.6)
     p.add_argument("--cdhit_longcov", dest="cdhitLongCov",
                    required=False,
                    type=float,
                    help="""CDHIT: Specify what -aL parameter to provide
-                   CD-HIT (default==0.3)"""
+                   CD-HIT (default==0.4)"""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=0.3)
     p.add_argument("--cdhit_mem", dest="cdhitMem",
