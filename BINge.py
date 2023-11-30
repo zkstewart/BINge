@@ -731,9 +731,9 @@ def main():
                    required=False,
                    type=float,
                    help="""ALL CLUSTERERS: Specify the identity threshold for clustering
-                   (default==0.85)"""
+                   (default==0.98)"""
                    if showHiddenArgs else argparse.SUPPRESS,
-                   default=0.85)
+                   default=0.98)
     # Optional - MMseqs2
     p.add_argument("--tmpDir", dest="tmpDir",
                    required=False,
@@ -779,14 +779,14 @@ def main():
                    help="""CDHIT: Specify what -aS parameter to provide
                    CD-HIT (default==0.4)"""
                    if showHiddenArgs else argparse.SUPPRESS,
-                   default=0.6)
+                   default=0.4)
     p.add_argument("--cdhit_longcov", dest="cdhitLongCov",
                    required=False,
                    type=float,
                    help="""CDHIT: Specify what -aL parameter to provide
                    CD-HIT (default==0.4)"""
                    if showHiddenArgs else argparse.SUPPRESS,
-                   default=0.3)
+                   default=0.4)
     p.add_argument("--cdhit_mem", dest="cdhitMem",
                    required=False,
                    type=int,

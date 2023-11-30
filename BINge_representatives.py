@@ -313,6 +313,7 @@ def main():
                 evidenceLists = []
                 
                 # Store all forms of evidence we have at hand for each sequence member
+                numRepsInCluster = sum([ seqID in annotIDs for seqID in seqIDs ])
                 for seqID in seqIDs:
                     # Tolerantly handle counts that can be filtered by salmon
                     try:
@@ -321,13 +322,29 @@ def main():
                         counts = 0
                     
                     # Now store the evidence
-                    thisEvidenceList = [
-                        1 if seqID in annotIDs else 0,
-                        blastDict[seqID] if seqID in blastDict else 1, # stores E-value
-                        counts,
-                        len(str(transcriptRecords[seqID])),
-                        seqID
-                    ]
+                    """We prioritise annotID values ONLY if there's a single one in the cluster;
+                    if there are 2 or more, BINge may have merged fragmented gene clusters together
+                    in which case selecting the original annotID sequences would end up ignoring the
+                    'fix' that we've attempted to bring about. Moreover, if we've merged bins together
+                    through self linking, it might be misleading to always present the original ID as
+                    the representative since we've clustered more than one original and hence it becomes
+                    a bit arbitrary to pick one above the other regardless of E-value BLAST score."""
+                    if numRepsInCluster <= 1:
+                        thisEvidenceList = [
+                            1 if seqID in annotIDs else 0,
+                            blastDict[seqID] if seqID in blastDict else 1, # stores E-value
+                            counts,
+                            len(str(transcriptRecords[seqID])),
+                            seqID
+                        ]
+                    else:
+                        thisEvidenceList = [
+                            0,
+                            blastDict[seqID] if seqID in blastDict else 1, # stores E-value
+                            counts,
+                            len(str(transcriptRecords[seqID])),
+                            seqID
+                        ]
                     evidenceLists.append(thisEvidenceList)
                 
                 # Sort our evidence lists in a way where the first value is the best
