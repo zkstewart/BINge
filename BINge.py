@@ -117,13 +117,15 @@ def validate_args(args):
         print('Make sure you specify a unique file name and try again.')
         quit()
 
-def generate_bin_collections(annotationFiles):
+def generate_bin_collections(annotationFiles, numBins):
     '''
     Receives a list of genome annotations in GFF3 format and parses these
     into BinCollection structures which are separately stored in the returned list.
     
     Parameters:
         annotationFiles -- a list of strings pointing to GFF3 genome annotation files.
+        numBins -- the number of BinCollections we're expecting to generate; only relevant
+                   if annotationFiles is an empty list.
     Returns:
         collectionList -- a list containing BinCollections in the same order as the
                           input annotation files.
@@ -169,9 +171,14 @@ def generate_bin_collections(annotationFiles):
         # Store the bin collection in our list for multi-threading later
         collectionList.append(binCollection)
     
+    # Make sure we've got the correct number of BinCollections
+    if len(collectionList) == 0:
+        for _ in range(numBins):
+            collectionList.append(BinCollection())
+    
     return collectionList
 
-def populate_bin_collections(collectionList, gmapFiles, threads, annotationFiles):
+def populate_bin_collections(collectionList, gmapFiles, threads):
     '''
     Receives a list of BinCollection objects, alongside a matching list
     of GMAP GFF3 file locations, and uses multiple threads to parse the GMAP
@@ -187,9 +194,6 @@ def populate_bin_collections(collectionList, gmapFiles, threads, annotationFiles
         threads -- an integer indicating how many threads to run; this code is
                    parallelised in terms of processing multiple GMAP files at a time,
                    if you have only 1 GMAP file then only 1 thread will be used.
-        annotationFiles -- a list of strings pointing to annotation GFF3s; solely used
-                           for validating whether we should expect to find a corresponding
-                           BinCollection or not.
     Modifies:
         collectionList -- the BinCollection objects in this list will have alignment IDs
                           added to the contained Bin objects.
@@ -204,11 +208,7 @@ def populate_bin_collections(collectionList, gmapFiles, threads, annotationFiles
         for x in range(threads): # begin processing n files
             if i+x < len(gmapFiles): # parent loop may excess if n > the number of GMAP files
                 gmapFile = gmapFiles[i+x]
-                
-                if annotationFiles != []:
-                    binCollection = collectionList[i+x]
-                else:
-                    binCollection = BinCollection()
+                binCollection = collectionList[i+x]
                 
                 gmapWorkerThread = GmapBinThread(gmapFile, binCollection)
                 processing.append(gmapWorkerThread)
@@ -843,11 +843,10 @@ def main():
     # ... or begin pre-external clustering BINge
     else:
         # Parse each GFF3 into a bin collection structure
-        collectionList = generate_bin_collections(args.annotationFiles) # keep genome bins separate to multi-thread later
+        collectionList = generate_bin_collections(args.annotationFiles, len(args.gmapFiles)) # keep genome bins separate to multi-thread later
         
         # Parse GMAP alignments into our bin collection with multiple threads
-        novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, args.gmapFiles,
-                                                                     args.threads, args.annotationFiles)
+        novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, args.gmapFiles, args.threads)
         
         # Merge bins resulting from fragmented annotation models
         for i in range(len(collectionList)):
