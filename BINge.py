@@ -42,11 +42,17 @@ def validate_args(args):
             quit()
     
     # Validate the input files are logically sound
-    if len(args.annotationFiles) != len(args.gmapFiles):
-        print("Your genome annotation and GMAP files are incompatible!")
-        print(f"I'm seeing {len(args.annotationFiles)} annotation files and {len(args.gmapFiles)} GMAP files")
-        print("These numbers should be the same. You need to fix this up and try again.")
-        quit()
+    if len(args.annotationFiles) != 0:
+        if len(args.annotationFiles) != len(args.gmapFiles):
+            print("Your genome annotation and GMAP files are incompatible!")
+            print(f"I'm seeing {len(args.annotationFiles)} annotation files and {len(args.gmapFiles)} GMAP files")
+            print("These numbers should be the same. You need to fix this up and try again.")
+            quit()
+    else:
+        print("Note that you are choosing to run BINge without an input annotation")
+        print("That's okay if there isn't one available, but if there IS one available, " + 
+              "I'd recommend that you use it.")
+        print("Program will continue operation as usual.")
     
     # Validate optional BINge parameters
     if args.threads < 1:
@@ -684,10 +690,6 @@ def main():
                    required=True,
                    nargs="+",
                    help="Input transcriptome FASTA file(s) (mRNA or CDS).")
-    p.add_argument("-ga", dest="annotationFiles",
-                   nargs="+",
-                   required=True,
-                   help="Input one or more genome annotation (GFF3) files")
     p.add_argument("-gm", dest="gmapFiles",
                    nargs="+",
                    required=True,
@@ -696,6 +698,11 @@ def main():
                    required=True,
                    help="Output file name for TSV-formatted results")
     # Optional - BINge
+    p.add_argument("-ga", "--annot", dest="annotationFiles",
+                   nargs="+",
+                   required=False,
+                   help="Optionally, input one or more genome annotation (GFF3) files",
+                   default=[])
     p.add_argument("--threads", dest="threads",
                    required=False,
                    type=int,
