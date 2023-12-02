@@ -171,7 +171,7 @@ def generate_bin_collections(annotationFiles):
     
     return collectionList
 
-def populate_bin_collections(collectionList, gmapFiles, threads):
+def populate_bin_collections(collectionList, gmapFiles, threads, annotationFiles):
     '''
     Receives a list of BinCollection objects, alongside a matching list
     of GMAP GFF3 file locations, and uses multiple threads to parse the GMAP
@@ -187,6 +187,9 @@ def populate_bin_collections(collectionList, gmapFiles, threads):
         threads -- an integer indicating how many threads to run; this code is
                    parallelised in terms of processing multiple GMAP files at a time,
                    if you have only 1 GMAP file then only 1 thread will be used.
+        annotationFiles -- a list of strings pointing to annotation GFF3s; solely used
+                           for validating whether we should expect to find a corresponding
+                           BinCollection or not.
     Modifies:
         collectionList -- the BinCollection objects in this list will have alignment IDs
                           added to the contained Bin objects.
@@ -201,7 +204,11 @@ def populate_bin_collections(collectionList, gmapFiles, threads):
         for x in range(threads): # begin processing n files
             if i+x < len(gmapFiles): # parent loop may excess if n > the number of GMAP files
                 gmapFile = gmapFiles[i+x]
-                binCollection = collectionList[i+x]
+                
+                if annotationFiles != []:
+                    binCollection = collectionList[i+x]
+                else:
+                    binCollection = BinCollection()
                 
                 gmapWorkerThread = GmapBinThread(gmapFile, binCollection)
                 processing.append(gmapWorkerThread)
