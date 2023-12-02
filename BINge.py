@@ -846,7 +846,8 @@ def main():
         collectionList = generate_bin_collections(args.annotationFiles) # keep genome bins separate to multi-thread later
         
         # Parse GMAP alignments into our bin collection with multiple threads
-        novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, args.gmapFiles, args.threads)
+        novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, args.gmapFiles,
+                                                                     args.threads, args.annotationFiles)
         
         # Merge bins resulting from fragmented annotation models
         for i in range(len(collectionList)):
