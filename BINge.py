@@ -71,7 +71,7 @@ def validate_args(args):
     
     # Specifically handle gmapIdentity
     if args.gmapIdentity == []:
-        args.gmapIdentity = [0.95 for _ in len(args.gmapFiles)]
+        args.gmapIdentity = [0.95 for _ in range(len(args.gmapFiles))]
     if len(args.gmapIdentity) != len(args.gmapFiles):
         print("--gmapIdentity parameter must have the same number of values as -gm")
         print("Fix this and try again.")
