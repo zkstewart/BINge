@@ -13,10 +13,22 @@ class GmapBinThread(Thread):
     to be stored locally within the object. Multi-threading this process is viable
     since each GMAP file should correspond to an entirely separate genome and hence
     there should be no overlap.
+    
+    Parameters:
+        gmapFile -- a string indicating the location of a GMAP GFF3 for parsing.
+        binCollection -- an existing BinCollection object to add GMAP alignments to.
+        minIdentity -- a float fraction indicating what identity value is minimally required
+                       for us to use a GMAP alignment.
     '''
-    def __init__(self, gmapFile, binCollection):
+    def __init__(self, gmapFile, binCollection, minIdentity=0.95):
         Thread.__init__(self)
         
+        # Behavioural parameters
+        assert 0.0 < minIdentity <= 1.0, \
+            "GmapBinThread needs to receive minIdentity as a float fraction from >0 to <=1"
+        self.minIdentity = minIdentity * 100
+        
+        # Threading defaults
         self.gmapFile = gmapFile
         self.binCollection = binCollection
         self.novelBinCollection = None
@@ -32,13 +44,15 @@ class GmapBinThread(Thread):
                             generated from an official genome annotation.
         '''
         # Behavioural parameters (static for now, may change later)
+        "These statics are for filtering GMAP alignments that are poor quality"
         OKAY_COVERAGE = 96.5
-        OKAY_IDENTITY = 95
         OKAY_INDEL_PROPORTION = 0.01
         ##
+        "These statics prevent a gene mapping to multiple locations when it has a clear best"
         ALLOWED_COV_DIFF = 1
         ALLOWED_IDENT_DIFF = 0.1
         ##
+        "These statics help to file a gene into an existing Bin or a novel Bin"
         GENE_BIN_OVL_PCT = 0.5
         NOVEL_BIN_OVL_PCT = 0.5
         
@@ -61,7 +75,7 @@ class GmapBinThread(Thread):
             
             # Skip processing if the alignment sucks
             isGoodAlignment = coverage >= OKAY_COVERAGE \
-                              and identity >= OKAY_IDENTITY \
+                              and identity >= self.minIdentity \
                               and indelProportion <= OKAY_INDEL_PROPORTION
             if not isGoodAlignment:
                 continue

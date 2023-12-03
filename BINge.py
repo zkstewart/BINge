@@ -68,7 +68,21 @@ def validate_args(args):
               "or less than 1")
         print("Fix this and try again.")
         quit()
-        
+    
+    # Specifically handle gmapIdentity
+    if args.gmapIdentity == []:
+        args.gmapIdentity = [0.95 for _ in len(args.gmapFiles)]
+    if len(args.gmapIdentity) != len(args.gmapFiles):
+        print("--gmapIdentity parameter must have the same number of values as -gm")
+        print("Fix this and try again.")
+        quit()
+    for gmapID in args.gmapIdentity:
+        if not 0.0 < gmapID <= 1.0:
+            print("--gmapIdentity should be given values greater than zero, and equal to " + 
+                "or less than 1")
+            print("Fix this and try again.")
+            quit()
+    
     # Validate optional MMseqs2 parameters
     if args.unbinnedClusterer in ["mmseqs-cascade", "mmseqs-linclust"]:
         if args.mmseqsDir == None:
@@ -178,7 +192,7 @@ def generate_bin_collections(annotationFiles, numBins):
     
     return collectionList
 
-def populate_bin_collections(collectionList, gmapFiles, threads):
+def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
     '''
     Receives a list of BinCollection objects, alongside a matching list
     of GMAP GFF3 file locations, and uses multiple threads to parse the GMAP
@@ -194,6 +208,8 @@ def populate_bin_collections(collectionList, gmapFiles, threads):
         threads -- an integer indicating how many threads to run; this code is
                    parallelised in terms of processing multiple GMAP files at a time,
                    if you have only 1 GMAP file then only 1 thread will be used.
+        gmapIdentity -- a list of floats indicating what identity value a GMAP alignment
+                        must have for it to be considered for binning.
     Modifies:
         collectionList -- the BinCollection objects in this list will have alignment IDs
                           added to the contained Bin objects.
@@ -209,8 +225,9 @@ def populate_bin_collections(collectionList, gmapFiles, threads):
             if i+x < len(gmapFiles): # parent loop may excess if n > the number of GMAP files
                 gmapFile = gmapFiles[i+x]
                 binCollection = collectionList[i+x]
+                thisGmapIdentity = gmapIdentity[i+x]
                 
-                gmapWorkerThread = GmapBinThread(gmapFile, binCollection)
+                gmapWorkerThread = GmapBinThread(gmapFile, binCollection, thisGmapIdentity)
                 processing.append(gmapWorkerThread)
                 gmapWorkerThread.start()
         
@@ -638,7 +655,7 @@ def get_parameters_hash(args):
     '''
     
     "These hashes are the only ones which behaviourally influence the pre-external clustering"
-    HASHING_PARAMS = ["fastaFiles", "annotationFiles", "gmapFiles", "convergenceIters"]
+    HASHING_PARAMS = ["fastaFiles", "annotationFiles", "gmapFiles", "convergenceIters", "gmapIdentity"]
     
     strForHash = ""
     for param in HASHING_PARAMS:
@@ -688,7 +705,8 @@ def main():
     configure the way clustering of unbinned sequences works. Behavioural parameters of
     the algorithms can be tuned here, but the defaults are expected to work most of the time.
     The main exception is CD-HIT's memory utilisation, which probably should be set depending
-    on what you have available. tldr; change these if you know what you're doing.
+    on what you have available. tldr; change these only if you know what you're doing since
+    they have been set to defaults which are likely to be optimal for most use cases.
     """
     
     p = argparse.ArgumentParser(description=usageLong if showHiddenArgs else usageShort)
@@ -696,7 +714,7 @@ def main():
     p.add_argument("-i", dest="fastaFiles",
                    required=True,
                    nargs="+",
-                   help="Input transcriptome FASTA file(s) (mRNA or CDS).")
+                   help="Input transcriptome FASTA file(s) (mRNA or CDS)")
     p.add_argument("-gm", dest="gmapFiles",
                    nargs="+",
                    required=True,
@@ -723,9 +741,21 @@ def main():
                    bin convergence to be achieved (default==5); in most cases results will
                    converge in fewer than 5 iterations, so setting a maximum acts merely as
                    a safeguard against edge cases I have no reason to believe will ever
-                   happen."""
+                   happen"""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=5)
+    p.add_argument("--gmapIdentity", dest="gmapIdentity",
+                   required=False,
+                   nargs="+",
+                   type=float,
+                   help="""Optionally, specify the identity threshold for accepting a GMAP
+                   alignment for EACH value given to -gm (default==0.95 for each file); note
+                   that this value operates independently of --identity and its strictness
+                   should depend on whether it's aligning against the same species genome
+                   (strict), against same genus genome (less strict) or different genus
+                   genome (least strict)"""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=[])
     # Optional - program behavioural controls
     p.add_argument("--clusterer", dest="unbinnedClusterer",
                    required=False,
@@ -745,7 +775,8 @@ def main():
                    required=False,
                    type=float,
                    help="""ALL CLUSTERERS: Specify the identity threshold for clustering
-                   (default==0.98)"""
+                   (default==0.98); this value should be strict unless you are clustering
+                   multiple species' together for a DGE analysis"""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=0.98)
     # Optional - MMseqs2
@@ -812,7 +843,7 @@ def main():
     p.add_argument("--help-long", dest="help-long",
                    action="help",
                    help="""Show all options, including those that are not
-                   recommended to be changed."""
+                   recommended to be changed"""
                    if not showHiddenArgs else argparse.SUPPRESS)
     
     args = p.parse_args()
@@ -846,7 +877,8 @@ def main():
         collectionList = generate_bin_collections(args.annotationFiles, len(args.gmapFiles)) # keep genome bins separate to multi-thread later
         
         # Parse GMAP alignments into our bin collection with multiple threads
-        novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, args.gmapFiles, args.threads)
+        novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, args.gmapFiles,
+                                                                     args.threads, args.gmapIdentity)
         
         # Merge bins resulting from fragmented annotation models
         for i in range(len(collectionList)):
