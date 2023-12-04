@@ -379,17 +379,38 @@ class BinCollection:
         for connectedBins in nx.connected_components(finalGraph):
             connectedBins = list(connectedBins)
             
-            newBin = binDict[connectedBins[0]]
-            binHash1 = connectedBins[0]
-            for binHash2 in connectedBins[1:]:
-                newBin2 = Bin(newBin.contig, binDict[binHash2].start, binDict[binHash2].end)
-                newBin2.ids = set(finalGraph[binHash1][binHash2]["ids"]).union(binDict[binHash2].ids)
+            # Check that this bin is fully connected
+            "Non-fully connected graphs at this stage cause errors"
+            allConnected = True
+            for i in range(0, len(connectedBins)-1):
+                for x in range(i+1, len(connectedBins)):
+                    binHash1 = connectedBins[i]
+                    binHash2 = connectedBins[x]
+                    try:
+                        binGraph[binHash1][binHash2]
+                    except:
+                        allConnected = False
+                        break # small speed up, won't fully exit loop
+            
+            # Merge bins if they're fully connected
+            if allConnected == True:
+                newBin = binDict[connectedBins[0]]
+                binHash1 = connectedBins[0]
                 
-                newBin2.exons = finalGraph[binHash1][binHash2]["exons"]
-                newBin2.exons.update(binDict[binHash2].exons)
-                
-                newBin.merge(newBin2)
-            linkedBinCollection.add(newBin)
+                for binHash2 in connectedBins[1:]:
+                    newBin2 = Bin(newBin.contig, binDict[binHash2].start, binDict[binHash2].end)
+                    newBin2.ids = set(finalGraph[binHash1][binHash2]["ids"]).union(binDict[binHash2].ids)
+                    
+                    newBin2.exons = finalGraph[binHash1][binHash2]["exons"]
+                    newBin2.exons.update(binDict[binHash2].exons)
+                    
+                    newBin.merge(newBin2)
+                linkedBinCollection.add(newBin)
+            
+            # Skip the merger if they're not fully connected
+            else:
+                for binHash in connectedBins:
+                    linkedBinCollection.add(binDict[binHash])
         
         return linkedBinCollection
     
