@@ -241,8 +241,8 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
             threadNovelBinCollection = gmapWorkerThread.novelBinCollection
             multiOverlaps.append(gmapWorkerThread.multiOverlaps)
             
-            # Merge them
-            novelBinCollection.merge(threadNovelBinCollection)
+            # Merge them via flattening
+            novelBinCollection.flatten(threadNovelBinCollection)
     return novelBinCollection, multiOverlaps
 
 def iterative_bin_self_linking(binCollection, convergenceIters):

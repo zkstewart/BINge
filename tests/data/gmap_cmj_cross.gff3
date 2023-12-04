@@ -1,0 +1,6 @@
+chrUn	CMJ.v1.0.genome.fa.gmap	gene	13570826	13571427	.	+	.	ID=FhUn12300.1.path1;Name=FhUn12300.1;Dir=sense
+chrUn	CMJ.v1.0.genome.fa.gmap	mRNA	13570826	13571427	.	+	.	ID=FhUn12300.1.mrna1;Name=FhUn12300.1;Parent=FhUn12300.1.path1;Dir=sense;coverage=100.0;identity=99.8;matches=500;mismatches=1;indels=0;unknowns=0
+chrUn	CMJ.v1.0.genome.fa.gmap	exon	13570826	13570998	99	+	.	ID=FhUn12300.1.mrna1.exon1;Name=FhUn12300.1;Parent=FhUn12300.1.mrna1;Target=FhUn12300.1 1 173 +
+chrUn	CMJ.v1.0.genome.fa.gmap	exon	13571100	13571427	100	+	.	ID=FhUn12300.1.mrna1.exon2;Name=FhUn12300.1;Parent=FhUn12300.1.mrna1;Target=FhUn12300.1 174 501 +
+chrUn	CMJ.v1.0.genome.fa.gmap	CDS	13570826	13570998	99	+	0	ID=FhUn12300.1.mrna1.cds1;Name=FhUn12300.1;Parent=FhUn12300.1.mrna1;Target=FhUn12300.1 1 173 +
+chrUn	CMJ.v1.0.genome.fa.gmap	CDS	13571100	13571427	100	+	2	ID=FhUn12300.1.mrna1.cds2;Name=FhUn12300.1;Parent=FhUn12300.1.mrna1;Target=FhUn12300.1 174 501 +

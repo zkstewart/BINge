@@ -1,0 +1,4 @@
+chrUn	CMJ.v1.0.genome.fa.gmap	gene	13570826	13571494	.	+	.	ID=CMJ_chrUn_008340.1.path1;Name=CMJ_chrUn_008340.1;Dir=indeterminate
+chrUn	CMJ.v1.0.genome.fa.gmap	mRNA	13570826	13571494	.	+	.	ID=CMJ_chrUn_008340.1.mrna1;Name=CMJ_chrUn_008340.1;Parent=CMJ_chrUn_008340.1.path1;Dir=indeterminate;coverage=100.0;identity=100.0;matches=669;mismatches=0;indels=0;unknowns=0
+chrUn	CMJ.v1.0.genome.fa.gmap	exon	13570826	13571494	100	+	.	ID=CMJ_chrUn_008340.1.mrna1.exon1;Name=CMJ_chrUn_008340.1;Parent=CMJ_chrUn_008340.1.mrna1;Target=CMJ_chrUn_008340.1 669 1 .
+chrUn	CMJ.v1.0.genome.fa.gmap	CDS	13570826	13571494	100	+	0	ID=CMJ_chrUn_008340.1.mrna1.cds1;Name=CMJ_chrUn_008340.1;Parent=CMJ_chrUn_008340.1.mrna1;Target=CMJ_chrUn_008340.1 669 1 .

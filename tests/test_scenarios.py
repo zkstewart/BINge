@@ -13,8 +13,12 @@ from BINge import generate_bin_collections, populate_bin_collections, \
 dataDir = os.path.join(os.getcwd(), "data")
 
 # Define pipeline for running the core BINge operations
-def binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5):
-    novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles, threads)
+def binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5, gmapIdentity=None):
+    if gmapIdentity == None:
+        gmapIdentity = [0.95 for _ in range(len(gmapFiles))]
+    
+    novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles,
+                                                                 threads, gmapIdentity)
     
     for i in range(len(binCollectionList)):
         binCollection = binCollectionList[i].fix_fragments(multiOverlaps[i])
@@ -36,7 +40,7 @@ def binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5):
 
 # Define test helper functions
 def get_binCollection_in_range(gff3File, contig, start, end):
-    binCollectionList = generate_bin_collections([gff3File])
+    binCollectionList = generate_bin_collections([gff3File], 1)
     binCollection = binCollectionList[0]
     
     newBinCollection = BinCollection()
@@ -120,7 +124,8 @@ class TestBinSplitter(unittest.TestCase):
         binCollectionList = [binCollection]
         gmapFiles = [os.path.join(dataDir, "gmap.gff3")]
         
-        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles, threads)
+        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles,
+                                                                     threads, [0.95])
         
         binCollection = binCollectionList[0]
         for i in range(1, len(binCollectionList)):
@@ -181,7 +186,7 @@ class TestFragmentMerger(unittest.TestCase):
         This test should result in the fragmented gene bins being merged together
         '''
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation_fragments.gff3")])
+        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation_fragments.gff3")], 1)
         binCollection = binCollectionList[0]
         gmapFiles = [os.path.join(dataDir, "gmap_fragments.gff3")]
         

@@ -165,6 +165,24 @@ class BinCollection:
         for bin in otherBinCollection:
             self.add(bin.data)
     
+    def flatten(self, otherBinCollection):
+        '''
+        Flattens the otherBinCollection into this one, adding all its Bins into this. This
+        results in changes to this object.
+        
+        As opposed to .merge(), this WILL merge overlapping bins. It's a more costly operation
+        so it should only be done if necessary.
+        '''
+        for bin in otherBinCollection:
+            ovlBins = self.find(bin.data.contig, bin.data.start, bin.data.end)
+            if len(ovlBins) == 0:
+                self.add(bin.data)
+            else:
+                newBin = ovlBins[0]
+                for ovlBin in ovlBins[1:]:
+                    newBin.merge(ovlBin)
+                newBin.merge(bin.data)
+    
     def link_bins(self, VOTE_THRESHOLD = 0.5):
         '''
         This will attempt to merge bins that are "equivalent" across the genomes using
@@ -330,6 +348,8 @@ class BinCollection:
             allConnected = True
             for i in range(0, len(connectedBins)-1):
                 for x in range(i+1, len(connectedBins)):
+                    binHash1 = connectedBins[i]
+                    binHash2 = connectedBins[x]
                     try:
                         binGraph[binHash1][binHash2]
                     except:

@@ -1,0 +1,6 @@
+chr7	GJ.v2.0.genome.fa.gmap	gene	23979000	23979601	.	-	.	ID=FhUn12300.1.path1;Name=FhUn12300.1;Dir=sense
+chr7	GJ.v2.0.genome.fa.gmap	mRNA	23979000	23979601	.	-	.	ID=FhUn12300.1.mrna1;Name=FhUn12300.1;Parent=FhUn12300.1.path1;Dir=sense;coverage=100.0;identity=100.0;matches=501;mismatches=0;indels=0;unknowns=0
+chr7	GJ.v2.0.genome.fa.gmap	exon	23979429	23979601	100	-	.	ID=FhUn12300.1.mrna1.exon1;Name=FhUn12300.1;Parent=FhUn12300.1.mrna1;Target=FhUn12300.1 1 173 +
+chr7	GJ.v2.0.genome.fa.gmap	exon	23979000	23979327	100	-	.	ID=FhUn12300.1.mrna1.exon2;Name=FhUn12300.1;Parent=FhUn12300.1.mrna1;Target=FhUn12300.1 174 501 +
+chr7	GJ.v2.0.genome.fa.gmap	CDS	23979429	23979601	100	-	0	ID=FhUn12300.1.mrna1.cds1;Name=FhUn12300.1;Parent=FhUn12300.1.mrna1;Target=FhUn12300.1 1 173 +
+chr7	GJ.v2.0.genome.fa.gmap	CDS	23979000	23979327	100	-	2	ID=FhUn12300.1.mrna1.cds2;Name=FhUn12300.1;Parent=FhUn12300.1.mrna1;Target=FhUn12300.1 174 501 +

@@ -19,7 +19,7 @@ dataDir = os.path.join(os.getcwd(), "data")
 class TestBinCollection(unittest.TestCase):
     def test_binCollection_init(self):
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "gmap_normal.gff3")])
+        binCollectionList = generate_bin_collections([os.path.join(dataDir, "gmap_normal.gff3")], 1)
         binCollection = binCollectionList[0]
         
         # Act
@@ -30,7 +30,7 @@ class TestBinCollection(unittest.TestCase):
     
     def test_binCollection_find(self):
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")])
+        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")], 1)
         binCollection = binCollectionList[0]
         
         # Act
@@ -55,8 +55,8 @@ class TestBinCollection(unittest.TestCase):
     
     def test_binCollection_delete(self):
         # Arrange
-        binCollectionList1 = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")])
-        binCollectionList2 = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")])
+        binCollectionList1 = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")], 1)
+        binCollectionList2 = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")], 1)
         
         binCollection1 = binCollectionList1[0]
         binCollection2 = binCollectionList2[0]
@@ -86,7 +86,7 @@ class TestBinCollection(unittest.TestCase):
 class TestBin(unittest.TestCase):
     def test_bin_add(self):
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")])
+        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")], 1)
         
         binCollection = binCollectionList[0]
         binOverlap = binCollection.find("contig1", 1, 100)
@@ -109,7 +109,7 @@ class TestBin(unittest.TestCase):
     
     def test_bin_selfmerge(self):
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")])
+        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")], 1)
         
         binCollection = binCollectionList[0]
         binOverlap = binCollection.find("contig1", 1, 100)
@@ -132,7 +132,7 @@ class TestBin(unittest.TestCase):
     
     def test_bin_merge(self):
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")])
+        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")], 1)
         
         binCollection = binCollectionList[0]
         binOverlap = binCollection.find("contig1", 1, 100)
@@ -188,18 +188,20 @@ class TestNovelPopulate(unittest.TestCase):
         gmapFiles = [os.path.join(dataDir, "gmap_bad.gff3")]
         
         # Act
-        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles, threads=1)
+        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles,
+                                                                     threads=1, gmapIdentity=[0.95])
         
         # Assert
         self.assertEqual(len(novelBinCollection), 0, "Should contain 0 bins")
     
     def test_populate_annotation_only(self):
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")])
+        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")], 1)
         gmapFiles = [os.path.join(dataDir, "gmap_bad.gff3")]
         
         # Act
-        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles, threads=1)
+        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles,
+                                                                     threads=1, gmapIdentity=[0.95])
         binCollection = binCollectionList[0]
         
         # Assert
@@ -211,18 +213,20 @@ class TestNovelPopulate(unittest.TestCase):
         gmapFiles = [os.path.join(dataDir, "gmap_normal.gff3")]
         
         # Act
-        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles, threads=1)
+        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles,
+                                                                     threads=1, gmapIdentity=[0.95])
         
         # Assert
         self.assertEqual(len(novelBinCollection), 2, "Should contain 2 bins")
     
     def test_populate_novel_merge(self):
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")])
+        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation.gff3")], 1)
         gmapFiles = [os.path.join(dataDir, "gmap_normal.gff3")]
         
         # Act
-        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles, threads=1)
+        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles,
+                                                                     threads=1, gmapIdentity=[0.95])
         
         # Assert
         self.assertEqual(len(novelBinCollection), 0, "Should contain 0 bins")
@@ -313,11 +317,12 @@ class TestFragmentMerger(unittest.TestCase):
         This test should result in the fragmented gene bins being merged together
         '''
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation_fragments.gff3")])
+        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation_fragments.gff3")], 1)
         binCollection = binCollectionList[0]
         gmapFiles = [os.path.join(dataDir, "gmap_fragments.gff3")]
         
-        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles, threads=1)
+        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles,
+                                                                     threads=1, gmapIdentity=[0.95])
         
         # Act
         origNumBins = len(binCollection)
@@ -337,39 +342,45 @@ class TestFragmentMerger(unittest.TestCase):
         self.assertEqual(origNumIDs, [1, 1], "Should contain 2 bins with 1 ID each")
         self.assertEqual(newNumIDs, [4], "Should contain 1 bin with 4 IDs")
 
-class TestChimeraFixer(unittest.TestCase):
-    def test_chimera_fixer(self):
+class TestBinLinking(unittest.TestCase):
+    def test_bin_selfmerger(self):
         '''
-        This test should result in the chimeric bin being split apart.
+        This test should result in the bins (from separate genomes) being merged together.
         '''
-        return None
-    
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation_chimer.gff3")])
-        binCollection = binCollectionList[0]
-        gmapFiles = [os.path.join(dataDir, "gmap_chimer.gff3")]
+        gmapFiles = [
+            os.path.join(dataDir, "gmap_cmj.gff3"),
+            os.path.join(dataDir, "gmap_cmj_cross.gff3"),
+            os.path.join(dataDir, "gmap_fh.gff3"),
+            os.path.join(dataDir, "gmap_fh_cross.gff3")
+        ]
+        binCollectionList = [ BinCollection() for _ in range(len(gmapFiles)) ]
         
-        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles, threads=1)
-        
-        self = binCollection
+        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles,
+                                                                     threads=1,
+                                                                     gmapIdentity=[0.95]*len(gmapFiles))
+        convergenceIters = 5
         
         # Act
-        origNumBins = len(binCollection)
-        origNumIDs = [ len(bin.data.ids) for bin in binCollection ]
+        origNumBins = len(novelBinCollection)
+        origNumIDs = [ len(bin.data.ids) for bin in novelBinCollection ]
+        #origIDs = [ bin.data.ids for bin in novelBinCollection ]
+        #origExons = [ bin.data.exons for bin in novelBinCollection ]
+        #origContigs = [ bin.data.contig for bin in novelBinCollection ]
         
-        for i in range(len(binCollectionList)):
-            binCollection = binCollectionList[i].fix_fragments(multiOverlaps[i])
-            binCollectionList[i] = binCollection
+        novelBinCollection = iterative_bin_self_linking(novelBinCollection, convergenceIters)
         
-        newNumBins = len(binCollection)
-        newNumIDs = [ len(bin.data.ids) for bin in binCollection ]
+        newNumBins = len(novelBinCollection)
+        newNumIDs = [ len(bin.data.ids) for bin in novelBinCollection ]
+        #newIDs = [ bin.data.ids for bin in novelBinCollection ]
+        #newExons = [ bin.data.exons for bin in novelBinCollection ]
+        #newContigs = [ bin.data.contig for bin in novelBinCollection ]
         
         # Assert
         self.assertEqual(origNumBins, 2, "Should contain 2 bins")
         self.assertEqual(newNumBins, 1, "Should contain 1 bin")
-        
-        self.assertEqual(origNumIDs, [1, 1], "Should contain 2 bins with 1 ID each")
-        self.assertEqual(newNumIDs, [4], "Should contain 1 bin with 4 IDs")
+        self.assertEqual(origNumIDs, [2, 2], "Should contain 2 bins with 2 IDs each")
+        self.assertEqual(newNumIDs, [2], "Should contain 1 bin with 2 IDs")
 
 if __name__ == '__main__':
     unittest.main()
