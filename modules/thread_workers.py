@@ -1,11 +1,8 @@
-import os, sys, time
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from .bins import BinCollection, Bin, BinSplitter
-from .gff3_handling import iterate_through_gff3
+import time
 from threading import Thread
 
-####
+from .gff3_handling import iterate_through_gff3
+from .bins import BinCollection, Bin, BinSplitter
 
 class GmapBinThread(Thread):
     '''

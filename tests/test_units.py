@@ -8,7 +8,7 @@ from Various_scripts.Function_packages import ZS_GFF3IO
 from modules.fasta_handling import FastaCollection
 from modules.bins import BinCollection, Bin
 from modules.gff3_handling import iterate_through_gff3
-from BINge import generate_bin_collections, populate_bin_collections, \
+from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
     multithread_bin_splitter, iterative_bin_self_linking
 from test_scenarios import get_binCollection_in_range, binge_runner
 
