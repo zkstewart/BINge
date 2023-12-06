@@ -1,5 +1,115 @@
 import os
 
+def validate_args(args):
+    # Validate input file locations
+    for inputArgument in args.inputFiles:
+        assert inputArgument.count(",") <= 1, \
+            print(f"-i value '{inputArgument}' has more than one semicolon in it; format is unhandled")
+        
+        for inputFile in inputArgument.split(","):
+            if not os.path.isfile(inputFile):
+                print(f'I am unable to locate the -i input file ({inputFile})')
+                print('Make sure you\'ve typed the file name or location correctly and try again.')
+                quit()
+    
+    for genomeFile in args.genomeFiles:
+        if not os.path.isfile(genomeFile):
+            print(f'I am unable to locate the -g genome file ({genomeFile})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+    
+    # Validate optional BINge parameters
+    if args.threads < 1:
+        print("--threads should be given a value >= 1")
+        print("Fix this and try again.")
+        quit()
+    if args.convergenceIters < 1:
+        print("--convergence_iters should be given a value >= 1")
+        print("Fix this and try again.")
+        quit()
+    if not 0.0 < args.identity <= 1.0:
+        print("--identity should be given a value greater than zero, and equal to " + 
+              "or less than 1")
+        print("Fix this and try again.")
+        quit()
+    
+    # Specifically handle gmapIdentity
+    if args.gmapIdentity == []:
+        args.gmapIdentity = [0.95 for _ in range(len(args.inputFiles))]
+    if len(args.gmapIdentity) != len(args.inputFiles):
+        print("--gmapIdentity parameter must have the same number of values as given to -i")
+        print("Fix this and try again.")
+        quit()
+    for gmapID in args.gmapIdentity:
+        if not 0.0 < gmapID <= 1.0:
+            print("--gmapIdentity should be given values greater than zero, and equal to " + 
+                "or less than 1")
+            print("Fix this and try again.")
+            quit()
+    
+    # Validate optional MMseqs2 parameters
+    if args.unbinnedClusterer in ["mmseqs-cascade", "mmseqs-linclust"]:
+        if args.mmseqsDir == None:
+            print(f"--mmseqs must be specified if you're using '{args.unbinnedClusterer}'")
+            quit()
+        if not os.path.isdir(args.mmseqsDir):
+            print(f'I am unable to locate the MMseqs2 directory ({args.mmseqsDir})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+        "--tmpDir is validated by the MM_DB Class"
+        if args.evalue < 0:
+            print("--evalue must be greater than or equal to 0")
+            quit()
+        if not 0 <= args.coverage <= 1.0:
+            print("--coverage must be a float in the range 0.0 -> 1.0")
+            quit()
+        "--mode is controlled by argparse choices"
+        
+        # Validate "MMS-CASCADE" parameters
+        if args.sensitivity in ["5.7", "7.5"]:
+            args.sensitivity = float(args.sensitivity)
+        else:
+            args.sensitivity = int(args.sensitivity)
+        
+        if args.steps < 1:
+            print("--steps must be greater than or equal to 1")
+            quit()
+    
+    # Validate optional CD-HIT parameters
+    if not 0.0 <= args.cdhitShortCov <= 1.0:
+        print("--cdhit_shortcov should be given a value in the range of 0 -> 1 (inclusive)")
+        print("Fix this and try again.")
+        quit()
+    if not 0.0 <= args.cdhitLongCov <= 1.0:
+        print("--cdhit_longcov should be given a value in the range of 0 -> 1 (inclusive)")
+        print("Fix this and try again.")
+        quit()
+    if not args.cdhitMem >= 100:
+        print("--cdhit_mem should be given a value at least greater than 100 (megabytes)")
+        print("Fix this and try again.")
+        quit()
+    
+    # Validate output file location
+    if os.path.isdir(args.outputDirectory):
+        print(f'Output directory specified already exists ({args.outputDirectory})')
+        print('This means BINge will try to resume a previously started run.')
+        print('No files will be overwritten, so if something went wrong previously you ' + 
+              'should fix that up before running BINge again.')
+    elif not os.path.exists(args.outputDirectory):
+        try:
+            os.mkdir(args.outputDirectory)
+            print(f'Output directory was created during argument validation')
+        except Exception as e:
+            print(f"An error occurred when trying to create the output directory '{args.outputDirectory}'")
+            print("This probably means you've indicated a directory wherein the parent " + 
+                  "directory does not already exist.")
+            print("But, I'll show you the error below before this program exits.")
+            print(e.message)
+    else:
+        print(f"Something other than a directory already exists at '{args.outputDirectory}'")
+        print("Either move this, or specify a different -o value, then try again.")
+        quit()
+
 def validate_salmon_files(salmonFiles):
     '''
     Validates Salmon files for 1) their existence and 2) their consistency of file format.
@@ -74,3 +184,20 @@ def validate_cluster_file(clusterFile):
             raise ValueError(errorMsg)
 
     return isBinge
+
+def validate_fasta(fastaFile):
+    '''
+    Simple validator which just checks that the first character in a file is a '>'
+    which likely means it's a FASTA file. If there are errors in the format that will
+    not be detected here.
+    
+    Parameters:
+        fastaFile -- a string indicating the location of a file to check.
+    Returns:
+        isFASTA -- a boolean where True means it is (probably) a FASTA, and False otherwise.
+    '''
+    with open(fastaFile, "r") as fileIn:
+        firstLine = fileIn.readline()
+        if not firstLine.startswith(">"):
+            return False
+        return True

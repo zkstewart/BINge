@@ -51,8 +51,6 @@ def iterate_through_gff3(gff3File):
         gff3File -- a string indicating the location of a GFF3 formatted
                     file that is sorted.
     '''
-    
-    
     thisFeature = []
     with open(gff3File, "r") as fileIn:
         for line in fileIn:
