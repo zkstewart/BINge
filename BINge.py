@@ -391,16 +391,15 @@ def main():
                    default=5)
     p.add_argument("--gmapIdentity", dest="gmapIdentity",
                    required=False,
-                   nargs="+",
                    type=float,
                    help="""Optionally, specify the identity threshold for accepting a GMAP
-                   alignment for EACH file given to -i (default==0.95 for each file); note
-                   that this value operates independently of --identity and its strictness
-                   should depend on whether it's aligning against the same species genome
-                   (strict), against same genus genome (less strict) or different genus
-                   genome (least strict)"""
+                   alignment (default==0.95); note that this value operates independently
+                   of --identity and its strictness should depend on the largest evolutionary
+                   distance you have between a file given to -i and a genome given to -g e.g.,
+                   this should be strict for same species only alignment, less strict for
+                   same genus alignment, and least strict for different genus alignments"""
                    if showHiddenArgs else argparse.SUPPRESS,
-                   default=[])
+                   default=0.95)
     # Optional - program behavioural controls
     p.add_argument("--clusterer", dest="unbinnedClusterer",
                    required=False,
@@ -518,7 +517,7 @@ def main():
     # ... error out if it's a directory or something weird ...
     elif os.path.exists(pickleFile):
         print(f"{pickleFile} already exists, but is not a file?")
-        print("BINge expects this to be a file which it can read, or write to.")
+        print("BINge expects this to be a file which it can read or write to.")
         print("Something weird is happening, so I will exit the program now.")
         print(f"Move whatever is at the location of '{pickleFile}' then try again.")
         quit()

@@ -66,18 +66,11 @@ def validate_args(args):
         quit()
     
     # Specifically handle gmapIdentity
-    if args.gmapIdentity == []:
-        args.gmapIdentity = [0.95 for _ in range(len(args.inputFiles))]
-    if len(args.gmapIdentity) != len(args.inputFiles):
-        print("--gmapIdentity parameter must have the same number of values as given to -i")
+    if not 0.0 < args.gmapIdentity <= 1.0:
+        print("--gmapIdentity should be given a value greater than zero, and equal to " + 
+            "or less than 1")
         print("Fix this and try again.")
         quit()
-    for gmapID in args.gmapIdentity:
-        if not 0.0 < gmapID <= 1.0:
-            print("--gmapIdentity should be given values greater than zero, and equal to " + 
-                "or less than 1")
-            print("Fix this and try again.")
-            quit()
     
     # Validate GMAP location
     if args.gmapDir == None:

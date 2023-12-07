@@ -3,11 +3,117 @@
 import os, sys, unittest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_GFF3IO
-from modules.fasta_handling import FastaCollection
-from modules.bins import BinCollection
+from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
+from modules.bins import BinCollection, Bin
+from modules.thread_workers import GmapBinThread
 from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
     multithread_bin_splitter, iterative_bin_self_linking
+
+###
+
+def _generate_bin_collections(gff3Files):
+    '''
+    A re-implement with the same logic just minus some of the setup.
+    '''
+    # Generate and seed bin collections
+    collectionList = []
+    
+    for gff3File in gff3Files:
+        binCollection = BinCollection()
+        
+        # Seed bin collection if GFF3 is available
+        if gff3File != None:
+            gff3Obj = GFF3(gff3File, strict_parse=False)
+            for geneFeature in gff3Obj.types["gene"]:
+                
+                # Create a bin for this feature
+                featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
+                try:
+                    featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
+                except:
+                    "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
+                    continue
+                
+                # See if this overlaps an existing bin
+                binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
+                
+                # If not, add the new bin
+                if len(binOverlap) == 0:
+                    binCollection.add(featureBin)
+                
+                # Otherwise...
+                else:
+                    # ... merge the bins together
+                    for overlappingBin in binOverlap:
+                        featureBin.merge(overlappingBin)
+                    
+                    # ... delete the overlapping bins
+                    for overlappingBin in binOverlap:
+                        binCollection.delete(overlappingBin)
+                    
+                    # ... and add the new bin
+                    binCollection.add(featureBin)
+        
+        # Store the bin collection in our list for multi-threading later
+        collectionList.append(binCollection)
+    
+    return collectionList
+
+def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity=0.95):
+    '''
+    A re-implement with the same logic just minus some of the setup.
+    '''
+    # Establish data structures for holding onto results
+    novelBinCollection = BinCollection() # consolidated after each thread
+    
+    novelCollections = [BinCollection() for _ in range(len(collectionList))] # consolidated within each thread
+    multiOverlaps = [[] for _ in range(len(collectionList))] # consolidated within threads
+    
+    # Establish lists for feeding data into threads
+    threadData = []
+    for i in range(len(collectionList)):
+        # Get all GMAP files associated with this genome
+        thisGmapFiles = [gmapFiles[i]]
+        
+        # Get other data structures for this genome
+        thisBinCollection = collectionList[i]
+        thisNovelCollection = novelCollections[i]
+        thisMultiOverlap = multiOverlaps[i]
+        
+        # Store for threading
+        threadData.append([thisGmapFiles, thisBinCollection, thisNovelCollection, thisMultiOverlap])
+    
+    # Start up threads
+    for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
+        processing = []
+        for x in range(threads): # begin processing n collections
+            if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
+                thisGmapFiles, thisBinCollection, thisNovelCollection, \
+                    thisMultiOverlap = threadData[i+x]
+                
+                populateWorkerThread = GmapBinThread(thisGmapFiles, thisBinCollection,
+                                                     thisNovelCollection, thisMultiOverlap,
+                                                     gmapIdentity)
+                
+                processing.append(populateWorkerThread)
+                populateWorkerThread.start()
+        
+        # Gather results
+        for populateWorkerThread in processing:
+            # Wait for thread to end
+            populateWorkerThread.join()
+            
+            # Grab the new outputs from this thread
+            """Each thread modifies a BinCollection part of collectionList directly,
+            as well as a list in multiOverlaps"""
+            threadNovelBinCollection = populateWorkerThread.novelBinCollection
+            
+            # Merge them via flattening
+            novelBinCollection.flatten(threadNovelBinCollection)
+    
+    return novelBinCollection, multiOverlaps
+
+###
 
 # Specify data locations
 dataDir = os.path.join(os.getcwd(), "data")
@@ -15,9 +121,9 @@ dataDir = os.path.join(os.getcwd(), "data")
 # Define pipeline for running the core BINge operations
 def binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5, gmapIdentity=None):
     if gmapIdentity == None:
-        gmapIdentity = [0.95 for _ in range(len(gmapFiles))]
+        gmapIdentity = 0.95
     
-    novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles,
+    novelBinCollection, multiOverlaps = _populate_bin_collections(binCollectionList, gmapFiles,
                                                                  threads, gmapIdentity)
     
     for i in range(len(binCollectionList)):
@@ -40,7 +146,7 @@ def binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5, gm
 
 # Define test helper functions
 def get_binCollection_in_range(gff3File, contig, start, end):
-    binCollectionList = generate_bin_collections([gff3File], 1)
+    binCollectionList = _generate_bin_collections([gff3File])
     binCollection = binCollectionList[0]
     
     newBinCollection = BinCollection()
@@ -124,8 +230,8 @@ class TestBinSplitter(unittest.TestCase):
         binCollectionList = [binCollection]
         gmapFiles = [os.path.join(dataDir, "gmap.gff3")]
         
-        novelBinCollection, multiOverlaps = populate_bin_collections(binCollectionList, gmapFiles,
-                                                                     threads, [0.95])
+        novelBinCollection, multiOverlaps = _populate_bin_collections(binCollectionList, gmapFiles,
+                                                                     threads, 0.95)
         
         binCollection = binCollectionList[0]
         for i in range(1, len(binCollectionList)):
@@ -186,7 +292,8 @@ class TestFragmentMerger(unittest.TestCase):
         This test should result in the fragmented gene bins being merged together
         '''
         # Arrange
-        binCollectionList = generate_bin_collections([os.path.join(dataDir, "annotation_fragments.gff3")], 1)
+        gmapFile = os.path.join(dataDir, "annotation_fragments.gff3")
+        binCollectionList = _generate_bin_collections([gmapFile])
         binCollection = binCollectionList[0]
         gmapFiles = [os.path.join(dataDir, "gmap_fragments.gff3")]
         

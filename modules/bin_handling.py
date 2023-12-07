@@ -48,6 +48,11 @@ def generate_bin_collections(workingDirectory):
     # Sort the list for consistency of ordering
     "If there are gaps in the suffixNum's, ordering is important to keep things paired up"
     filePairs.sort(key = lambda x: int(x[2]))
+    suffixes = [ int(x[2]) for x in filePairs ]
+    isConsecutive = suffixes == list(range(min(suffixes), max(suffixes)+1))
+    assert isConsecutive, \
+        (f"generate_bin_collections failed because genome files in '{genomesDir}' are not " + 
+        "consecutively numbered, which is important for later program logic!")
     
     # Generate and seed bin collections
     collectionList = []
@@ -108,7 +113,7 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         threads -- an integer indicating how many threads to run; this code is
                    parallelised in terms of processing multiple GMAP files at a time,
                    if you have only 1 GMAP file then only 1 thread will be used.
-        gmapIdentity -- a list of floats indicating what identity value a GMAP alignment
+        gmapIdentity -- a float indicating what identity value a GMAP alignment
                         must have for it to be considered for binning.
     Modifies:
         collectionList -- the BinCollection objects in this list will have alignment IDs
@@ -117,32 +122,58 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         novelBinCollection -- a BinCollection containing Bins which did not overlap existing
                               Bins part of the input collectionList.
     '''
-    novelBinCollection = BinCollection()
-    multiOverlaps = []
-    for i in range(0, len(gmapFiles), threads): # only process n (threads) files at a time
+    # Establish data structures for holding onto results
+    novelBinCollection = BinCollection() # consolidated after each thread
+    
+    novelCollections = [BinCollection() for _ in range(len(collectionList))] # consolidated within each thread
+    multiOverlaps = [[] for _ in range(len(collectionList))] # consolidated within threads
+    
+    # Establish lists for feeding data into threads
+    threadData = []
+    for suffixNum in range(1, len(collectionList) + 1):
+        # Figure out which genome we're looking at
+        genomePrefix = f"genome{suffixNum}_"
+        genomeIndex = int(suffixNum) - 1
+        
+        # Get all GMAP files associated with this genome
+        thisGmapFiles = [ gmFile for gmFile in gmapFiles if genomePrefix in gmFile]
+        
+        # Get other data structures for this genome
+        thisBinCollection = collectionList[genomeIndex]
+        thisNovelCollection = novelCollections[genomeIndex]
+        thisMultiOverlap = multiOverlaps[genomeIndex]
+        
+        # Store for threading
+        threadData.append([thisGmapFiles, thisBinCollection, thisNovelCollection, thisMultiOverlap])
+    
+    # Start up threads
+    for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
-        for x in range(threads): # begin processing n files
-            if i+x < len(gmapFiles): # parent loop may excess if n > the number of GMAP files
-                gmapFile = gmapFiles[i+x]
-                binCollection = collectionList[i+x]
-                thisGmapIdentity = gmapIdentity[i+x]
+        for x in range(threads): # begin processing n collections
+            if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
+                thisGmapFiles, thisBinCollection, thisNovelCollection, \
+                    thisMultiOverlap = threadData[i+x]
                 
-                gmapWorkerThread = GmapBinThread(gmapFile, binCollection, thisGmapIdentity)
-                processing.append(gmapWorkerThread)
-                gmapWorkerThread.start()
+                populateWorkerThread = GmapBinThread(thisGmapFiles, thisBinCollection,
+                                                     thisNovelCollection, thisMultiOverlap,
+                                                     gmapIdentity)
+                
+                processing.append(populateWorkerThread)
+                populateWorkerThread.start()
         
         # Gather results
-        for gmapWorkerThread in processing:
+        for populateWorkerThread in processing:
             # Wait for thread to end
-            gmapWorkerThread.join()
+            populateWorkerThread.join()
             
             # Grab the new outputs from this thread
-            "Each thread modifies a BinCollection part of collectionList directly"
-            threadNovelBinCollection = gmapWorkerThread.novelBinCollection
-            multiOverlaps.append(gmapWorkerThread.multiOverlaps)
+            """Each thread modifies a BinCollection part of collectionList directly,
+            as well as a list in multiOverlaps"""
+            threadNovelBinCollection = populateWorkerThread.novelBinCollection
             
             # Merge them via flattening
             novelBinCollection.flatten(threadNovelBinCollection)
+    
     return novelBinCollection, multiOverlaps
 
 def iterative_bin_self_linking(binCollection, convergenceIters):

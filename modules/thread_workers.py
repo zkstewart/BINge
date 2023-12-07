@@ -59,7 +59,7 @@ class GmapBinThread(Thread):
         minIdentity -- a float fraction indicating what identity value is minimally required
                        for us to use a GMAP alignment.
     '''
-    def __init__(self, gmapFile, binCollection, minIdentity=0.95):
+    def __init__(self, gmapFiles, binCollection, novelBinCollection, multiOverlaps, minIdentity=0.95):
         Thread.__init__(self)
         
         # Behavioural parameters
@@ -68,10 +68,10 @@ class GmapBinThread(Thread):
         self.minIdentity = minIdentity * 100
         
         # Threading defaults
-        self.gmapFile = gmapFile
+        self.gmapFiles = gmapFiles
         self.binCollection = binCollection
-        self.novelBinCollection = None
-        self.multiOverlaps = None
+        self.novelBinCollection = novelBinCollection
+        self.multiOverlaps = multiOverlaps
         self.exception = None
     
     def bin_by_gmap(self):
@@ -95,78 +95,74 @@ class GmapBinThread(Thread):
         GENE_BIN_OVL_PCT = 0.5
         NOVEL_BIN_OVL_PCT = 0.5
         
-        # Parse GMAP file and begin binning
-        novelBinCollection = BinCollection() # holds onto novel bins we create during this process
-        pathDict = {} # holds onto sequences we've already checked a path for
-        multiOverlaps = []
-        
-        for feature in iterate_through_gff3(self.gmapFile):
-            mrnaFeature = feature.mRNA[0]
-            
-            # Get alignment statistics
-            coverage, identity = float(mrnaFeature.coverage), float(mrnaFeature.identity)
-            exonList = Bin.format_exons_from_gff3_feature(mrnaFeature)
-            exonLength = sum([
-                end - start + 1
-                for start, end in exonList
-            ])
-            indelProportion = int(mrnaFeature.indels) / exonLength
-            
-            # Skip processing if the alignment sucks
-            isGoodAlignment = coverage >= OKAY_COVERAGE \
-                              and identity >= self.minIdentity \
-                              and indelProportion <= OKAY_INDEL_PROPORTION
-            if not isGoodAlignment:
-                continue
-            
-            # See if this path should be skipped because another better one was processed
-            baseID = feature.ID.rsplit(".", maxsplit=1)[0]
-            if baseID in pathDict:
-                prevCov, prevIdent = pathDict[baseID]
+        # Iterate through GMAP files
+        for gmapFile in self.gmapFiles:
+            pathDict = {} # holds onto sequences we've already checked a path for        
+            for feature in iterate_through_gff3(gmapFile):
+                mrnaFeature = feature.mRNA[0]
                 
-                # Skip if the first path was the best
-                if (coverage + ALLOWED_COV_DIFF) < prevCov \
-                    or (identity + ALLOWED_IDENT_DIFF) < prevIdent:
+                # Get alignment statistics
+                coverage, identity = float(mrnaFeature.coverage), float(mrnaFeature.identity)
+                exonList = Bin.format_exons_from_gff3_feature(mrnaFeature)
+                exonLength = sum([
+                    end - start + 1
+                    for start, end in exonList
+                ])
+                indelProportion = int(mrnaFeature.indels) / exonLength
+                
+                # Skip processing if the alignment sucks
+                isGoodAlignment = coverage >= OKAY_COVERAGE \
+                                and identity >= self.minIdentity \
+                                and indelProportion <= OKAY_INDEL_PROPORTION
+                if not isGoodAlignment:
                     continue
-            
-            # Now that we've checked if this path is good, we'll store it
-            """This means on the next loop if there's another path for this gene, 
-            but it's worse than this current one, we'll just skip it"""
-            pathDict.setdefault(baseID, [coverage, identity])
-            
-            # See if this overlaps an existing bin
-            binOverlap = self.binCollection.find(feature.contig, feature.start, feature.end)
-            
-            # If it does not overlap an existing bin ...
-            if len(binOverlap) == 0:
-                # ... either add it to an existing novel bin or create a new novel bin
-                _novel_binner(mrnaFeature, novelBinCollection, NOVEL_BIN_OVL_PCT) # pass mRNA
-            
-            # Exclude any transcripts that overlap multiple genes
-            elif len(binOverlap) > 1:
-                "We expect these occurrences to be chimeric transcripts which should be filtered"
-                multiOverlaps.append(feature)
-                continue
-            
-            # Compare to the existing bin
-            else:
-                geneBin = binOverlap[0]
-                featureOvlPct, binOvlPct = _calculate_overlap_percentages(feature, geneBin)
-                shouldJoin = featureOvlPct >= GENE_BIN_OVL_PCT or binOvlPct >= GENE_BIN_OVL_PCT
                 
-                # If this should join the gene bin, do so now
-                if shouldJoin:
-                    geneBin.add(baseID, exonList)
+                # See if this path should be skipped because another better one was processed
+                baseID = feature.ID.rsplit(".", maxsplit=1)[0]
+                if baseID in pathDict:
+                    prevCov, prevIdent = pathDict[baseID]
+                    
+                    # Skip if the first path was the best
+                    if (coverage + ALLOWED_COV_DIFF) < prevCov \
+                        or (identity + ALLOWED_IDENT_DIFF) < prevIdent:
+                        continue
                 
-                # Otherwise, add it to an existing novel bin or create a new novel bin
+                # Now that we've checked if this path is good, we'll store it
+                """This means on the next loop if there's another path for this gene, 
+                but it's worse than this current one, we'll just skip it"""
+                pathDict.setdefault(baseID, [coverage, identity])
+                
+                # See if this overlaps an existing bin
+                binOverlap = self.binCollection.find(feature.contig, feature.start, feature.end)
+                
+                # If it does not overlap an existing bin ...
+                if len(binOverlap) == 0:
+                    # ... either add it to an existing novel bin or create a new novel bin
+                    _novel_binner(mrnaFeature, self.novelBinCollection, NOVEL_BIN_OVL_PCT) # pass mRNA
+                
+                # Exclude any transcripts that overlap multiple genes
+                elif len(binOverlap) > 1:
+                    "We expect these occurrences to be chimeric transcripts which should be filtered"
+                    self.multiOverlaps.append(feature)
+                    continue
+                
+                # Compare to the existing bin
                 else:
-                    _novel_binner(mrnaFeature, novelBinCollection, NOVEL_BIN_OVL_PCT)
-        
-        return novelBinCollection, multiOverlaps
+                    geneBin = binOverlap[0]
+                    featureOvlPct, binOvlPct = _calculate_overlap_percentages(feature, geneBin)
+                    shouldJoin = featureOvlPct >= GENE_BIN_OVL_PCT or binOvlPct >= GENE_BIN_OVL_PCT
+                    
+                    # If this should join the gene bin, do so now
+                    if shouldJoin:
+                        geneBin.add(baseID, exonList)
+                    
+                    # Otherwise, add it to an existing novel bin or create a new novel bin
+                    else:
+                        _novel_binner(mrnaFeature, self.novelBinCollection, NOVEL_BIN_OVL_PCT)
     
     def run(self):
         try:
-            self.novelBinCollection, self.multiOverlaps = self.bin_by_gmap()
+            self.bin_by_gmap()
         except BaseException as e:
             self.exception = e
     
