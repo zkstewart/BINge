@@ -164,7 +164,7 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
             if not check_file_exists(linkedFASTA):
                 symlinker(file, linkedFASTA)
 
-def setup_sequences(workingDirectory):
+def setup_sequences(workingDirectory, isMicrobial=False):
     '''
     Will take the files within the 'gff3s' subdirectory of workingDirectory and
     produce sequence files from them.
@@ -175,6 +175,8 @@ def setup_sequences(workingDirectory):
     Parameters:
         workingDirectory -- a string indicating an existing directory to symlink and/or
                             write FASTAs to.
+        isMicrobial -- a boolean indicating whether the organism is a microbe and hence GFF3
+                       has gene -> CDS features, rather than gene -> mRNA -> CDS/exon.
     '''
     # Locate subdirectory containing files
     gff3Dir = os.path.join(workingDirectory, "gff3s")
@@ -209,7 +211,7 @@ def setup_sequences(workingDirectory):
         # Generate file if it doesn't exist
         if not check_file_exists(sequenceFileName):
             with open(sequenceFileName, "w") as fileOut:
-                seqGenerator = AnnotationExtractor(gff3File, fastaFile)
+                seqGenerator = AnnotationExtractor(gff3File, fastaFile, isMicrobial)
                 for mrnaID, exonSeq, cdsSeq in seqGenerator.iter_sequences():
                     fileOut.write(f">{mrnaID}\n{exonSeq}\n")
 
@@ -418,6 +420,15 @@ def main():
                    exon sequence overlap."""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=False)
+    p.add_argument("--microbial", dest="isMicrobial",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally provide this argument if you are providing a GFF3
+                   file from a bacteria, archaea, or just any organism in which the GFF3
+                   does not contain mRNA and exon features; in this case, I expect the GFF3
+                   feature to have 'gene' and 'CDS' features."""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=False)
     p.add_argument("--clusterer", dest="unbinnedClusterer",
                    required=False,
                    choices=["mmseqs-cascade", "mmseqs-linclust", "cd-hit"],
@@ -525,7 +536,7 @@ def main():
         quit()
     
     # Extract mRNAs from any input GFF3 annotations
-    setup_sequences(args.outputDirectory)
+    setup_sequences(args.outputDirectory, args.isMicrobial)
     
     # Establish GMAP indexes
     setup_gmap_indices(args.outputDirectory, args.gmapDir, args.threads)

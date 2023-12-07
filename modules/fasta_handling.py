@@ -11,14 +11,12 @@ class AnnotationExtractor:
     sequences for mRNA features. It is designed for use with BINge as a (hopefully) light
     weight actor.
     '''
-    def __init__(self, gff3File, fastaFile):
+    def __init__(self, gff3File, fastaFile, isMicrobial=False):
         self.gff3File = gff3File
+        self.isMicrobial = isMicrobial
         self._fastaFile = fastaFile
         
         self.fasta = SeqIO.to_dict(SeqIO.parse(fastaFile, "fasta"))
-        
-        self.parentFeatureType = "gene"
-        self.childFeatureType = "mRNA"
     
     def _gff3_iterator(self):
         '''
@@ -30,10 +28,19 @@ class AnnotationExtractor:
         ordered as expected (gene -> mRNA -> CDS/exon, then the next gene -> ...) this function
         will fail.
         '''
+        # Setup data structures
         idRegex = re.compile(r"ID=(.+?)($|;|\n)")
         details = [None, None, None] # mrnaID, contig, strand
         exon = []
         cds = []
+        
+        # Configuration for microbial or normal GFF3
+        if self.isMicrobial:
+            subfeature = "gene"
+        else:
+            subfeature = "mRNA"
+        
+        # Iterate through file now
         with open(self.gff3File, "r") as fileIn:
             for line in fileIn:
                 # Parse and skip irrelevant lines
@@ -47,12 +54,16 @@ class AnnotationExtractor:
                 contig, source, featureType, start, end, \
                     score, strand, frame, attributes \
                     = sl
-                isMRNA = featureType == "mRNA"
+                isMRNA = featureType == subfeature
                 
                 # Check if we should yield a feature
                 if isMRNA and details[0] != None:
-                    if len(exon) > 0 and len(cds) > 0: # if this fails it might be a pseudogene
-                        yield details, exon, cds
+                    if not self.isMicrobial:
+                        if len(exon) > 0 and len(cds) > 0: # if this fails it might be a pseudogene
+                            yield details, exon, cds
+                    else:
+                        if len(cds) > 0: # if this fails it might be a pseudogene
+                            yield details, cds, cds # CDS and exon are equivalent in microbe GFF3s
                 
                 # Check if we should build a new feature
                 if isMRNA:
