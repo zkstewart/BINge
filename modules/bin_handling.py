@@ -1,76 +1,103 @@
-import queue
+import os, queue
 
 from .gff3_handling import GFF3
 from .thread_workers import GmapBinThread, BinSplitWorkerThread, CollectionWorkerThread
 from .bins import Bin, BinCollection
 
-def generate_bin_collections(annotationFiles, numBins):
+def generate_bin_collections(workingDirectory):
     '''
-    Receives a list of genome annotations in GFF3 format and parses these
+    Receives a list of genome FASTA files and generates bin collections each of these
     into BinCollection structures which are separately stored in the returned list.
     
     Parameters:
-        annotationFiles -- a list of strings pointing to GFF3 genome annotation files.
-        numBins -- the number of BinCollections we're expecting to generate; only relevant
-                   if annotationFiles is an empty list.
+        workingDirectory -- a string indicating an existing directory with genome GFF3
+                            and/or FASTA files in the subdirectory 'genomes'.
     Returns:
-        collectionList -- a list containing BinCollections in the same order as the
-                          input annotation files.
+        collectionList -- a list containing BinCollections in numerical order of the genome
+                          files.
     '''
-    # Parse each GFF3 into a bin collection structure
-    collectionList = [] # by using a list, we keep genome bins separate to multi-thread later
+    # Locate subdirectory containing files
+    genomesDir = os.path.join(workingDirectory, "genomes")
+    assert os.path.isdir(genomesDir), \
+        f"generate_bin_collections failed because '{genomesDir}' isn't a directory somehow?"
     
-    for annotFile in annotationFiles:
+    # Locate all genome/GFF3 pairings
+    filePairs = []
+    for file in os.listdir(genomesDir):
+        if file.endswith(".fasta"):
+            assert file.startswith("genome"), \
+                f"FASTA file in '{genomesDir}' has a different name than expected?"
+            
+            # Extract file prefix/suffix components
+            filePrefix = file.split(".fasta")[0]
+            suffixNum = filePrefix.split("genome")[1]
+            assert suffixNum.isdigit(), \
+                f"FASTA file in '{genomesDir}' does not have a number suffix?"
+            
+            # Add value to pairings list
+            filePairs.append([None, os.path.join(genomesDir, file), suffixNum])
+            
+            # Add any corresponding GFF3 file if one exists
+            gff3File = f"annotation{suffixNum}.gff3"
+            if os.path.exists(os.path.join(genomesDir, gff3File)):
+                filePairs[-1][0] = os.path.join(genomesDir, gff3File)
+    
+    assert len(filePairs) > 0, \
+        f"generate_bin_collections failed because '{genomesDir}' contains no genomes somehow?"
+    
+    # Sort the list for consistency of ordering
+    "If there are gaps in the suffixNum's, ordering is important to keep things paired up"
+    filePairs.sort(key = lambda x: int(x[2]))
+    
+    # Generate and seed bin collections
+    collectionList = []
+    
+    for gff3File, genomeFile, suffixNum in filePairs:
         binCollection = BinCollection()
         
-        # Parse first as a GFF3 object
-        gff3Obj = GFF3(annotFile, strict_parse=False)
-        for geneFeature in gff3Obj.types["gene"]:
-            
-            # Create a bin for this feature
-            featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
-            try:
-                featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
-            except:
-                "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
-                continue
-            
-            # See if this overlaps an existing bin
-            binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
-            
-            # If not, add the new bin
-            if len(binOverlap) == 0:
-                binCollection.add(featureBin)
-            
-            # Otherwise...
-            else:
-                # ... merge the bins together
-                for overlappingBin in binOverlap:
-                    featureBin.merge(overlappingBin)
+        # Seed bin collection if GFF3 is available
+        if gff3File != None:
+            gff3Obj = GFF3(gff3File, strict_parse=False)
+            for geneFeature in gff3Obj.types["gene"]:
                 
-                # ... delete the overlapping bins
-                for overlappingBin in binOverlap:
-                    binCollection.delete(overlappingBin)
+                # Create a bin for this feature
+                featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
+                try:
+                    featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
+                except:
+                    "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
+                    continue
                 
-                # ... and add the new bin
-                binCollection.add(featureBin)
+                # See if this overlaps an existing bin
+                binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
+                
+                # If not, add the new bin
+                if len(binOverlap) == 0:
+                    binCollection.add(featureBin)
+                
+                # Otherwise...
+                else:
+                    # ... merge the bins together
+                    for overlappingBin in binOverlap:
+                        featureBin.merge(overlappingBin)
+                    
+                    # ... delete the overlapping bins
+                    for overlappingBin in binOverlap:
+                        binCollection.delete(overlappingBin)
+                    
+                    # ... and add the new bin
+                    binCollection.add(featureBin)
         
         # Store the bin collection in our list for multi-threading later
         collectionList.append(binCollection)
-    
-    # Make sure we've got the correct number of BinCollections
-    if len(collectionList) == 0:
-        for _ in range(numBins):
-            collectionList.append(BinCollection())
     
     return collectionList
 
 def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
     '''
-    Receives a list of BinCollection objects, alongside a matching list
-    of GMAP GFF3 file locations, and uses multiple threads to parse the GMAP
-    files and add them into an existing bin, or into a novel bin collection
-    which is returned.
+    Receives a list of BinCollection objects, alongside a list of GMAP GFF3 file
+    locations, and uses multiple threads to parse the GMAP files and add them into
+    an existing bin, or into a novel bin collection which is returned.
     
     Parameters:
         collectionList -- a list of BinCollection objects as resulting from

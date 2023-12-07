@@ -1,8 +1,50 @@
-import time
+import os, time, sys
 from threading import Thread
 
 from .gff3_handling import iterate_through_gff3
 from .bins import BinCollection, Bin, BinSplitter
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from Various_scripts.Function_packages.ZS_MapIO import GMAP_DB
+
+class GmapIndexThread(Thread):
+    '''
+    This provides a modified Thread which allows for GMAP indexing to be run
+    in parallel using the GMAP_DB class.
+    
+    Parameters:
+        fasta -- a string indicating the location of a FASTA file for GMAP indexing.
+        gmapDir -- a string indicating the location of the GMAP executable files.
+    '''
+    def __init__(self, fasta, gmapDir):
+        Thread.__init__(self)
+        
+        # Threading defaults
+        self.gmapFile = fasta
+        self.gmapDir = gmapDir
+        self.db = GMAP_DB(fasta, gmapDir)
+        self.exception = None
+    
+    def generate_gmap_index(self):
+        '''
+        Self parameters:
+            self.db -- a GMAP_DB object.
+        '''
+        if not self.db.index_exists():
+            self.db.index()
+    
+    def run(self):
+        try:
+            self.generate_gmap_index()
+        except BaseException as e:
+            self.exception = e
+    
+    def join(self):
+        Thread.join(self)
+        if self.exception:
+            raise self.exception
+
+####
 
 class GmapBinThread(Thread):
     '''

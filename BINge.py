@@ -18,6 +18,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
     iterative_bin_self_linking, multithread_bin_splitter
 from modules.fasta_handling import AnnotationExtractor
+from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
 from modules.validation import validate_args, validate_fasta
 from Various_scripts.Function_packages.ZS_Utility import convert_windows_to_wsl_path
@@ -95,7 +96,7 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
             # Check that FASTA is a FASTA
             isFASTA = validate_fasta(fasta)
             if not isFASTA:
-                print(f"-i value '{file}' value after the ':' is not a FASTA file")
+                print(f"-i value '{file}' value after the ',' is not a FASTA file")
                 print("Make sure you specify the file order as GFF3:FASTA then try again.")
                 quit()
             
@@ -128,18 +129,40 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
     # Link to the -g genomeFiles values
     for file in genomeFiles:
         numGenomes += 1
+        # Handle GFF3:FASTA pairs
+        if "," in file:
+            gff3, fasta = file.split(",")
+            
+            # Check that FASTA is a FASTA
+            isFASTA = validate_fasta(fasta)
+            if not isFASTA:
+                print(f"-g value '{fasta}' value after the ',' is not a FASTA file")
+                print("Make sure you specify the file order as GFF3:FASTA then try again.")
+                quit()
+            
+            # Symlink files to genomes subdirectory if not aleady existing
+            linkedGFF3 = os.path.join(genomesDir, f"annotation{numGFF3s}.gff3")
+            linkedFASTA = os.path.join(genomesDir, f"genome{numGFF3s}.fasta")
+            
+            if not check_file_exists(linkedGFF3):
+                symlinker(gff3, linkedGFF3)
+            if not check_file_exists(linkedFASTA):
+                symlinker(fasta, linkedFASTA)
         
-        # Check that FASTA is a FASTA
-        isFASTA = validate_fasta(file)
-        if not isFASTA:
-            print(f"-i value '{file}' value after the ':' is not a FASTA file")
-            print("Make sure you specify the file order as GFF3:FASTA then try again.")
-            quit()
-        
-        # Symlink files to genomes subdirectory if not aleady existing
-        linkedGenome = os.path.join(genomesDir, f"genome{numGenomes}.fasta")
-        if not check_file_exists(linkedGenome):
-            symlinker(file, linkedGenome)
+        # Handle plain genome files
+        else:
+            # Check that FASTA is a FASTA
+            isFASTA = validate_fasta(file)
+            if not isFASTA:
+                print(f"-g value '{file}' is not a FASTA file")
+                print("Make sure you specify the right file and/or location then try again.")
+                quit()
+            
+            # Symlink to main working directory if not already existing
+            linkedFASTA = os.path.join(genomesDir, f"genome{numGFF3s}.fasta")
+            
+            if not check_file_exists(linkedFASTA):
+                symlinker(file, linkedFASTA)
 
 def setup_sequences(workingDirectory):
     '''
@@ -150,8 +173,6 @@ def setup_sequences(workingDirectory):
     and generate FASTAs from the GFF3 files at the indicated working directory location.
     
     Parameters:
-        fileNames -- a list of strings pointing to FASTA or GFF3 files.
-        genomeFiles -- a list of strings pointing to genome FASTAs to align against.
         workingDirectory -- a string indicating an existing directory to symlink and/or
                             write FASTAs to.
     '''
@@ -271,12 +292,15 @@ def main():
     showHiddenArgs = '--help-long' in sys.argv
     
     # User input
-    usageShort = """Quick notes for the use of %(prog)s: 1) if providing GFF3 as input, 
-    only protein-coding mRNA features will be handled; input FASTA file(s) are similarly
-    expected to be nucleotide CDS or mRNA sequences. 2) when providing GFF3 as input, you
-    must also specify the genome FASTA it's associated with; you can do that with the format
-    'file.gff3,file.fasta' 3) provide as many genome files as are relevant to your analysis
-    3) Unbinned sequences will be cascade clustered using MMseqs2 by default which is
+    usageShort = """Quick notes for the use of %(prog)s:
+    1) if providing GFF3 as input, only protein-coding mRNA features will be handled; input
+    FASTA file(s) are similarly expected to be nucleotide CDS or mRNA sequences.
+    2) when providing GFF3 as input, you must also specify the genome FASTA it's associated
+    with; you can do that with the format 'file.gff3,file.fasta'
+    3) provide as many genome files as are relevant to your analysis, alongside their
+    annotations (if available and high quality) in the same style e.g., 
+    'annotation.gff3,genome.fasta'
+    4) Unbinned sequences will be cascade clustered using MMseqs2 by default which is
     recommended; you can choose Linclust or CD-HIT if desired. 4) Many parameters are hidden
     in this short help format since their defaults are adequate; specify --help-long to see
     information for those options.
@@ -308,6 +332,12 @@ def main():
     a standlone FASTA is okay, but a GFF3 must be paired with its sequence file via the 
     ',' character and in the order indicated i.e., annotation GFF3 then reference FASTA.
     ###
+    Note 3: Similarly, for genome FASTAs given in the -g argument, you should either provide the
+    genome on its own, or alongside its annotation GFF3. For example here you might provide inputs
+    like '-g genome1.fasta annotation2.gff3,genome2.fasta'; by providing a GFF3 alongside the
+    genome it will pre-seed the bins along this genome based on the annotation. If the annotation
+    is of a reasonable standard this is expected to make BINge perform better.
+    ###
     Note 3: Sequences which do not align against the genome are considered to be "unbinned".
     These will be clustered with MMseqs2 cascaded clustering by default, which is the recommended
     choice. You can use Linclust (also okay, trades some accuracy for some speed) or CD-HIT
@@ -330,7 +360,7 @@ def main():
                    required=True,
                    nargs="+",
                    help="""Input transcriptome FASTA(s) and/or annotation GFF3(s) paired to
-                   their genome file with ':' separator""")
+                   their genome file with ',' separator""")
     p.add_argument("-g", dest="genomeFiles",
                    required=True,
                    nargs="+",
@@ -339,6 +369,10 @@ def main():
                    required=True,
                    help="Output directory for intermediate and final results")
     # Optional - BINge
+    p.add_argument("--gmapDir", dest="gmapDir",
+                   required=False,
+                   help="""If GMAP is not discoverable in your PATH, specify the directory
+                   containing the mmseqs executable""")
     p.add_argument("--threads", dest="threads",
                    required=False,
                    type=int,
@@ -466,24 +500,21 @@ def main():
     # Extract mRNAs from any input GFF3 annotations
     setup_sequences(args.outputDirectory)
     
-    # Perform GMAP mapping
-    ## TBD
+    # Establish GMAP indexes
+    setup_gmap_indices(args.outputDirectory, args.gmapDir, args.threads)
     
-    # Load indexed transcripts for quick access
-    "Load this upfront since it may be a memory limitation, and causing errors early is better than late"
-    #transcriptRecords = FastaCollection(args.fastaFiles)
+    # Perform GMAP mapping
+    gmapFiles = auto_gmapping(args.outputDirectory, args.gmapDir, args.threads)
     
     # Figure out what the hash of these parameters are, and what our pickle file is called
     paramHash = get_parameters_hash(args)
-    pickleFile = os.path.join(
-        os.path.dirname(os.path.abspath(args.outputFileName)), 
-        f".{paramHash}.binge.pkl"
-    )
+    pickleFile = os.path.join(args.outputDirectory, f"{paramHash}.binge.pkl")
     
     # Either load a pickle generated by previous BINge run ...
     if os.path.isfile(pickleFile) or os.path.islink(pickleFile):
         with open(pickleFile, "rb") as pickleIn:
             binCollection = pickle.load(pickleIn)
+    
     # ... error out if it's a directory or something weird ...
     elif os.path.exists(pickleFile):
         print(f"{pickleFile} already exists, but is not a file?")
@@ -491,13 +522,14 @@ def main():
         print("Something weird is happening, so I will exit the program now.")
         print(f"Move whatever is at the location of '{pickleFile}' then try again.")
         quit()
+    
     # ... or begin pre-external clustering BINge
     else:
-        # Parse each GFF3 into a bin collection structure
-        collectionList = generate_bin_collections(args.annotationFiles, len(args.gmapFiles)) # keep genome bins separate to multi-thread later
+        # Set up a bin collection structure for each genome
+        collectionList = generate_bin_collections(args.outputDirectory)
         
         # Parse GMAP alignments into our bin collection with multiple threads
-        novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, args.gmapFiles,
+        novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, gmapFiles,
                                                                      args.threads, args.gmapIdentity)
         
         # Merge bins resulting from fragmented annotation models

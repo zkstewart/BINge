@@ -1,10 +1,38 @@
-import os
+import os, distutils.spawn, platform, subprocess, sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from Various_scripts.Function_packages.ZS_Utility import convert_wsl_to_windows_path
+
+def find_executable(exeName):
+    '''
+    Searches for the given executable name in the system PATH. If found, it will
+    return the full path to it. Otherwise, it will return None.
+    
+    Parameter:
+        exeName -- a string of an executable file name.
+    Returns:
+        which -- a string similar to that returned by Linux's which, or None if not found.
+    '''
+    if platform.system() != "Windows":
+        return distutils.spawn.find_executable(exeName)
+    else:
+        cmd = ["wsl", "~", "-e", "which", exeName]        
+        run_find_exe = subprocess.Popen(cmd, shell = True,
+                                     stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+        findout, finderr = run_find_exe.communicate()
+        
+        if findout.decode("utf-8").rstrip("\r\n ") != "":
+            wslWhich = findout.decode("utf-8").rstrip("\r\n ")
+            which = convert_wsl_to_windows_path(wslWhich)
+            return which
+        else:
+            return None
 
 def validate_args(args):
     # Validate input file locations
     for inputArgument in args.inputFiles:
         assert inputArgument.count(",") <= 1, \
-            print(f"-i value '{inputArgument}' has more than one semicolon in it; format is unhandled")
+            print(f"-i value '{inputArgument}' has more than one comma in it; format is unhandled")
         
         for inputFile in inputArgument.split(","):
             if not os.path.isfile(inputFile):
@@ -12,11 +40,15 @@ def validate_args(args):
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
     
-    for genomeFile in args.genomeFiles:
-        if not os.path.isfile(genomeFile):
-            print(f'I am unable to locate the -g genome file ({genomeFile})')
-            print('Make sure you\'ve typed the file name or location correctly and try again.')
-            quit()
+    for inputArgument in args.genomeFiles:
+        assert inputArgument.count(",") <= 1, \
+            print(f"-g value '{inputArgument}' has more than one comma in it; format is unhandled")
+        
+        for inputFile in inputArgument.split(","):
+            if not os.path.isfile(inputFile):
+                print(f'I am unable to locate the -g input file ({inputFile})')
+                print('Make sure you\'ve typed the file name or location correctly and try again.')
+                quit()
     
     # Validate optional BINge parameters
     if args.threads < 1:
@@ -45,6 +77,37 @@ def validate_args(args):
             print("--gmapIdentity should be given values greater than zero, and equal to " + 
                 "or less than 1")
             print("Fix this and try again.")
+            quit()
+    
+    # Validate GMAP location
+    if args.gmapDir == None:
+        gmap = find_executable("gmap")
+        gmap_build = find_executable("gmap_build")
+        
+        # Raise error if we failed to find the executables
+        if gmap == None or gmap_build == None:
+            print("--gmapDir wasn't specified, so I tried looking for it in your PATH.")
+            print("I failed to find 'gmap' and/or 'gmap_build' by doing so.")
+            print("Make sure they're in your PATH or explicitly indicate them with --gmapDir")
+            quit()
+        else:
+            gmapDir = os.path.dirname(gmap)
+            gmap_buildDir = os.path.dirname(gmap_build)
+            
+            # Raise errors if they're not in the same spot
+            if gmapDir != gmap_buildDir:
+                print("--gmapDir wasn't specified, so I tried looking for it in your PATH.")
+                print("I found 'gmap' and 'gmap_build', but they're in different locations.")
+                print("It would make my life a lot easier if you had them in the same spot.")
+                print("Please fix that and then try again.")
+                quit()
+            
+            # Set the value so we can use it later
+            args.gmapDir = gmapDir
+    else:
+        if not os.path.isdir(args.gmapDir):
+            print(f'I am unable to locate the GMAP directory ({args.gmapDir})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
     
     # Validate optional MMseqs2 parameters
