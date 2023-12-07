@@ -51,9 +51,8 @@ class AnnotationExtractor:
                 
                 # Check if we should yield a feature
                 if isMRNA and details[0] != None:
-                    assert len(exon) > 0 and len(cds) > 0, \
-                        f"AnnotationExtractor error: GFF3 parsing failed on feature '{details[0]}'"
-                    yield details, exon, cds
+                    if len(exon) > 0 and len(cds) > 0: # if this fails it might be a pseudogene
+                        yield details, exon, cds
                 
                 # Check if we should build a new feature
                 if isMRNA:
