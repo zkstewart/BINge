@@ -121,7 +121,7 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
                 quit()
             
             # Symlink to main working directory if not already existing
-            linkedTranscriptome = os.path.join(workingDirectory, f"transcriptome{numGFF3s}.fasta")
+            linkedTranscriptome = os.path.join(workingDirectory, f"transcriptome{numFASTAs}.fasta")
             
             if not check_file_exists(linkedTranscriptome):
                 symlinker(file, linkedTranscriptome)
@@ -141,8 +141,8 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
                 quit()
             
             # Symlink files to genomes subdirectory if not aleady existing
-            linkedGFF3 = os.path.join(genomesDir, f"annotation{numGFF3s}.gff3")
-            linkedFASTA = os.path.join(genomesDir, f"genome{numGFF3s}.fasta")
+            linkedGFF3 = os.path.join(genomesDir, f"annotation{numGenomes}.gff3")
+            linkedFASTA = os.path.join(genomesDir, f"genome{numGenomes}.fasta")
             
             if not check_file_exists(linkedGFF3):
                 symlinker(gff3, linkedGFF3)
@@ -159,7 +159,7 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
                 quit()
             
             # Symlink to main working directory if not already existing
-            linkedFASTA = os.path.join(genomesDir, f"genome{numGFF3s}.fasta")
+            linkedFASTA = os.path.join(genomesDir, f"genome{numGenomes}.fasta")
             
             if not check_file_exists(linkedFASTA):
                 symlinker(file, linkedFASTA)
