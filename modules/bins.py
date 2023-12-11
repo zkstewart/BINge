@@ -382,15 +382,13 @@ class BinCollection:
             # Check that this bin is fully connected
             "Non-fully connected graphs at this stage cause errors"
             allConnected = True
-            for i in range(0, len(connectedBins)-1):
-                for x in range(i+1, len(connectedBins)):
-                    binHash1 = connectedBins[i]
-                    binHash2 = connectedBins[x]
-                    try:
-                        binGraph[binHash1][binHash2]
-                    except:
-                        allConnected = False
-                        break # small speed up, won't fully exit loop
+            binHash1 = connectedBins[0]
+            for binHash2 in connectedBins[1:]:
+                try:
+                    finalGraph[binHash1][binHash2]
+                except:
+                    allConnected = False
+                    break
             
             # Merge bins if they're fully connected
             if allConnected == True:
