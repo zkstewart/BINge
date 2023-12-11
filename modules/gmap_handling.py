@@ -88,6 +88,8 @@ def auto_gmapping(workingDirectory, gmapDir, threads):
         for f in os.listdir(workingDirectory)
         if f.endswith(".nucl")
     ]
+    assert len(queryFiles) > 0, \
+        f"auto_gmapping failed because '{workingDirectory}' contains no query files somehow?"
     
     # Iteratively perform GMAP search for all combinations
     gmapFiles = []

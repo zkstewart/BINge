@@ -10,7 +10,7 @@
 # de novo transcriptome, but leverage the genomic information
 # to group transcripts into genes. That's what this does.
 
-import os, argparse, sys, pickle, platform, subprocess
+import os, argparse, sys, pickle, platform, subprocess, json
 from hashlib import sha256
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -22,6 +22,9 @@ from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
 from modules.validation import validate_args, validate_fasta
 from Various_scripts.Function_packages.ZS_Utility import convert_windows_to_wsl_path
+
+HASHING_PARAMS = ["inputFiles", "genomeFiles", "convergenceIters",        # These hashes are the only ones which behaviourally
+                  "gmapIdentity", "skipFixFragments", "skipBinSplitting"] # influence the pre-external clustering
 
 # Define functions
 def symlinker(src, dst):
@@ -121,7 +124,7 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
                 quit()
             
             # Symlink to main working directory if not already existing
-            linkedTranscriptome = os.path.join(workingDirectory, f"transcriptome{numFASTAs}.fasta")
+            linkedTranscriptome = os.path.join(workingDirectory, f"transcriptome{numFASTAs}.nucl")
             
             if not check_file_exists(linkedTranscriptome):
                 symlinker(file, linkedTranscriptome)
@@ -163,6 +166,40 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
             
             if not check_file_exists(linkedFASTA):
                 symlinker(file, linkedFASTA)
+
+def setup_param_cache(args, paramHash):
+    '''
+    Given a mix of FASTA and/or GFF3 files, this function will symlink FASTA files
+    and generate FASTAs from the GFF3 files at the indicated working directory location.
+    
+    Parameters:
+        args -- the argparse object of BINge called through the main function.
+        paramHash -- a string of the hash for these parameters to store in the param cache.
+    '''
+    # Get relevant parameters from args object
+    workingDirectory = args.outputDirectory
+    
+    # Parse any existing param cache file
+    paramCacheFile = os.path.join(args.outputDirectory, "param_cache.json")
+    if os.path.exists(paramCacheFile):
+        try:
+            with open(paramCacheFile, "r") as fileIn:
+                paramsDict = json.load(fileIn)
+        except:
+            raise Exception((f"'{paramCacheFile}' exists but cannot be loaded as a JSON. " + 
+                             "If the file is malformed, delete it so I can reinitialise one."))
+    else:
+        paramsDict = {}
+    
+    # Add this program run to the paramsDict cache (if needed)
+    paramsDict[paramHash] = {
+        param : args.__dict__[param]
+        for param in HASHING_PARAMS
+    }
+    
+    # Write updated param cache to file
+    with open(paramCacheFile, "w") as fileOut:
+        json.dump(paramsDict, fileOut)
 
 def setup_sequences(workingDirectory, isMicrobial=False):
     '''
@@ -278,11 +315,6 @@ def get_parameters_hash(args):
     Returns:
         paramHash -- a sha256 hash string of the parameters
     '''
-    
-    "These hashes are the only ones which behaviourally influence the pre-external clustering"
-    HASHING_PARAMS = ["inputFiles", "genomeFiles", "convergenceIters",
-                      "gmapIdentity", "skipFixFragments", "skipBinSplitting"]
-    
     strForHash = ""
     for param in HASHING_PARAMS:
         strForHash += str(args.__dict__[param])
@@ -525,6 +557,7 @@ def main():
     
     # Setup sequence working directory for analysis
     setup_working_directory(args.inputFiles, args.genomeFiles, args.outputDirectory)
+    setup_param_cache(args, paramHash)
     
     # Figure out if we've already run BINge here before and exit if so
     outputFileName = os.path.join(args.outputDirectory, f"BINge_clustering_result.{paramHash}.tsv")
