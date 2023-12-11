@@ -79,7 +79,10 @@ class AnnotationExtractor:
         
         # Yield the last feature in the GFF3
         if details != [None, None, None]:
-            yield details, exon, cds
+            if not self.isMicrobial:
+                yield details, exon, cds
+            else:
+                yield details, cds, cds
         else:
             raise Exception(f"AnnotationExtractor error: '{self.gff3File}' does not appear to be a valid GFF3 file!")
     
