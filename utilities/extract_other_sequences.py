@@ -26,7 +26,7 @@ def validate_args(args):
     elif args.translationTable > 31:
         print('translationTable value must be less than 31. Fix this and try again.')
         quit()
-
+    
     # Validate output file location
     if os.path.isdir(args.outputDirectory):
         print(f'Output directory specified already exists ({args.outputDirectory})')
@@ -47,6 +47,28 @@ def validate_args(args):
         print(f"Something other than a directory already exists at '{args.outputDirectory}'")
         print("Either move this, or specify a different -o value, then try again.")
         quit()
+
+def translator(cdsSeq, translationTable):
+    aaSeq = Seq(cdsSeq).translate(table=translationTable)
+    
+    # Look for a better translation if this one has internal stop codons
+    if "*" in aaSeq[:-1]:
+        # Get alternate translations
+        newSeqs = []
+        for frame in range(1, 3):
+            newSeqs.append(Seq(cdsSeq[frame:]).translate(table=translationTable))
+        
+        # Find the best one
+        best = aaSeq
+        for seq in newSeqs:
+            if (not "*" in seq[:-1]) and ("*" in best[:-1]):
+                best = seq
+            elif seq[-1] == "*" and best[-1] != "*":
+                best = seq
+        
+        return best
+    else:
+        return aaSeq
 
 ## Main
 def main():
