@@ -5,10 +5,7 @@
 # Utility program to select a representative sequence for each cluster
 # predicted by BINge making use of (potentially) several lines of evidence.
 
-import os, argparse, sys
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from Various_scripts.Function_packages import ZS_ClustIO
+import os, argparse
 
 from modules.fasta_handling import FastaCollection
 from modules.validation import validate_salmon_files, validate_cluster_file
@@ -21,14 +18,25 @@ def validate_args(args):
         print(f'I am unable to locate the BINge cluster file ({args.bingeFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    for fastaFile in args.fastaFiles:
-        if not os.path.isfile(fastaFile):
-            print(f'I am unable to locate the transcript FASTA file ({fastaFile})')
-            print('Make sure you\'ve typed the file name or location correctly and try again.')
-            quit()
+    
+    # Derive the locations of the FASTA files
+    args.fastaFiles = [
+        os.path.join(args.fastaDir, f)
+        for f in os.listdir(args.fastaDir)
+        if f.endswith(".nucl")
+    ]
+    if len(args.fastaFiles) == 0:
+        print(f"The -f directory does not contain any .nucl files.")
+        print("Ideally, the -f argument is the location where BINge was run.")
+        print("Please point me to a location containing .nucl files then try again.")
+        quit()
     
     # Validate cluster file
     args.isBinge = validate_cluster_file(args.bingeFile)
+    if not args.isBinge:
+        print("CD-HIT is no longer supported by BINge_representatives.py")
+        print("Sorry about that - make sure to use BINge results herein.")
+        quit()
     
     # Validate BLAST file if relevant
     if args.blastFile != None:
@@ -200,6 +208,10 @@ def main():
     representative sequence from each cluster. These representative sequences can be used
     for downstream functions including gene annotation.
     
+    You should provide the -f argument the location of the BINge results directory since
+    it will contain all of the annotation.nucl and transcriptome.nucl files necessary for
+    this script to work.
+    
     Optional inclusions for representative picking include:
     1) A BLAST outfmt6 file to select a representative including best-BLAST evidence.
     2) A GFF3 of the reference organism used as part of BINge clustering, or just a text
@@ -218,19 +230,15 @@ def main():
     
     The output is a FASTA file containing these representatives. The ID for each sequence
     follows a format like '>Cluster-1 representative=transcript_92'.
-    
-    Note: for testing purposes, this script will accept either a BINge or CD-HIT cluster
-    file as input (-i).
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
     p.add_argument("-i", dest="bingeFile",
                    required=True,
                    help="Input BINge cluster file")
-    p.add_argument("-f", dest="fastaFiles",
+    p.add_argument("-f", dest="fastaDir",
                    required=True,
-                   nargs="+",
-                   help="Input one or more FASTAs containing transcripts listed in the cluster file")
+                   help="Input directory containing FASTAs listed in the cluster file")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output FASTA file name for representative sequences")
@@ -263,17 +271,14 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
-    # Parse the CD-HIT / BINge cluster file
-    if args.isBinge:
-        clusterDict = parse_binge_clusters(
-            args.bingeFile,
-            "all" if args.onlyBinned == False else "binned"
-        )
-    else:
-        clusterDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.bingeFile)
+    # Parse the BINge cluster file
+    clusterDict = parse_binge_clusters(
+        args.bingeFile,
+        "all" if args.onlyBinned == False else "binned"
+    )
     
     # Load transcripts into memory for quick access
-    transcriptRecords = FastaCollection(args.fastaFiles)
+    transcriptRecords = FastaCollection(args.fastaFiles) # args.fastaFiles set by validate_args()
     
     # Parse BLAST results (if relevant)
     if args.blastFile != None:

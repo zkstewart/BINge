@@ -1,5 +1,5 @@
 #! python3
-# BINge.py
+# BINge_filter.py
 # BIN Genes for Expression analyses - filter module
 
 # Utility program to follow downstream of BINge clustering, allowing one to
@@ -22,14 +22,25 @@ def validate_args(args):
         print(f'I am unable to locate the BINge cluster file ({args.bingeFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    for fastaFile in args.fastaFiles:
-        if not os.path.isfile(fastaFile):
-            print(f'I am unable to locate the transcript FASTA file ({fastaFile})')
-            print('Make sure you\'ve typed the file name or location correctly and try again.')
-            quit()
+    
+    # Derive the locations of the FASTA files
+    args.fastaFiles = [
+        os.path.join(args.fastaDir, f)
+        for f in os.listdir(args.fastaDir)
+        if f.endswith(".nucl")
+    ]
+    if len(args.fastaFiles) == 0:
+        print(f"The -f directory does not contain any .nucl files.")
+        print("Ideally, the -f argument is the location where BINge was run.")
+        print("Please point me to a location containing .nucl files then try again.")
+        quit()
     
     # Validate cluster file
     args.isBinge = validate_cluster_file(args.bingeFile)
+    if not args.isBinge:
+        print("CD-HIT is no longer supported by BINge_filter.py")
+        print("Sorry about that - make sure to use BINge results herein.")
+        quit()
     
     # Validate BLAST file if relevant
     if args.blastFile != None:
@@ -309,6 +320,10 @@ def main():
     will read in the output of BINge alongside several other files to filter predicted
     clusters, retaining only those which meet specific criteria defined herein.
     
+    You should provide the -f argument the location of the BINge results directory since
+    it will contain all of the annotation.nucl and transcriptome.nucl files necessary for
+    this script to work.
+    
     Optional inclusions for cluster filtering include:
     1) A BLAST outfmt6 file to include best-BLAST evidence for cluster filtering.
     2) A GFF3 of the reference organism used as part of BINge clustering, or just a text
@@ -336,21 +351,19 @@ def main():
     numbers will be revised to account for absences, so please expect the cluster numbers to
     change after filtering.
     
-    Note: for testing purposes, this script will accept either a BINge or CD-HIT cluster
-    file as input (-i). Also note that the input file can be in any format (nucleotide mRNA,
-    CDS, or protein translation) but this code will work best if you give the CDS or protein
-    sequence since that makes it easier to get the correct ORF length. Otherwise, ORFs will
-    be predicted in a very simplistic way.
+    Note: the input file can be in any format (nucleotide mRNA, CDS, or protein translation)
+    but this code will work best if you give the CDS or protein sequence since that makes it
+    easier to get the correct ORF length. Otherwise, ORFs will be predicted in a very
+    simplistic way.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
     p.add_argument("-i", dest="bingeFile",
                    required=True,
                    help="Input BINge cluster file")
-    p.add_argument("-f", dest="fastaFiles",
+    p.add_argument("-f", dest="fastaDir",
                    required=True,
-                   nargs="+",
-                   help="Input one or more FASTAs containing transcripts listed in the cluster file")
+                   help="Input directory containing FASTAs listed in the cluster file")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output FASTA file name for representative sequences")
@@ -410,13 +423,9 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
-    # Parse the CD-HIT / BINge cluster file
-    if args.isBinge:
-        binnedDict = parse_binge_clusters(args.bingeFile, "binned")
-        unbinnedDict = parse_binge_clusters(args.bingeFile, "unbinned")
-    else:
-        binnedDict = {} # CD-HIT doesn't give us binned/unbinned information
-        unbinnedDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.bingeFile)
+    # Parse the BINge cluster file
+    binnedDict = parse_binge_clusters(args.bingeFile, "binned")
+    unbinnedDict = parse_binge_clusters(args.bingeFile, "unbinned")
     
     # Load transcripts into memory for quick access
     transcriptRecords = FastaCollection(args.fastaFiles)
