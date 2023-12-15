@@ -144,7 +144,7 @@ def main():
             for mrnaID, exonSeq, cdsSeq in seqGenerator.iter_sequences():
                 cdsOut.write(f">{mrnaID}\n{cdsSeq}\n")
                 
-                aaSeq = Seq(cdsSeq).translate(table=args.translationTable)
+                aaSeq = translator(cdsSeq, args.translationTable)
                 aaOut.write(f">{mrnaID}\n{aaSeq}\n")
                 
                 if warnOnce == False:
