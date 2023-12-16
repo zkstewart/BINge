@@ -370,7 +370,7 @@ def main():
                     evidenceLists.append(thisEvidenceList)
                 
                 # Raise error if we skipped all the IDs in this bin
-                if args.be_tolerant and len(evidenceLists) == 0:
+                if args.beTolerant and len(evidenceLists) == 0:
                     print("--be_tolerant behaviour led to the discovery of an empty bin!")
                     print("Currently I will not handle this situation. You should create " + 
                           "extra FASTA(s) containing parent gene identifiers and use those as input.")
