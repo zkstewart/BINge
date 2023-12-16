@@ -1,6 +1,7 @@
 #! python3
 
 import os, sys, unittest
+from copy import deepcopy
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
@@ -29,7 +30,9 @@ def _generate_bin_collections(gff3Files):
                 # Create a bin for this feature
                 featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
                 try:
-                    featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
+                    for mrnaFeature in geneFeature.mRNA:
+                        featureBin.add(mrnaFeature.ID, Bin.format_exons_from_gff3_feature(mrnaFeature))
+                    #featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
                 except:
                     "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
                     continue
@@ -144,6 +147,35 @@ def binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5, gm
     
     return binCollection, novelBinCollection
 
+def binge_runner2(binCollectionList, gmapFiles, threads=1, convergenceIters=5, gmapIdentity=None):
+    if gmapIdentity == None:
+        gmapIdentity = 0.95
+    
+    backup = deepcopy(binCollectionList)
+    
+    novelBinCollection, multiOverlaps = _populate_bin_collections(binCollectionList, gmapFiles,
+                                                                 threads, gmapIdentity)
+    
+    binCollectionList = backup
+    
+    for i in range(len(binCollectionList)):
+        binCollection = binCollectionList[i].fix_fragments(multiOverlaps[i])
+        binCollectionList[i] = binCollection
+    
+    binCollection = binCollectionList[0]
+    for i in range(1, len(binCollectionList)):
+        binCollection.merge(binCollectionList[i])
+    
+    binCollection = multithread_bin_splitter(binCollection, threads)
+    
+    binCollection = iterative_bin_self_linking(binCollection, convergenceIters)
+    novelBinCollection = iterative_bin_self_linking(novelBinCollection, convergenceIters)
+    
+    binCollection.merge(novelBinCollection)
+    binCollection = iterative_bin_self_linking(binCollection, convergenceIters)
+    
+    return binCollection, novelBinCollection
+
 # Define test helper functions
 def get_binCollection_in_range(gff3File, contig, start, end):
     binCollectionList = _generate_bin_collections([gff3File])
@@ -178,8 +210,8 @@ class TestNormal(unittest.TestCase):
         self.assertEqual(len(binOverlap), 1, "Should contain 1 bin")
         self.assertEqual(len(binOverlap2), 1, "Should contain 1 bin")
         
-        self.assertEqual(len(binOverlap[0].ids), 1, "Should contain 1 ID")
-        self.assertEqual(len(binOverlap2[0].ids), 1, "Should contain 1 ID")
+        self.assertEqual(len(binOverlap[0].ids), 2, "Should contain 2 IDs")
+        self.assertEqual(len(binOverlap2[0].ids), 2, "Should contain 2 IDs")
     
     def test_normal_2(self):
         '''
@@ -301,7 +333,7 @@ class TestFragmentMerger(unittest.TestCase):
         origNumBins = len(binCollection)
         origNumIDs = [ len(bin.data.ids) for bin in binCollection ]
         
-        binCollection, novelBinCollection = binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5)
+        binCollection, novelBinCollection = binge_runner2(binCollectionList, gmapFiles, threads=1, convergenceIters=5)
         
         newNumBins = len(binCollection)
         newNumIDs = [ len(bin.data.ids) for bin in binCollection ]

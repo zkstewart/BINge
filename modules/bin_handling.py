@@ -68,7 +68,8 @@ def generate_bin_collections(workingDirectory):
                 # Create a bin for this feature
                 featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
                 try:
-                    featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
+                    for mrnaFeature in geneFeature.mRNA:
+                        featureBin.add(mrnaFeature.ID, Bin.format_exons_from_gff3_feature(mrnaFeature))
                 except:
                     "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
                     continue
