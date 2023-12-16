@@ -267,6 +267,11 @@ def main():
                    action="store_true",
                    help="Optionally, only output representatives for binned sequence clusters",
                    default=False)
+    p.add_argument("--be_tolerant", dest="beTolerant",
+                   required=False,
+                   action="store_true",
+                   help="Optionally, allow sequences to be missing from your FASTA file",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -320,6 +325,18 @@ def main():
                 # Store all forms of evidence we have at hand for each sequence member
                 numRepsInCluster = sum([ seqID in annotIDs for seqID in seqIDs ])
                 for seqID in seqIDs:
+                    # Tolerantly handle non-existing sequences
+                    """This is only allowed because bin seeding via GFF3 may lead to binned sequences
+                    which do not exist in the FASTA files. We can ignore these as their mRNA counterparts
+                    should have been binned here as well."""
+                    if not seqID in transcriptRecords:
+                        if args.beTolerant:
+                            continue
+                        else:
+                            print(f"Error: sequence ID '{seqID}' not found in any input FASTA files!")
+                            print("--be_tolerant was not specified so the program will end now.")
+                            quit()
+                    
                     # Tolerantly handle counts that can be filtered by salmon
                     try:
                         counts = sum(salmonCollection.get_transcript_count(seqID))
@@ -351,6 +368,14 @@ def main():
                             seqID
                         ]
                     evidenceLists.append(thisEvidenceList)
+                
+                # Raise error if we skipped all the IDs in this bin
+                if args.be_tolerant and len(evidenceLists) == 0:
+                    print("--be_tolerant behaviour led to the discovery of an empty bin!")
+                    print("Currently I will not handle this situation. You should create " + 
+                          "extra FASTA(s) containing parent gene identifiers and use those as input.")
+                    print("Program will exit now.")
+                    quit()
                 
                 # Sort our evidence lists in a way where the first value is the best
                 evidenceLists.sort(
