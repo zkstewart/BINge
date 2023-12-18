@@ -5,7 +5,7 @@
 # Utility program to select a representative sequence for each cluster
 # predicted by BINge making use of (potentially) several lines of evidence.
 
-import os, argparse
+import os, argparse, sys
 
 from modules.fasta_handling import FastaCollection
 from modules.validation import validate_salmon_files, validate_cluster_file
