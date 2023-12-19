@@ -148,7 +148,8 @@ def parse_text_ids(textFile):
 
 def parse_blast_outfmt6(blastFile, evalueCutoff):
     '''
-    Simply parses a BLAST outfmt6 file to get the best E-value hit for each query sequence.
+    Simply parses a BLAST outfmt6 file to get the best bitscore hit for each query sequence
+    if it exceeds a minimum E-value threshold.
     
     Parameters:
         blastFile -- a string indicating the location of a BLAST results file in
@@ -156,8 +157,8 @@ def parse_blast_outfmt6(blastFile, evalueCutoff):
     Returns:
         blastDict -- a dict with structure like:
                      {
-                         'seqID1': evalue,
-                         'seqID2': evalue,
+                         'seqID1': bitscore,
+                         'seqID2': bitscore,
                          ...
                      }
     '''
@@ -169,6 +170,7 @@ def parse_blast_outfmt6(blastFile, evalueCutoff):
             sl = line.rstrip("\r\n").split('\t')
             queryID = sl[0]
             evalue = float(sl[10])
+            bitscore = float(sl[11])
             
             # Skip if evalue isn't significant
             if evalue > evalueCutoff:
@@ -176,10 +178,10 @@ def parse_blast_outfmt6(blastFile, evalueCutoff):
             
             # Store result if none exist
             if queryID not in blastDict:
-                blastDict[queryID] = evalue
+                blastDict[queryID] = bitscore
             # Overwrite result if this is better
-            elif evalue < blastDict[queryID]:
-                blastDict[queryID] = evalue
+            elif bitscore > blastDict[queryID]:
+                blastDict[queryID] = bitscore
     
     return blastDict
 
@@ -354,7 +356,7 @@ def main():
                     if numRepsInCluster <= 1:
                         thisEvidenceList = [
                             1 if seqID in annotIDs else 0,
-                            blastDict[seqID] if seqID in blastDict else 1, # stores E-value
+                            blastDict[seqID] if seqID in blastDict else 0, # stores bitscore
                             counts,
                             len(str(transcriptRecords[seqID])),
                             seqID
@@ -362,7 +364,7 @@ def main():
                     else:
                         thisEvidenceList = [
                             0,
-                            blastDict[seqID] if seqID in blastDict else 1, # stores E-value
+                            blastDict[seqID] if seqID in blastDict else 0, # stores bitscore
                             counts,
                             len(str(transcriptRecords[seqID])),
                             seqID
@@ -380,7 +382,7 @@ def main():
                 # Sort our evidence lists in a way where the first value is the best
                 evidenceLists.sort(
                     key = lambda x: (
-                        -x[0], x[1], -x[2], -x[3] # with E-value, smaller is better so don't '-' it
+                        -x[0], -x[1], -x[2], -x[3]
                     )
                 )
                 
