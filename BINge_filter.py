@@ -396,7 +396,7 @@ def main():
                    required=False,
                    help="""Optionally, specify one or more FASTA file(s) to retain clusters
                    ONLY if they contain any of the sequences in these file(s); this filter 
-                   supercedes all others.""",
+                   supercedes all others and DOES apply to binned clusters.""",
                    default=[])
     p.add_argument("--annot", dest="annotationFile",
                    required=False,
@@ -506,18 +506,17 @@ def main():
     
     # Perform filtration of clusters with available evidence
     toDrop = set()
-    if not args.filterBinned:
-        toFilterDicts = [unbinnedDict]
-    else:
-        toFilterDicts = [binnedDict, unbinnedDict]
-    
-    for toFilterDict in toFilterDicts:
+    for toFilterDict in [binnedDict, unbinnedDict]:
         for clusterID, seqIDs in toFilterDict.items():
             # Check 0: FILTER if it does not contain a filter ID
             if args.filterFiles != []:
                 if not any([ seqID in filterIDs for seqID in seqIDs ]):
                     toDrop.add(clusterID)
                     continue # since we're filtering, we toDrop it then continue
+            
+            # Skip now if we don't want to filter other binned clusters
+            if not args.filterBinned:
+                continue
             
             # Check 1: Retain if it has a reference sequence
             if any([ seqID in annotIDs for seqID in seqIDs ]):
