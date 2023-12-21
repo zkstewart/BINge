@@ -24,7 +24,7 @@ def validate_args(args):
         quit()
     for filterFile in args.filterFiles:
         if not os.path.isfile(filterFile) and not os.path.islink(filterFile):
-            print(f'I am unable to locate the filter file ({filterFile)')
+            print(f'I am unable to locate the filter file ({filterFile})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
     
