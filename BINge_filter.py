@@ -9,7 +9,7 @@ import os, argparse, sys
 import numpy as np
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from Various_scripts.Function_packages import ZS_BlastIO, ZS_ClustIO
+from Various_scripts.Function_packages import ZS_BlastIO
 
 from modules.fasta_handling import ZS_SeqIO, FastaCollection
 from modules.validation import validate_salmon_files, validate_cluster_file
@@ -22,6 +22,11 @@ def validate_args(args):
         print(f'I am unable to locate the BINge cluster file ({args.bingeFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    for filterFile in args.filterFiles:
+        if not os.path.isfile(filterFile) and not os.path.islink(filterFile):
+            print(f'I am unable to locate the filter file ({filterFile)')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
     
     # Derive the locations of the FASTA files
     args.fastaFiles = [
@@ -170,6 +175,19 @@ def parse_text_ids(textFile):
         for line in fileIn:
             annotIDs.add(line.rstrip("\r\n "))
     return annotIDs
+
+def parse_fasta_ids(fastaFiles):
+    '''
+    Simply parses one or more FASTA files for their sequence IDs. Returns a set
+    of said IDs.
+    '''
+    fastaIDs = []
+    for f in fastaFiles:
+        with open(f, "r") as fileIn:
+            for line in fileIn:
+                if line.startswith(">"):
+                    fastaIDs.add(line.rstrip("\r\n ").split(" ")[0])
+    return set(fastaIDs)
 
 def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
                                      salmonCollection, salmonFileFormat):
@@ -373,19 +391,31 @@ def main():
                    help="""Indicate whether your file contains transcripts (i.e., inclusive
                    of UTR; as nucleotide), CDS (as nucleotide), or protein sequences.""")
     # Optional
-    p.add_argument("--blast", dest="blastFile",
-                   required=False,
-                   help="An outfmt6 file from BLAST or MMseqs2 against a relevant database.",
-                   default=None)
-    p.add_argument("--annot", dest="annotationFile",
-                   required=False,
-                   help="A GFF3 or text file containing the representative organism's sequence IDs",
-                   default=None)
-    p.add_argument("--salmon", dest="salmonFiles",
+    p.add_argument("--fastas_filter", dest="filterFiles",
                    nargs="+",
                    required=False,
-                   help="One or more salmon eq_classes.txt or quant.sf files (one or the other)",
+                   help="""Optionally, specify one or more FASTA file(s) to retain clusters
+                   ONLY if they contain any of the sequences in these file(s); this filter 
+                   supercedes all others.""",
                    default=[])
+    p.add_argument("--annot", dest="annotationFile",
+                   required=False,
+                   help="""Optionally, specify a GFF3 or text file containing the representative
+                   organism's sequence IDs to retain an unbinned cluster if it contains any of
+                   these sequences.""",
+                   default=None)
+    p.add_argument("--length", dest="minimumLength",
+                   required=False,
+                   type=int,
+                   help="""Specify the minimum length of an ORF (in amino acids) that must
+                   be met for a cluster to pass filtration (if it hasn't passed any other
+                   filter checks already); make this strict! (default==150)""",
+                   default=150)
+    p.add_argument("--blast", dest="blastFile",
+                   required=False,
+                   help="""Optionally, specify an outfmt6 file from BLAST or MMseqs2 against a
+                   relevant database to use for filtering purposes.""",
+                   default=None)
     p.add_argument("--evalue", dest="evalue",
                    required=False,
                    type=float,
@@ -393,13 +423,12 @@ def main():
                    threshold to use when considering a hit to be statistically significant
                    (default==1e-10).""",
                    default=1e-10)
-    p.add_argument("--length", dest="minimumLength",
+    p.add_argument("--salmon", dest="salmonFiles",
+                   nargs="+",
                    required=False,
-                   type=int,
-                   help="""Specify the minimum length of an ORF (in amino acids) that must
-                   be met for a cluster to pass filtration (if it hasn't passed any of the
-                   previous filter checks already); make this strict! (default==150)""",
-                   default=150)
+                   help="""Optionally, specify one or more salmon eq_classes.txt or quant.sf
+                   files (one or the other type only) to use with read depth retention""",
+                   default=[])
     p.add_argument("--require1x", dest="require1x",
                    required=False,
                    action="store_true",
@@ -449,6 +478,12 @@ def main():
     else:
         annotIDs = set()
     
+    # Parse filter FASTA files (if relevant)
+    if args.filterFiles != []:
+        filterIDs = parse_fasta_ids(args.filterFiles)
+    else:
+        filterIDs = None
+    
     # Parse salmon counts (if relevant)
     if args.salmonFiles != []:
         sampleNames = [ f"{i}" for i in range(len(args.salmonFiles))] # sample names don't matter
@@ -478,6 +513,12 @@ def main():
     
     for toFilterDict in toFilterDicts:
         for clusterID, seqIDs in toFilterDict.items():
+            # Check 0: FILTER if it does not contain a filter ID
+            if args.filterFiles != []:
+                if not any([ seqID in filterIDs for seqID in seqIDs ]):
+                    toDrop.add(clusterID)
+                    continue # since we're filtering, we toDrop it then continue
+            
             # Check 1: Retain if it has a reference sequence
             if any([ seqID in annotIDs for seqID in seqIDs ]):
                 continue
