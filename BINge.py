@@ -322,6 +322,11 @@ def get_parameters_hash(args):
     
     return paramHash
 
+def _debug_pickler(shouldPickleBool, objectToPickle, outputFileName):
+    if shouldPickleBool:
+        with open(outputFileName, "wb") as pickleOut:
+            pickle.dump(objectToPickle, pickleOut)
+
 ## Main
 def main():
     showHiddenArgs = '--help-long' in sys.argv
@@ -549,6 +554,13 @@ def main():
                    help="""Show all options, including those that are not
                    recommended to be changed"""
                    if not showHiddenArgs else argparse.SUPPRESS)
+    # Debugging - to be removed later
+    p.add_argument("--debugPickle", dest="debugPickle",
+                   required=False,
+                   action="store_true",
+                   help="""For me - specify this to make pickles along the way."""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -576,6 +588,7 @@ def main():
     
     # Perform GMAP mapping
     gmapFiles = auto_gmapping(args.outputDirectory, args.gmapDir, args.threads)
+    _debug_pickler(args.debugPickle, gmapFiles, os.path.join(args.outputDirectory, f"{paramHash}.gmapFiles.pkl"))
     
     # Figure out what our pickle file is called
     pickleFile = os.path.join(args.outputDirectory, f"{paramHash}.binge.pkl")
@@ -600,26 +613,31 @@ def main():
     else:
         # Set up a bin collection structure for each genome
         collectionList = generate_bin_collections(args.outputDirectory)
+        _debug_pickler(args.debugPickle, collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.setup.pkl"))
         
         # Parse GMAP alignments into our bin collection with multiple threads
         novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, gmapFiles,
                                                                      args.threads, args.gmapIdentity)
+        _debug_pickler(args.debugPickle, [collectionList, novelBinCollection, multiOverlaps], os.path.join(args.outputDirectory, f"{paramHash}.collectionList.populated.pkl"))
         
         # Merge bins resulting from fragmented annotation models
         if not args.skipFixFragments:
             for i in range(len(collectionList)):
                 binCollection = collectionList[i].fix_fragments(multiOverlaps[i])
                 collectionList[i] = binCollection
+        _debug_pickler(args.debugPickle, collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.fragmentfixed.pkl"))
         
         # Merge gene bins together
         binCollection = collectionList[0]
         for i in range(1, len(collectionList)):
             binCollection.merge(collectionList[i])
+        _debug_pickler(args.debugPickle, binCollection, os.path.join(args.outputDirectory, f"{paramHash}.binCollection.squashed.pkl"))
         
         # Split bins containing overlapping (but not exon-sharing) genes e.g., nested genes
         if not args.skipBinSplitting:
             binCollection = multithread_bin_splitter(binCollection, args.threads)
             novelBinCollection = multithread_bin_splitter(novelBinCollection, args.threads)
+        _debug_pickler(args.debugPickle, [binCollection, novelBinCollection], os.path.join(args.outputDirectory, f"{paramHash}.novelAndNormalBinCollection.split.pkl"))
         
         # Merge bin collections together bins across genomes / across gene copies
         """Usually linking will unify multiple genomes together, but it may detect
@@ -631,6 +649,7 @@ def main():
         These should be merged together to prevent having redundant bins."""
         
         binCollection.merge(novelBinCollection)
+        _debug_pickler(args.debugPickle, binCollection, os.path.join(args.outputDirectory, f"{paramHash}.binCollection.merged.pkl"))
         binCollection = iterative_bin_self_linking(binCollection, args.convergenceIters)
         
         # Write pickle file for potential resuming of program
