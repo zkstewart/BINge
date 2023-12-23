@@ -3,6 +3,7 @@ from threading import Thread
 
 from .gff3_handling import iterate_through_gff3
 from .bins import BinCollection, Bin, BinSplitter
+from .bin_handling import add_bin_to_collection
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_MapIO import GMAP_DB
@@ -59,7 +60,7 @@ class GmapBinThread(Thread):
         minIdentity -- a float fraction indicating what identity value is minimally required
                        for us to use a GMAP alignment.
     '''
-    def __init__(self, gmapFiles, binCollection, novelBinCollection, multiOverlaps, minIdentity=0.95):
+    def __init__(self, gmapFiles, binCollection, multiOverlaps, minIdentity=0.95):
         Thread.__init__(self)
         
         # Behavioural parameters
@@ -70,7 +71,6 @@ class GmapBinThread(Thread):
         # Threading defaults
         self.gmapFiles = gmapFiles
         self.binCollection = binCollection
-        self.novelBinCollection = novelBinCollection
         self.multiOverlaps = multiOverlaps
         self.exception = None
     
@@ -91,9 +91,8 @@ class GmapBinThread(Thread):
         ALLOWED_COV_DIFF = 1
         ALLOWED_IDENT_DIFF = 0.1
         ##
-        "These statics help to file a gene into an existing Bin or a novel Bin"
+        "These statics help to file a gene into an existing Bin"
         GENE_BIN_OVL_PCT = 0.5
-        NOVEL_BIN_OVL_PCT = 0.5
         
         # Iterate through GMAP files
         for gmapFile in self.gmapFiles:
@@ -127,7 +126,7 @@ class GmapBinThread(Thread):
                         or (identity + ALLOWED_IDENT_DIFF) < prevIdent:
                         continue
                 
-                # Now that we've checked if this path is good, we'll store it
+                # Now that we've checked if this path is good, we'll remember it
                 """This means on the next loop if there's another path for this gene, 
                 but it's worse than this current one, we'll just skip it"""
                 pathDict.setdefault(baseID, [coverage, identity])
@@ -137,28 +136,31 @@ class GmapBinThread(Thread):
                 
                 # If it does not overlap an existing bin ...
                 if len(binOverlap) == 0:
-                    # ... either add it to an existing novel bin or create a new novel bin
-                    _novel_binner(mrnaFeature, self.novelBinCollection, NOVEL_BIN_OVL_PCT) # pass mRNA
+                    # ... add the novel bin into the collection
+                    self.binCollection.add(_create_novel_bin(mrnaFeature))
                 
-                # Exclude any transcripts that overlap multiple genes
+                # Exclude any transcripts that overlap multiple bins
                 elif len(binOverlap) > 1:
-                    "We expect these occurrences to be chimeric transcripts which should be filtered"
+                    """We expect these occurrences to be chimeric transcripts which should
+                    be filtered. Otherwise, fragmented transcripts being loaded in may
+                    result in a single loci having multiple bins over it if the full length
+                    one doesn't get processed first. We'll need to fix those later by
+                    assessing these multi-overlaps."""
                     self.multiOverlaps.append(feature)
                     continue
                 
-                # Compare to the existing bin
+                # If it overlaps exactly 1 bin ...
                 else:
-                    geneBin = binOverlap[0]
-                    featureOvlPct, binOvlPct = _calculate_overlap_percentages(feature, geneBin)
-                    shouldJoin = featureOvlPct >= GENE_BIN_OVL_PCT or binOvlPct >= GENE_BIN_OVL_PCT
+                    newBin = _create_novel_bin(mrnaFeature)
                     
-                    # If this should join the gene bin, do so now
-                    if shouldJoin:
-                        geneBin.add(baseID, exonList)
+                    # ... check to see whether the bins should merge or not
+                    toMerge = [] # this lets us use add_bin_to_collection() which expects a list to merge
+                    featureOvlPct, binOvlPct = _calculate_overlap_percentages(newBin, binOverlap[0])
+                    if featureOvlPct >= GENE_BIN_OVL_PCT or binOvlPct >= GENE_BIN_OVL_PCT:
+                        toMerge.append(binOverlap[0])
                     
-                    # Otherwise, add it to an existing novel bin or create a new novel bin
-                    else:
-                        _novel_binner(mrnaFeature, self.novelBinCollection, NOVEL_BIN_OVL_PCT)
+                    # ... then run the merging
+                    add_bin_to_collection(self.binCollection, toMerge, newBin)
     
     def run(self):
         try:
@@ -171,15 +173,25 @@ class GmapBinThread(Thread):
         if self.exception:
             raise self.exception
 
-def _novel_binner(mrnaFeature, novelBinCollection, NOVEL_BIN_OVL_PCT):
+def _create_novel_bin(mrnaFeature):
+    '''
+    Helper function to create a Bin from a mRNA feature parsed out of a GFF3 file.
+    '''
+    baseID = mrnaFeature.ID.rsplit(".", maxsplit=1)[0]
+    thisBin = Bin(mrnaFeature.contig, mrnaFeature.start, mrnaFeature.end)
+    thisBin.add(baseID, Bin.format_exons_from_gff3_feature(mrnaFeature)) # we don't want the .path# / .mrna# suffix attached to this bin
+    
+    return thisBin
+
+def _novel_binner(mrnaFeature, binCollection):
     '''
     Helper function pulled out to prevent code repetition. It will
     take a feature that has been determined to be "novel" and handle
     whether it should be binned with another novel bin or become
     a new bin itself.
     '''
+    # Create the new bin
     baseID = mrnaFeature.ID.rsplit(".", maxsplit=1)[0]
-    
     thisBin = Bin(mrnaFeature.contig, mrnaFeature.start, mrnaFeature.end) # create a novel bin
     thisBin.add(baseID, Bin.format_exons_from_gff3_feature(mrnaFeature)) # we don't want the .path# / .mrna# suffix attached to this bin
     

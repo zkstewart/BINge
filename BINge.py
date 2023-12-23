@@ -616,9 +616,9 @@ def main():
         _debug_pickler(args.debugPickle, collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.setup.pkl"))
         
         # Parse GMAP alignments into our bin collection with multiple threads
-        novelBinCollection, multiOverlaps = populate_bin_collections(collectionList, gmapFiles,
-                                                                     args.threads, args.gmapIdentity)
-        _debug_pickler(args.debugPickle, [collectionList, novelBinCollection, multiOverlaps], os.path.join(args.outputDirectory, f"{paramHash}.collectionList.populated.pkl"))
+        multiOverlaps = populate_bin_collections(collectionList, gmapFiles,
+                                                 args.threads, args.gmapIdentity)
+        _debug_pickler(args.debugPickle, [collectionList, multiOverlaps], os.path.join(args.outputDirectory, f"{paramHash}.collectionList.populated.pkl"))
         
         # Merge bins resulting from fragmented annotation models
         if not args.skipFixFragments:
@@ -636,20 +636,13 @@ def main():
         # Split bins containing overlapping (but not exon-sharing) genes e.g., nested genes
         if not args.skipBinSplitting:
             binCollection = multithread_bin_splitter(binCollection, args.threads)
-            novelBinCollection = multithread_bin_splitter(novelBinCollection, args.threads)
-        _debug_pickler(args.debugPickle, [binCollection, novelBinCollection], os.path.join(args.outputDirectory, f"{paramHash}.novelAndNormalBinCollection.split.pkl"))
+        _debug_pickler(args.debugPickle, binCollection, os.path.join(args.outputDirectory, f"{paramHash}.novelAndNormalBinCollection.split.pkl"))
         
         # Merge bin collections together bins across genomes / across gene copies
         """Usually linking will unify multiple genomes together, but it may detect
         bins of identical gene copies and link them together which is reasonable
-        since these would confound DGE to keep separate anyway.
+        since these would confound DGE to keep separate anyway."""
         
-        Moreover, a novel bin in one genome may just be because of an absence in the annotation.
-        Such an absence may not exist in another genome, and hence it will have a gene bin.
-        These should be merged together to prevent having redundant bins."""
-        
-        binCollection.merge(novelBinCollection)
-        _debug_pickler(args.debugPickle, binCollection, os.path.join(args.outputDirectory, f"{paramHash}.binCollection.merged.pkl"))
         binCollection = iterative_bin_self_linking(binCollection, args.convergenceIters)
         
         # Write pickle file for potential resuming of program

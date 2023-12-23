@@ -1,8 +1,39 @@
+# Prevent circular imports
+def add_bin_to_collection(binCollection, binOverlap, newBin):
+    '''
+    Assistant function to add a new bin on the basis of whatever bins it is
+    overlapping. Modifies the binCollection input in place.
+    
+    Parameters:
+        binCollection -- a BinCollection() object from which binOverlap was generated,
+                         and the newBin is intended to be added to.
+        binOverlap -- a list containing zero or more Bin() objects that the newBin
+                      is overlapping.
+        newBin -- a Bin() for addition to the binCollection input.
+    '''
+    # If the newBin does not overlap anything, add it in as-is
+    if len(binOverlap) == 0:
+        binCollection.add(newBin)
+    
+    # Otherwise...
+    else:
+        # ... merge any overlapping bins together
+        for overlappingBin in binOverlap:
+            newBin.merge(overlappingBin)
+        
+        # ... delete the overlapping bins
+        for overlappingBin in binOverlap:
+            binCollection.delete(overlappingBin)
+        
+        # ... and add the new bin in its place
+        binCollection.add(newBin)
+
+# Resume normal script organisation
 import os, queue
 
 from .gff3_handling import GFF3
-from .thread_workers import GmapBinThread, BinSplitWorkerThread, CollectionWorkerThread
 from .bins import Bin, BinCollection
+from .thread_workers import GmapBinThread, BinSplitWorkerThread, CollectionWorkerThread
 
 def generate_bin_collections(workingDirectory):
     '''
@@ -77,22 +108,8 @@ def generate_bin_collections(workingDirectory):
                 # See if this overlaps an existing bin
                 binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
                 
-                # If not, add the new bin
-                if len(binOverlap) == 0:
-                    binCollection.add(featureBin)
-                
-                # Otherwise...
-                else:
-                    # ... merge the bins together
-                    for overlappingBin in binOverlap:
-                        featureBin.merge(overlappingBin)
-                    
-                    # ... delete the overlapping bins
-                    for overlappingBin in binOverlap:
-                        binCollection.delete(overlappingBin)
-                    
-                    # ... and add the new bin
-                    binCollection.add(featureBin)
+                # Handle the storing of this bin in its collection
+                add_bin_to_collection(binCollection, binOverlap, featureBin)
         
         # Store the bin collection in our list for multi-threading later
         collectionList.append(binCollection)
@@ -123,10 +140,7 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         novelBinCollection -- a BinCollection containing Bins which did not overlap existing
                               Bins part of the input collectionList.
     '''
-    # Establish data structures for holding onto results
-    novelBinCollection = BinCollection() # consolidated after each thread
-    
-    novelCollections = [BinCollection() for _ in range(len(collectionList))] # consolidated within each thread
+    # Establish data structures for holding onto results    
     multiOverlaps = [[] for _ in range(len(collectionList))] # consolidated within threads
     
     # Establish lists for feeding data into threads
@@ -141,41 +155,32 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         
         # Get other data structures for this genome
         thisBinCollection = collectionList[genomeIndex]
-        thisNovelCollection = novelCollections[genomeIndex]
         thisMultiOverlap = multiOverlaps[genomeIndex]
         
         # Store for threading
-        threadData.append([thisGmapFiles, thisBinCollection, thisNovelCollection, thisMultiOverlap])
+        threadData.append([thisGmapFiles, thisBinCollection, thisMultiOverlap])
     
     # Start up threads
     for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
-                thisGmapFiles, thisBinCollection, thisNovelCollection, \
+                thisGmapFiles, thisBinCollection, \
                     thisMultiOverlap = threadData[i+x]
                 
                 populateWorkerThread = GmapBinThread(thisGmapFiles, thisBinCollection,
-                                                     thisNovelCollection, thisMultiOverlap,
-                                                     gmapIdentity)
+                                                     thisMultiOverlap, gmapIdentity)
                 
                 processing.append(populateWorkerThread)
                 populateWorkerThread.start()
         
         # Gather results
         for populateWorkerThread in processing:
-            # Wait for thread to end
-            populateWorkerThread.join()
-            
-            # Grab the new outputs from this thread
             """Each thread modifies a BinCollection part of collectionList directly,
             as well as a list in multiOverlaps"""
-            threadNovelBinCollection = populateWorkerThread.novelBinCollection
-            
-            # Merge them via flattening
-            novelBinCollection.flatten(threadNovelBinCollection)
+            populateWorkerThread.join()
     
-    return novelBinCollection, multiOverlaps
+    return multiOverlaps
 
 def iterative_bin_self_linking(binCollection, convergenceIters):
     '''
