@@ -186,7 +186,7 @@ def parse_fasta_ids(fastaFiles):
         with open(f, "r") as fileIn:
             for line in fileIn:
                 if line.startswith(">"):
-                    fastaIDs.add(line.rstrip("\r\n ").split(" ")[0])
+                    fastaIDs.append(line.rstrip("\r\n ").split(" ")[0])
     return set(fastaIDs)
 
 def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
