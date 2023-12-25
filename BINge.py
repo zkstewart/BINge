@@ -627,16 +627,17 @@ def main():
                 collectionList[i] = binCollection
         _debug_pickler(args.debugPickle, collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.fragmentfixed.pkl"))
         
+        # Split bins containing overlapping (but not exon-sharing) genes e.g., nested genes
+        if not args.skipBinSplitting:
+            for i in range(len(collectionList)):
+                collectionList[i] = multithread_bin_splitter(collectionList[i], args.threads)
+        _debug_pickler(args.debugPickle, binCollection, os.path.join(args.outputDirectory, f"{paramHash}.novelAndNormalBinCollection.split.pkl"))
+        
         # Merge gene bins together
         binCollection = collectionList[0]
         for i in range(1, len(collectionList)):
             binCollection.merge(collectionList[i])
         _debug_pickler(args.debugPickle, binCollection, os.path.join(args.outputDirectory, f"{paramHash}.binCollection.squashed.pkl"))
-        
-        # Split bins containing overlapping (but not exon-sharing) genes e.g., nested genes
-        if not args.skipBinSplitting:
-            binCollection = multithread_bin_splitter(binCollection, args.threads)
-        _debug_pickler(args.debugPickle, binCollection, os.path.join(args.outputDirectory, f"{paramHash}.novelAndNormalBinCollection.split.pkl"))
         
         # Merge bin collections together bins across genomes / across gene copies
         """Usually linking will unify multiple genomes together, but it may detect
