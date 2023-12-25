@@ -147,7 +147,6 @@ class GmapBinThread(Thread):
                     one doesn't get processed first. We'll need to fix those later by
                     assessing these multi-overlaps."""
                     self.multiOverlaps.append(feature)
-                    continue
                 
                 # If it overlaps exactly 1 bin ...
                 else:
@@ -182,35 +181,6 @@ def _create_novel_bin(mrnaFeature):
     thisBin.add(baseID, Bin.format_exons_from_gff3_feature(mrnaFeature)) # we don't want the .path# / .mrna# suffix attached to this bin
     
     return thisBin
-
-def _novel_binner(mrnaFeature, binCollection):
-    '''
-    Helper function pulled out to prevent code repetition. It will
-    take a feature that has been determined to be "novel" and handle
-    whether it should be binned with another novel bin or become
-    a new bin itself.
-    '''
-    # Create the new bin
-    baseID = mrnaFeature.ID.rsplit(".", maxsplit=1)[0]
-    thisBin = Bin(mrnaFeature.contig, mrnaFeature.start, mrnaFeature.end) # create a novel bin
-    thisBin.add(baseID, Bin.format_exons_from_gff3_feature(mrnaFeature)) # we don't want the .path# / .mrna# suffix attached to this bin
-    
-    # ... see if this overlaps a novel bin that it should join
-    novelBinOverlap = novelBinCollection.find(mrnaFeature.contig, mrnaFeature.start, mrnaFeature.end)
-    binsToJoin = []
-    for novelBin in novelBinOverlap:
-        featureOvlPct, binOvlPct = _calculate_overlap_percentages(mrnaFeature, novelBin)
-        shouldJoin = featureOvlPct >= NOVEL_BIN_OVL_PCT or binOvlPct >= NOVEL_BIN_OVL_PCT
-        if shouldJoin:
-            binsToJoin.append(novelBin)
-    
-    # Merge any bins that should join based on this novel sequence
-    for novelBin in binsToJoin:
-        thisBin.merge(novelBin)
-        novelBinCollection.delete(novelBin)
-    
-    # Store this bin in the collection
-    novelBinCollection.add(thisBin)
 
 def _calculate_overlap_percentages(feature, bin):
     '''
