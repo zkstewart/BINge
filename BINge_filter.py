@@ -506,7 +506,7 @@ def main():
     
     # Perform filtration of clusters with available evidence
     toDrop = set()
-    for toFilterDict in [binnedDict, unbinnedDict]:
+    for index, toFilterDict in enumerate([binnedDict, unbinnedDict]):
         for clusterID, seqIDs in toFilterDict.items():
             # Check 0: FILTER if it does not contain a filter ID
             if args.filterFiles != []:
@@ -515,7 +515,7 @@ def main():
                     continue # since we're filtering, we toDrop it then continue
             
             # Skip now if we don't want to filter other binned clusters
-            if not args.filterBinned:
+            if index == 0 and (not args.filterBinned):
                 continue
             
             # Check 1: Retain if it has a reference sequence
