@@ -67,6 +67,53 @@ class Bin:
         self.end = max(self.end, otherBin.end)
         self.union(otherBin.ids, otherBin.exons)
     
+    def is_overlapping(self, otherBin, shorterCovPct=0.25, longerCovPct=0.01):
+        '''
+        Compares this bin to another bin to see if they overlap each other according
+        to shorter sequence and longer sequence coverage cut-offs. Think of this
+        similarly to how CD-HIT has the -aS and -aL values.
+        
+        Parameters:
+            otherBin -- a different Bin object to compare.
+            shorterCovPct / longerCovPct -- a float value in the range of 0 -> 1 which
+                                            controls whether any sequences in the two bins
+                                            are deemed to overlap or not. Overlap occurs
+                                            when both values are satisfied (AND), not when
+                                            a single value is satisfied (OR).
+        '''
+        for num in [shorterCovPct, longerCovPct]:
+            assert isinstance(num, float) or isinstance(num, int)
+            assert 0.0 <= num <= 1.0, \
+                "shorterCovPct and longerCovPct must be in the range bounded by 0 and 1"
+        
+        for thisExon in self.exons.values():
+            for otherExon in otherBin.exons.values():
+                exonOverlap = sum([
+                    abs(max(thisExon[n][0], otherExon[m][0]) - min(thisExon[n][1], otherExon[m][1])) + 1
+                    for n in range(len(thisExon))
+                    for m in range(len(otherExon))
+                    if thisExon[n][0] <= otherExon[m][1] and thisExon[n][1] >= otherExon[m][0]
+                ])
+                
+                # Calculate the percentage of each sequence being overlapped by the other
+                len1 = sum([ end - start + 1 for start, end in thisExon ])
+                len2 = sum([ end - start + 1 for start, end in otherExon ])
+                
+                pct1 = exonOverlap / len1
+                pct2 = exonOverlap / len2
+                
+                # See if this meets any coverage pct cutoffs
+                if len1 <= len2:
+                    shorterPct = pct1
+                    longerPct = pct2
+                else:
+                    shorterPct = pct2
+                    longerPct = pct1
+                
+                if shorterPct >= shorterCovPct and longerPct >= longerCovPct:
+                    return True
+        return False
+    
     def __repr__(self):
         return (f"<Bin object;contig='{self.contig}';start={self.start};" +
                 f"end={self.end};num_ids={len(self.ids)}"

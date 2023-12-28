@@ -461,6 +461,13 @@ def main():
                    feature to have 'gene' and 'CDS' features."""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=False)
+    p.add_argument("--debug", dest="debug",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally provide this argument if you want to generate detailed
+                   logging information along the way to help with debugging."""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=False)
     p.add_argument("--clusterer", dest="unbinnedClusterer",
                    required=False,
                    choices=["mmseqs-cascade", "mmseqs-linclust", "cd-hit"],
@@ -600,33 +607,55 @@ def main():
     else:
         # Set up a bin collection structure for each genome
         collectionList = generate_bin_collections(args.outputDirectory)
+        if args.debug:
+            print(f"# Generated a list with {len(collectionList)} collections")
+            for index, _cl in enumerate(collectionList):
+                print(f"# Collection list #{index+1} contains {len(_cl)} bins")
                 
         # Parse GMAP alignments into our bin collection with multiple threads
         multiOverlaps = populate_bin_collections(collectionList, gmapFiles,
                                                  args.threads, args.gmapIdentity)
-                
+        if args.debug:
+            print(f"# Populated collections based on GMAP alignments")
+            for index, _cl in enumerate(collectionList):
+                print(f"# Collection list #{index+1} now contains {len(_cl)} bins")
+        
         # Merge bins resulting from fragmented annotation models
         if not args.skipFixFragments:
             for i in range(len(collectionList)):
                 binCollection = collectionList[i].fix_fragments(multiOverlaps[i])
                 collectionList[i] = binCollection
-                
+        if args.debug:
+            print(f"# Fixed fragmented bins based on multi overlaps list")
+            for index, _cl in enumerate(collectionList):
+                print(f"# Collection list #{index+1} now contains {len(_cl)} bins")
+        
         # Split bins containing overlapping (but not exon-sharing) genes e.g., nested genes
         if not args.skipBinSplitting:
             for i in range(len(collectionList)):
                 collectionList[i] = multithread_bin_splitter(collectionList[i], args.threads)
-                
+        if args.debug:
+            print(f"# Split bins which contained non-exon sharing sequences")
+            for index, _cl in enumerate(collectionList):
+                print(f"# Collection list #{index+1} now contains {len(_cl)} bins")
+        
         # Merge gene bins together
         binCollection = collectionList[0]
         for i in range(1, len(collectionList)):
             binCollection.merge(collectionList[i])
-                
+        if args.debug:
+            print(f"# Merged all the separate bins together")
+            print(f"# The combined collection now contains {len(binCollection)} bins")
+        
         # Merge bin collections together bins across genomes / across gene copies
         """Usually linking will unify multiple genomes together, but it may detect
         bins of identical gene copies and link them together which is reasonable
         since these would confound DGE to keep separate anyway."""
         
         binCollection = iterative_bin_self_linking(binCollection, args.convergenceIters)
+        if args.debug:
+            print(f"# Iteratively self linked bins based on ID sharing")
+            print(f"# The combined collection now contains {len(binCollection)} bins")
         
         # Write pickle file for potential resuming of program
         with open(pickleFile, "wb") as pickleOut:
@@ -653,6 +682,8 @@ def main():
         if f.endswith(".nucl")
     ])
     unbinnedIDs = get_unbinned_sequence_ids([binCollection], transcriptRecords)
+    if args.debug:
+        print(f"# There are {len(unbinnedIDs)} unbinned sequences for external clustering")
     
     if len(unbinnedIDs) == 1:
         unbinnedClusterDict = { 0: list(unbinnedIDs)[0] }

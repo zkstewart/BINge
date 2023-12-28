@@ -90,9 +90,6 @@ class GmapBinThread(Thread):
         "These statics prevent a gene mapping to multiple locations when it has a clear best"
         ALLOWED_COV_DIFF = 1
         ALLOWED_IDENT_DIFF = 0.1
-        ##
-        "These statics help to file a gene into an existing Bin"
-        GENE_BIN_OVL_PCT = 0.5
         
         # Iterate through GMAP files
         for gmapFile in self.gmapFiles:
@@ -131,13 +128,21 @@ class GmapBinThread(Thread):
                 but it's worse than this current one, we'll just skip it"""
                 pathDict.setdefault(baseID, [coverage, identity])
                 
+                # Create a new bin for this features
+                newBin = _create_novel_bin(mrnaFeature, exonList)
+                
                 # See if this overlaps an existing bin
-                binOverlap = self.binCollection.find(feature.contig, feature.start, feature.end)
+                coordinateOverlaps = self.binCollection.find(feature.contig, feature.start, feature.end)
+                binOverlap = []
+                for bin in coordinateOverlaps:
+                    shouldMerge = newBin.is_overlapping(bin)
+                    if shouldMerge:
+                        binOverlap.append(bin)
                 
                 # If it does not overlap an existing bin ...
                 if len(binOverlap) == 0:
                     # ... add the novel bin into the collection
-                    self.binCollection.add(_create_novel_bin(mrnaFeature))
+                    self.binCollection.add(newBin)
                 
                 # Exclude any transcripts that overlap multiple bins
                 elif len(binOverlap) > 1:
@@ -150,16 +155,8 @@ class GmapBinThread(Thread):
                 
                 # If it overlaps exactly 1 bin ...
                 else:
-                    newBin = _create_novel_bin(mrnaFeature)
-                    
-                    # ... check to see whether the bins should merge or not
-                    toMerge = [] # this lets us use add_bin_to_collection() which expects a list to merge
-                    featureOvlPct, binOvlPct = _calculate_overlap_percentages(newBin, binOverlap[0])
-                    if featureOvlPct >= GENE_BIN_OVL_PCT or binOvlPct >= GENE_BIN_OVL_PCT:
-                        toMerge.append(binOverlap[0])
-                    
-                    # ... then run the merging
-                    add_bin_to_collection(self.binCollection, toMerge, newBin)
+                    # ... merge the bins together
+                    add_bin_to_collection(self.binCollection, binOverlap, newBin)
     
     def run(self):
         try:
@@ -172,26 +169,17 @@ class GmapBinThread(Thread):
         if self.exception:
             raise self.exception
 
-def _create_novel_bin(mrnaFeature):
+def _create_novel_bin(mrnaFeature, exonList):
     '''
     Helper function to create a Bin from a mRNA feature parsed out of a GFF3 file.
+    exonList is fed in directly since it's already created in the parent function
+    and this should offer a slight optimisation benefit.
     '''
     baseID = mrnaFeature.ID.rsplit(".", maxsplit=1)[0]
     thisBin = Bin(mrnaFeature.contig, mrnaFeature.start, mrnaFeature.end)
-    thisBin.add(baseID, Bin.format_exons_from_gff3_feature(mrnaFeature)) # we don't want the .path# / .mrna# suffix attached to this bin
+    thisBin.add(baseID, exonList) # we don't want the .path# / .mrna# suffix attached to this bin
     
     return thisBin
-
-def _calculate_overlap_percentages(feature, bin):
-    '''
-    Feature should come from the GMAP parsing.
-    Bin should come from a BinCollection.
-    '''
-    overlapLength = min(feature.end, bin.end) - max(feature.start, bin.start)
-    featureOvlPct = overlapLength / (feature.end - feature.start)
-    binOvlPct = overlapLength / (bin.end - bin.start)
-    
-    return featureOvlPct, binOvlPct
 
 ####
 
