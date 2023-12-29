@@ -16,15 +16,15 @@ from hashlib import sha256
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
-    iterative_bin_self_linking, multithread_bin_splitter
+    fix_collection_fragments, iterative_bin_self_linking
 from modules.fasta_handling import AnnotationExtractor, FastaCollection
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
 from modules.validation import validate_args, validate_fasta
 from Various_scripts.Function_packages.ZS_Utility import convert_windows_to_wsl_path
 
-HASHING_PARAMS = ["inputFiles", "genomeFiles", "convergenceIters",        # These hashes are the only ones which behaviourally
-                  "gmapIdentity", "skipFixFragments", "skipBinSplitting"] # influence the pre-external clustering
+HASHING_PARAMS = ["inputFiles", "genomeFiles", # These hashes are the only ones which behaviourally
+                  "convergenceIters", "gmapIdentity"] # influence the pre-external clustering
 
 # Define functions
 def symlinker(src, dst):
@@ -436,22 +436,6 @@ def main():
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=0.95)
     # Optional - program behavioural controls
-    p.add_argument("--skip_fix_fragments", dest="skipFixFragments",
-                   required=False,
-                   action="store_true",
-                   help="""Optionally provide this argument if you want to prevent BINge
-                   from attempting to fix fragmented gene models on the basis of GMAP
-                   alignment."""
-                   if showHiddenArgs else argparse.SUPPRESS,
-                   default=False)
-    p.add_argument("--skip_bin_splitting", dest="skipBinSplitting",
-                   required=False,
-                   action="store_true",
-                   help="""Optionally provide this argument if you want to prevent BINge
-                   from splitting up bins that contain sequences which do not have much
-                   exon sequence overlap."""
-                   if showHiddenArgs else argparse.SUPPRESS,
-                   default=False)
     p.add_argument("--microbial", dest="isMicrobial",
                    required=False,
                    action="store_true",
@@ -621,21 +605,9 @@ def main():
                 print(f"# Collection list #{index+1} now contains {len(_cl)} bins")
         
         # Merge bins resulting from fragmented annotation models
-        if not args.skipFixFragments:
-            for i in range(len(collectionList)):
-                binCollection = collectionList[i].fix_fragments(multiOverlaps[i])
-                collectionList[i] = binCollection
+        fix_collection_fragments(collectionList, multiOverlaps)
         if args.debug:
             print(f"# Fixed fragmented bins based on multi overlaps list")
-            for index, _cl in enumerate(collectionList):
-                print(f"# Collection list #{index+1} now contains {len(_cl)} bins")
-        
-        # Split bins containing overlapping (but not exon-sharing) genes e.g., nested genes
-        if not args.skipBinSplitting:
-            for i in range(len(collectionList)):
-                collectionList[i] = multithread_bin_splitter(collectionList[i], args.threads)
-        if args.debug:
-            print(f"# Split bins which contained non-exon sharing sequences")
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection list #{index+1} now contains {len(_cl)} bins")
         

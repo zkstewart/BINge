@@ -330,3 +330,41 @@ class CollectionWorkerThread(Process):
             self.exception = self._exceptionReceiver.recv()
         if self.exception:
             raise self.exception
+
+####
+
+class FragmentFixThread(Process):
+    '''
+    This provides a modified Process which allows for fragment fixing to be run in
+    parallel across multiple separate BinCollection() objects.
+    
+    Parameters:
+        binCollection -- an existing BinCollection object to add GMAP alignments to.
+        multiOverlaps -- a list containing GFF3 Feature objects indicating
+                         GMAP alignments that overlapped more than one bin.
+        connection -- a multiprocessing.Pipe() object to send the return value through.
+    '''
+    def __init__(self, binCollection, multiOverlaps, connection):
+        Process.__init__(self)
+        
+        self.binCollection = binCollection
+        self.multiOverlaps = multiOverlaps
+        self.connection = connection
+        
+        # Exception handling
+        self._exceptionReceiver, self._exceptionSender = Pipe()
+        self.exception = None
+    
+    def run(self):
+        try:
+            self.binCollection.fix_fragments(self.multiOverlaps)
+            self.connection.send(self.binCollection)
+        except BaseException as e:
+            self._exceptionSender.send(e)
+    
+    def join(self):
+        Process.join(self)
+        if self._exceptionReceiver.poll():
+            self.exception = self._exceptionReceiver.recv()
+        if self.exception:
+            raise self.exception

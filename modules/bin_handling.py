@@ -34,7 +34,8 @@ from multiprocessing import Pipe, JoinableQueue
 
 from .gff3_handling import GFF3
 from .bins import Bin, BinCollection
-from .thread_workers import GmapBinThread, BinSplitWorkerThread, CollectionWorkerThread
+from .thread_workers import GmapBinThread, BinSplitWorkerThread, \
+    CollectionWorkerThread, FragmentFixThread
 
 def generate_bin_collections(workingDirectory):
     '''
@@ -187,6 +188,58 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         resultMultiOverlaps.append(multiOverlap)
     
     return resultBinCollection, resultMultiOverlaps
+
+def fix_collection_fragments(collectionList, multiOverlaps, threads=1):
+    '''
+    Connects bins which are putatively fragmented and should be merged
+    into a single bin. The input collectionList and multiOverlaps objects
+    should be ordered equivalently, such that each value in multiOverlaps
+    is used for fragment fixing of its respectively indexed collectionList.
+    
+    Parameters:
+        collectionList -- a list containing one or more BinCollection
+                          objects.
+        multiOverlaps -- a list containing GFF3 Feature objects indicating
+                         GMAP alignments that overlapped more than one bin.
+        threads -- an integer indicating how many threads to run.
+    Returns:
+
+    '''
+    # Validate inputs
+    assert len(collectionList) == len(multiOverlaps), \
+        "fix_collection_fragments expects the two input lists to be equally sized!"
+    assert isinstance(threads, int), \
+        "fix_collection_fragments expects threads argument to be an integer!"
+    assert threads >= 1, \
+        "fix_collection_fragments expects threads argument to be >= 1"
+    
+    # Start up threads
+    receivers = []
+    for i in range(0, len(collectionList), threads): # only process n (threads) collections at a time
+        processing = []
+        for x in range(threads): # begin processing n collections
+            if i+x < len(collectionList): # parent loop may excess if n > the number of GMAP files
+                thisBinCollection, thisMultiOverlap = collectionList[i+x], multiOverlaps[i+x]
+                thisReceiver, thisSender = Pipe()
+                
+                fragmentWorkerThread = FragmentFixThread(thisBinCollection, thisMultiOverlap,
+                                                         thisSender)
+                
+                processing.append(fragmentWorkerThread)
+                fragmentWorkerThread.start()
+                receivers.append(thisReceiver)
+        
+        # Wait on processes to end
+        for fragmentWorkerThread in processing:
+            fragmentWorkerThread.join()
+    
+    # Gather results
+    resultCollectionList = []
+    for receiver in receivers:
+        binCollection = receiver.recv()
+        resultCollectionList.append(binCollection)
+    
+    return resultCollectionList
 
 def iterative_bin_self_linking(binCollection, convergenceIters):
     '''
