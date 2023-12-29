@@ -176,13 +176,13 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
             populateWorkerThread.join()
     
     # Gather results
-    resultBinCollection, resultMultiOverlaps = [], []
+    resultBinCollections, resultMultiOverlaps = [], []
     for receiver in receivers:
         binCollection, multiOverlap = receiver.recv()
-        resultBinCollection.append(binCollection)
+        resultBinCollections.append(binCollection)
         resultMultiOverlaps.append(multiOverlap)
     
-    return resultBinCollection, resultMultiOverlaps
+    return resultBinCollections, resultMultiOverlaps
 
 def fix_collection_fragments(collectionList, multiOverlaps, threads=1):
     '''

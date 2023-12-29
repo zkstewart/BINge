@@ -567,7 +567,7 @@ def main():
     
     # Perform GMAP mapping
     gmapFiles = auto_gmapping(args.outputDirectory, args.gmapDir, args.threads)
-        
+    
     # Figure out what our pickle file is called
     pickleFile = os.path.join(args.outputDirectory, f"{paramHash}.binge.pkl")
     
@@ -594,22 +594,22 @@ def main():
         if args.debug:
             print(f"# Generated a list with {len(collectionList)} collections")
             for index, _cl in enumerate(collectionList):
-                print(f"# Collection list #{index+1} contains {len(_cl)} bins")
+                print(f"# Collection #{index+1} contains {len(_cl)} bins")
         
         # Parse GMAP alignments into our bin collection with multiple threads
-        multiOverlaps = populate_bin_collections(collectionList, gmapFiles,
-                                                 args.threads, args.gmapIdentity)
+        collectionList, multiOverlaps = populate_bin_collections(collectionList, gmapFiles,
+                                                                 args.threads, args.gmapIdentity)
         if args.debug:
             print(f"# Populated collections based on GMAP alignments")
             for index, _cl in enumerate(collectionList):
-                print(f"# Collection list #{index+1} now contains {len(_cl)} bins")
+                print(f"# Collection #{index+1} now contains {len(_cl)} bins")
         
         # Merge bins resulting from fragmented annotation models
         fix_collection_fragments(collectionList, multiOverlaps, args.threads)
         if args.debug:
             print(f"# Fixed fragmented bins based on multi overlaps list")
             for index, _cl in enumerate(collectionList):
-                print(f"# Collection list #{index+1} now contains {len(_cl)} bins")
+                print(f"# Collection #{index+1} now contains {len(_cl)} bins")
         
         # Merge gene bins together
         binCollection = collectionList[0]
