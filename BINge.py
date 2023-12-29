@@ -590,7 +590,7 @@ def main():
     # ... or begin pre-external clustering BINge
     else:
         # Set up a bin collection structure for each genome
-        collectionList = generate_bin_collections(args.outputDirectory)
+        collectionList = generate_bin_collections(args.outputDirectory, args.threads)
         if args.debug:
             print(f"# Generated a list with {len(collectionList)} collections")
             for index, _cl in enumerate(collectionList):
@@ -605,7 +605,7 @@ def main():
                 print(f"# Collection list #{index+1} now contains {len(_cl)} bins")
         
         # Merge bins resulting from fragmented annotation models
-        fix_collection_fragments(collectionList, multiOverlaps)
+        fix_collection_fragments(collectionList, multiOverlaps, args.threads)
         if args.debug:
             print(f"# Fixed fragmented bins based on multi overlaps list")
             for index, _cl in enumerate(collectionList):

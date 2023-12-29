@@ -1,7 +1,7 @@
 import os, time, sys
 from multiprocessing import Process, Pipe
 
-from .gff3_handling import iterate_through_gff3
+from .gff3_handling import GFF3, iterate_through_gff3
 from .bins import BinCollection, Bin, BinSplitter
 from .bin_handling import add_bin_to_collection
 
@@ -358,6 +358,66 @@ class FragmentFixThread(Process):
     def run(self):
         try:
             self.binCollection.fix_fragments(self.multiOverlaps)
+            self.connection.send(self.binCollection)
+        except BaseException as e:
+            self._exceptionSender.send(e)
+    
+    def join(self):
+        Process.join(self)
+        if self._exceptionReceiver.poll():
+            self.exception = self._exceptionReceiver.recv()
+        if self.exception:
+            raise self.exception
+
+####
+
+class CollectionSeedThread(Process):
+    '''
+    This provides a modified Process which allows for generate_bin_collections() to
+    be run in parallel for multiple genomes.
+    
+    Parameters:
+        gff3File -- a string pointing to a GFF3 file giving annotations for a genome,
+                    or None if no pre-seeding is to occur.
+        connection -- a multiprocessing.Pipe() object to send the return value through.
+    '''
+    def __init__(self, gff3File, connection):
+        Process.__init__(self)
+        
+        self.gff3File = gff3File
+        self.binCollection = None
+        self.connection = connection
+        
+        # Exception handling
+        self._exceptionReceiver, self._exceptionSender = Pipe()
+        self.exception = None
+    
+    def bin_seeder(self):
+        self.binCollection = BinCollection()
+        
+        # Seed bin collection if GFF3 is available
+        if self.gff3File != None:
+            gff3Obj = GFF3(self.gff3File, strict_parse=False)
+            for geneFeature in gff3Obj.types["gene"]:
+                
+                # Create a bin for this feature
+                featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
+                try:
+                    for mrnaFeature in geneFeature.mRNA:
+                        featureBin.add(mrnaFeature.ID, Bin.format_exons_from_gff3_feature(mrnaFeature))
+                except:
+                    "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
+                    continue
+                
+                # See if this overlaps an existing bin
+                binOverlap = self.binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
+                
+                # Handle the storing of this bin in its collection
+                add_bin_to_collection(self.binCollection, binOverlap, featureBin)
+    
+    def run(self):
+        try:
+            self.bin_seeder()
             self.connection.send(self.binCollection)
         except BaseException as e:
             self._exceptionSender.send(e)

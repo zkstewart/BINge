@@ -32,12 +32,10 @@ def add_bin_to_collection(binCollection, binOverlap, newBin):
 import os
 from multiprocessing import Pipe, JoinableQueue
 
-from .gff3_handling import GFF3
-from .bins import Bin, BinCollection
 from .thread_workers import GmapBinThread, BinSplitWorkerThread, \
-    CollectionWorkerThread, FragmentFixThread
+    CollectionWorkerThread, FragmentFixThread, CollectionSeedThread
 
-def generate_bin_collections(workingDirectory):
+def generate_bin_collections(workingDirectory, threads=1):
     '''
     Receives a list of genome FASTA files and generates bin collections each of these
     into BinCollection structures which are separately stored in the returned list.
@@ -45,6 +43,7 @@ def generate_bin_collections(workingDirectory):
     Parameters:
         workingDirectory -- a string indicating an existing directory with genome GFF3
                             and/or FASTA files in the subdirectory 'genomes'.
+        threads -- an integer indicating how many threads to run.
     Returns:
         collectionList -- a list containing BinCollections in numerical order of the genome
                           files.
@@ -87,33 +86,29 @@ def generate_bin_collections(workingDirectory):
         (f"generate_bin_collections failed because genome files in '{genomesDir}' are not " + 
         "consecutively numbered, which is important for later program logic!")
     
-    # Generate and seed bin collections
-    collectionList = []
+    # Start up threads
+    receivers = []
+    for i in range(0, len(filePairs), threads): # only process n (threads) collections at a time
+        processing = []
+        for x in range(threads): # begin processing n collections
+            if i+x < len(filePairs): # parent loop may excess if n > the number of GMAP files
+                gff3File, _, _ = filePairs[i+x]
+                thisReceiver, thisSender = Pipe()
+                
+                seedWorkerThread = CollectionSeedThread(gff3File, thisSender)
+                
+                processing.append(seedWorkerThread)
+                seedWorkerThread.start()
+                receivers.append(thisReceiver)
+        
+        # Wait on processes to end
+        for seedWorkerThread in processing:
+            seedWorkerThread.join()
     
-    for gff3File, genomeFile, suffixNum in filePairs:
-        binCollection = BinCollection()
-        
-        # Seed bin collection if GFF3 is available
-        if gff3File != None:
-            gff3Obj = GFF3(gff3File, strict_parse=False)
-            for geneFeature in gff3Obj.types["gene"]:
-                
-                # Create a bin for this feature
-                featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
-                try:
-                    for mrnaFeature in geneFeature.mRNA:
-                        featureBin.add(mrnaFeature.ID, Bin.format_exons_from_gff3_feature(mrnaFeature))
-                except:
-                    "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
-                    continue
-                
-                # See if this overlaps an existing bin
-                binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
-                
-                # Handle the storing of this bin in its collection
-                add_bin_to_collection(binCollection, binOverlap, featureBin)
-        
-        # Store the bin collection in our list for multi-threading later
+    # Gather results
+    collectionList = []
+    for receiver in receivers:
+        binCollection = receiver.recv()
         collectionList.append(binCollection)
     
     return collectionList
@@ -276,11 +271,6 @@ def multithread_bin_splitter(binCollection, threads):
         binCollection -- a BinCollection containing Bins which have aligned against
                          a reference genome, and hence have informative .exons values.
         threads -- an integer indicating how many threads to run.
-        clusterType -- a string to put in an output column indicating what source of
-                       evidence led to this cluster's formation; usually, this will
-                       have the value of "binned" to indicate that it was binned via
-                       GMAP alignment, or "unbinned" to indicate that it has been
-                       binned solely via CD-HIT clustering.
     Returns:
         newBinCollection -- a new BinCollection object to replace the original one.
     '''
