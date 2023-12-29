@@ -30,6 +30,7 @@ def add_bin_to_collection(binCollection, binOverlap, newBin):
 
 # Resume normal script organisation
 import os, queue
+from multiprocessing import Pipe
 
 from .gff3_handling import GFF3
 from .bins import Bin, BinCollection
@@ -140,9 +141,6 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         novelBinCollection -- a BinCollection containing Bins which did not overlap existing
                               Bins part of the input collectionList.
     '''
-    # Establish data structures for holding onto results    
-    multiOverlaps = [[] for _ in range(len(collectionList))] # consolidated within threads
-    
     # Establish lists for feeding data into threads
     threadData = []
     for suffixNum in range(1, len(collectionList) + 1):
@@ -155,32 +153,40 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         
         # Get other data structures for this genome
         thisBinCollection = collectionList[genomeIndex]
-        thisMultiOverlap = multiOverlaps[genomeIndex]
         
         # Store for threading
-        threadData.append([thisGmapFiles, thisBinCollection, thisMultiOverlap])
+        threadData.append([thisGmapFiles, thisBinCollection])
     
     # Start up threads
+    receivers = []
     for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
-                thisGmapFiles, thisBinCollection, \
-                    thisMultiOverlap = threadData[i+x]
+                thisGmapFiles, thisBinCollection = threadData[i+x]
+                thisMultiOverlap = []
+                thisReceiver, thisSender = Pipe()
                 
                 populateWorkerThread = GmapBinThread(thisGmapFiles, thisBinCollection,
-                                                     thisMultiOverlap, gmapIdentity)
+                                                     thisMultiOverlap, thisSender,
+                                                     gmapIdentity)
                 
                 processing.append(populateWorkerThread)
                 populateWorkerThread.start()
+                receivers.append(thisReceiver)
         
-        # Gather results
+        # Wait on processes to end
         for populateWorkerThread in processing:
-            """Each thread modifies a BinCollection part of collectionList directly,
-            as well as a list in multiOverlaps"""
             populateWorkerThread.join()
     
-    return multiOverlaps
+    # Gather results
+    resultBinCollection, resultMultiOverlaps = [], []
+    for receiver in receivers:
+        binCollection, multiOverlap = receiver.recv()
+        resultBinCollection.append(binCollection)
+        resultMultiOverlaps.append(multiOverlap)
+    
+    return resultBinCollection, resultMultiOverlaps
 
 def iterative_bin_self_linking(binCollection, convergenceIters):
     '''

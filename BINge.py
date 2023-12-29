@@ -611,7 +611,7 @@ def main():
             print(f"# Generated a list with {len(collectionList)} collections")
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection list #{index+1} contains {len(_cl)} bins")
-                
+        
         # Parse GMAP alignments into our bin collection with multiple threads
         multiOverlaps = populate_bin_collections(collectionList, gmapFiles,
                                                  args.threads, args.gmapIdentity)

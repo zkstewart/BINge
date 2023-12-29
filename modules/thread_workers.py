@@ -1,5 +1,6 @@
 import os, time, sys
 from threading import Thread
+from multiprocessing import Process
 
 from .gff3_handling import iterate_through_gff3
 from .bins import BinCollection, Bin, BinSplitter
@@ -47,21 +48,22 @@ class GmapIndexThread(Thread):
 
 ####
 
-class GmapBinThread(Thread):
+class GmapBinThread(Process):
     '''
-    This provides a modified Thread which allows for the output of bin_by_gmap
-    to be stored locally within the object. Multi-threading this process is viable
+    This provides a modified Process which allows for the output of bin_by_gmap
+    to be stored locally within the object. Multi-processing this process is viable
     since each GMAP file should correspond to an entirely separate genome and hence
     there should be no overlap.
     
     Parameters:
         gmapFile -- a string indicating the location of a GMAP GFF3 for parsing.
         binCollection -- an existing BinCollection object to add GMAP alignments to.
+        connection -- a multiprocessing.Pipe() object to send the return value through.
         minIdentity -- a float fraction indicating what identity value is minimally required
                        for us to use a GMAP alignment.
     '''
-    def __init__(self, gmapFiles, binCollection, multiOverlaps, minIdentity=0.95):
-        Thread.__init__(self)
+    def __init__(self, gmapFiles, binCollection, multiOverlaps, connection, minIdentity=0.95):
+        Process.__init__(self)
         
         # Behavioural parameters
         assert 0.0 < minIdentity <= 1.0, \
@@ -72,6 +74,7 @@ class GmapBinThread(Thread):
         self.gmapFiles = gmapFiles
         self.binCollection = binCollection
         self.multiOverlaps = multiOverlaps
+        self.connection = connection
         self.exception = None
     
     def bin_by_gmap(self):
@@ -161,11 +164,12 @@ class GmapBinThread(Thread):
     def run(self):
         try:
             self.bin_by_gmap()
+            self.connection.send([self.binCollection, self.multiOverlaps])
         except BaseException as e:
             self.exception = e
     
     def join(self):
-        Thread.join(self)
+        Process.join(self)
         if self.exception:
             raise self.exception
 
