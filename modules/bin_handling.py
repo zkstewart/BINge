@@ -29,8 +29,8 @@ def add_bin_to_collection(binCollection, binOverlap, newBin):
         binCollection.add(newBin)
 
 # Resume normal script organisation
-import os, queue
-from multiprocessing import Pipe
+import os
+from multiprocessing import Pipe, JoinableQueue
 
 from .gff3_handling import GFF3
 from .bins import Bin, BinCollection
@@ -232,8 +232,8 @@ def multithread_bin_splitter(binCollection, threads):
         newBinCollection -- a new BinCollection object to replace the original one.
     '''
     # Set up queueing system for multi-threading
-    workerQueue = queue.Queue(maxsize=int(threads * 10)) # allow queue to scale with threads
-    outputQueue = queue.Queue(maxsize=int(threads * 20))
+    workerQueue = JoinableQueue(maxsize=int(threads * 10)) # allow queue to scale with threads
+    outputQueue = JoinableQueue(maxsize=int(threads * 20))
     
     # Start up threads for clustering of bins
     workers = []
@@ -243,7 +243,8 @@ def multithread_bin_splitter(binCollection, threads):
         worker.start()
         workers.append(worker)
     
-    outputWorker = CollectionWorkerThread(outputQueue)
+    outputReceiver, outputSender = Pipe()
+    outputWorker = CollectionWorkerThread(outputQueue, outputSender)
     outputWorker.daemon = True
     outputWorker.start()
     
@@ -261,4 +262,7 @@ def multithread_bin_splitter(binCollection, threads):
     outputQueue.put([None, None]) # marker for the output thead to stop; needs 2 Nones!
     outputWorker.join()
     
-    return outputWorker.binCollection
+    # Get the resulting binCollection via the receiver pipe
+    newBinCollection = outputReceiver.recv()
+    
+    return newBinCollection

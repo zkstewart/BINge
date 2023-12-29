@@ -1,6 +1,5 @@
 import os, time, sys
-from threading import Thread
-from multiprocessing import Process
+from multiprocessing import Process, Pipe
 
 from .gff3_handling import iterate_through_gff3
 from .bins import BinCollection, Bin, BinSplitter
@@ -9,9 +8,9 @@ from .bin_handling import add_bin_to_collection
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_MapIO import GMAP_DB
 
-class GmapIndexThread(Thread):
+class GmapIndexThread(Process):
     '''
-    This provides a modified Thread which allows for GMAP indexing to be run
+    This provides a modified Process which allows for GMAP indexing to be run
     in parallel using the GMAP_DB class.
     
     Parameters:
@@ -19,9 +18,9 @@ class GmapIndexThread(Thread):
         gmapDir -- a string indicating the location of the GMAP executable files.
     '''
     def __init__(self, fasta, gmapDir):
-        Thread.__init__(self)
+        Process.__init__(self)
         
-        # Threading defaults
+        # Processing defaults
         self.gmapFile = fasta
         self.gmapDir = gmapDir
         self.db = GMAP_DB(fasta, gmapDir)
@@ -39,10 +38,12 @@ class GmapIndexThread(Thread):
         try:
             self.generate_gmap_index()
         except BaseException as e:
-            self.exception = e
+            self._exceptionSender.send(e)
     
     def join(self):
-        Thread.join(self)
+        Process.join(self)
+        if self._exceptionReceiver.poll():
+            self.exception = self._exceptionReceiver.recv()
         if self.exception:
             raise self.exception
 
@@ -70,11 +71,14 @@ class GmapBinThread(Process):
             "GmapBinThread needs to receive minIdentity as a float fraction from >0 to <=1"
         self.minIdentity = minIdentity * 100
         
-        # Threading defaults
+        # Processing defaults
         self.gmapFiles = gmapFiles
         self.binCollection = binCollection
         self.multiOverlaps = multiOverlaps
         self.connection = connection
+        
+        # Exception handling
+        self._exceptionReceiver, self._exceptionSender = Pipe()
         self.exception = None
     
     def bin_by_gmap(self):
@@ -166,10 +170,12 @@ class GmapBinThread(Process):
             self.bin_by_gmap()
             self.connection.send([self.binCollection, self.multiOverlaps])
         except BaseException as e:
-            self.exception = e
+            self._exceptionSender.send(e)
     
     def join(self):
         Process.join(self)
+        if self._exceptionReceiver.poll():
+            self.exception = self._exceptionReceiver.recv()
         if self.exception:
             raise self.exception
 
@@ -187,21 +193,24 @@ def _create_novel_bin(mrnaFeature, exonList):
 
 ####
 
-class BinSplitWorkerThread(Thread):
+class BinSplitWorkerThread(Process):
     '''
-    This provides a modified Thread which is only being done for code tidiness and OOP
+    This provides a modified Process which is only being done for code tidiness and OOP
     reasons. Encapsulates the code needed to split a bin using the BinSplitter Class.
     
     Parameters:
-        binQueue -- a queue.Queue object containing Bin objects for splitting.
-        outputQueue -- a queue.Queue object that will receive the processed outputs
-                       of this worker thread.
+        binQueue -- a multiprocess.Queue object containing Bin objects for splitting.
+        outputQueue -- a multiprocess.Queue object that will receive the processed outputs
+                       of this worker process.
     '''
     def __init__(self, binQueue, outputQueue):
-        Thread.__init__(self)
+        Process.__init__(self)
         
         self.binQueue = binQueue
         self.outputQueue = outputQueue
+        
+        # Exception handling
+        self._exceptionReceiver, self._exceptionSender = Pipe()
         self.exception = None
     
     def worker_function(self):
@@ -238,27 +247,34 @@ class BinSplitWorkerThread(Thread):
         try:
             self.worker_function()
         except BaseException as e:
-            self.exception = e
+            self._exceptionSender.send(e)
     
     def join(self):
-        Thread.join(self)
+        Process.join(self)
+        if self._exceptionReceiver.poll():
+            self.exception = self._exceptionReceiver.recv()
         if self.exception:
             raise self.exception
 
-class CollectionWorkerThread(Thread):
+class CollectionWorkerThread(Process):
     '''
-    This provides a modified Thread which allows for multiple BinSplitter objects to
+    This provides a modified Process which allows for multiple BinSplitter objects to
     run in parallel, feeding their output to an instance of this Class which combines
     their results into a new BinCollection.
     
     Parameters:
-        outputQueue -- a queue.Queue object that receives outputs from worker threads.
+        outputQueue -- a multiprocess.Queue object that receives outputs from worker processes.
+        connection -- a multiprocessing.Pipe() object to send the return value through.
     '''
-    def __init__(self, outputQueue):
-        Thread.__init__(self)
+    def __init__(self, outputQueue, connection):
+        Process.__init__(self)
         
         self.outputQueue = outputQueue
         self.binCollection = None
+        self.connection = connection
+        
+        # Exception handling
+        self._exceptionReceiver, self._exceptionSender = Pipe()
         self.exception = None
     
     def worker_function(self):
@@ -304,10 +320,13 @@ class CollectionWorkerThread(Thread):
     def run(self):
         try:
             self.worker_function()
+            self.connection.send(self.binCollection)
         except BaseException as e:
-            self.exception = e
+            self._exceptionSender.send(e)
     
     def join(self):
-        Thread.join(self)
+        Process.join(self)
+        if self._exceptionReceiver.poll():
+            self.exception = self._exceptionReceiver.recv()
         if self.exception:
             raise self.exception

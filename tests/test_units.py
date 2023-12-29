@@ -588,8 +588,6 @@ class TestMultiProcessing(unittest.TestCase):
                 act2Time += time.time() - timeStart
             
             # Assert
-            print(act1Time)
-            print(act2Time)
             self.assertGreater(act1Time, act2Time, "time 2 should be less than time 1")
 
 if __name__ == '__main__':
