@@ -30,12 +30,12 @@ def add_bin_to_collection(binCollection, binOverlap, newBin):
 
 # Resume normal script organisation
 import os
-from multiprocessing import Pipe, JoinableQueue
+from multiprocessing import Pipe, JoinableQueue, Queue
 
-from .thread_workers import GmapBinThread, BinSplitWorkerThread, \
-    CollectionWorkerThread, FragmentFixThread, CollectionSeedThread
+from .thread_workers import GmapBinProcess, BinSplitWorkerThread, \
+    CollectionWorkerThread, FragmentFixProcess, CollectionSeedProcess
 
-def generate_bin_collections(workingDirectory, threads=1):
+def generate_bin_collections(workingDirectory, threads):
     '''
     Receives a list of genome FASTA files and generates bin collections each of these
     into BinCollection structures which are separately stored in the returned list.
@@ -81,25 +81,25 @@ def generate_bin_collections(workingDirectory, threads=1):
     "If there are gaps in the suffixNum's, ordering is important to keep things paired up"
     filePairs.sort(key = lambda x: int(x[2]))
     suffixes = [ int(x[2]) for x in filePairs ]
-    isConsecutive = suffixes == list(range(min(suffixes), max(suffixes)+1))
+    isConsecutive = suffixes == list(range(1, len(suffixes)+1))
     assert isConsecutive, \
         (f"generate_bin_collections failed because genome files in '{genomesDir}' are not " + 
         "consecutively numbered, which is important for later program logic!")
     
     # Start up threads
     receivers = []
-    for i in range(0, len(filePairs), threads): # only process n (threads) collections at a time
+    for i in range(0, len(filePairs), threads): # only process n (threads) at a time
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(filePairs): # parent loop may excess if n > the number of GMAP files
                 gff3File, _, _ = filePairs[i+x]
-                thisReceiver, thisSender = Pipe()
                 
-                seedWorkerThread = CollectionSeedThread(gff3File, thisSender)
+                thisQueue = Queue()
+                seedWorkerThread = CollectionSeedProcess(gff3File, thisQueue)
                 
                 processing.append(seedWorkerThread)
                 seedWorkerThread.start()
-                receivers.append(thisReceiver)
+                receivers.append(thisQueue)
         
         # Wait on processes to end
         for seedWorkerThread in processing:
@@ -108,7 +108,7 @@ def generate_bin_collections(workingDirectory, threads=1):
     # Gather results
     collectionList = []
     for receiver in receivers:
-        binCollection = receiver.recv()
+        binCollection = receiver.get()
         collectionList.append(binCollection)
     
     return collectionList
@@ -161,15 +161,15 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
                 thisGmapFiles, thisBinCollection = threadData[i+x]
                 thisMultiOverlap = []
-                thisReceiver, thisSender = Pipe()
                 
-                populateWorkerThread = GmapBinThread(thisGmapFiles, thisBinCollection,
-                                                     thisMultiOverlap, thisSender,
-                                                     gmapIdentity)
+                thisQueue = Queue()
+                populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
+                                                      thisMultiOverlap, thisQueue,
+                                                      gmapIdentity)
                 
                 processing.append(populateWorkerThread)
                 populateWorkerThread.start()
-                receivers.append(thisReceiver)
+                receivers.append(thisQueue)
         
         # Wait on processes to end
         for populateWorkerThread in processing:
@@ -178,13 +178,13 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
     # Gather results
     resultBinCollections, resultMultiOverlaps = [], []
     for receiver in receivers:
-        binCollection, multiOverlap = receiver.recv()
+        binCollection, multiOverlap = receiver.get()
         resultBinCollections.append(binCollection)
         resultMultiOverlaps.append(multiOverlap)
     
     return resultBinCollections, resultMultiOverlaps
 
-def fix_collection_fragments(collectionList, multiOverlaps, threads=1):
+def fix_collection_fragments(collectionList, multiOverlaps, threads):
     '''
     Connects bins which are putatively fragmented and should be merged
     into a single bin. The input collectionList and multiOverlaps objects
@@ -215,14 +215,15 @@ def fix_collection_fragments(collectionList, multiOverlaps, threads=1):
         for x in range(threads): # begin processing n collections
             if i+x < len(collectionList): # parent loop may excess if n > the number of GMAP files
                 thisBinCollection, thisMultiOverlap = collectionList[i+x], multiOverlaps[i+x]
-                thisReceiver, thisSender = Pipe()
                 
-                fragmentWorkerThread = FragmentFixThread(thisBinCollection, thisMultiOverlap,
-                                                         thisSender)
+                thisQueue = Queue()
+                fragmentWorkerThread = FragmentFixProcess(thisBinCollection,
+                                                          thisMultiOverlap,
+                                                          thisQueue)
                 
                 processing.append(fragmentWorkerThread)
                 fragmentWorkerThread.start()
-                receivers.append(thisReceiver)
+                receivers.append(thisQueue)
         
         # Wait on processes to end
         for fragmentWorkerThread in processing:
@@ -231,7 +232,7 @@ def fix_collection_fragments(collectionList, multiOverlaps, threads=1):
     # Gather results
     resultCollectionList = []
     for receiver in receivers:
-        binCollection = receiver.recv()
+        binCollection = receiver.get()
         resultCollectionList.append(binCollection)
     
     return resultCollectionList

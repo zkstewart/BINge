@@ -49,7 +49,7 @@ class GmapIndexThread(Process):
 
 ####
 
-class GmapBinThread(Process):
+class GmapBinProcess(Process):
     '''
     This provides a modified Process which allows for the output of bin_by_gmap
     to be stored locally within the object. Multi-processing this process is viable
@@ -59,11 +59,11 @@ class GmapBinThread(Process):
     Parameters:
         gmapFile -- a string indicating the location of a GMAP GFF3 for parsing.
         binCollection -- an existing BinCollection object to add GMAP alignments to.
-        connection -- a multiprocessing.Pipe() object to send the return value through.
+        queue -- a multiprocessing.Queue() object to send the return value through.
         minIdentity -- a float fraction indicating what identity value is minimally required
                        for us to use a GMAP alignment.
     '''
-    def __init__(self, gmapFiles, binCollection, multiOverlaps, connection, minIdentity=0.95):
+    def __init__(self, gmapFiles, binCollection, multiOverlaps, queue, minIdentity=0.95):
         Process.__init__(self)
         
         # Behavioural parameters
@@ -75,7 +75,7 @@ class GmapBinThread(Process):
         self.gmapFiles = gmapFiles
         self.binCollection = binCollection
         self.multiOverlaps = multiOverlaps
-        self.connection = connection
+        self.queue = queue
         
         # Exception handling
         self._exceptionReceiver, self._exceptionSender = Pipe()
@@ -168,7 +168,7 @@ class GmapBinThread(Process):
     def run(self):
         try:
             self.bin_by_gmap()
-            self.connection.send([self.binCollection, self.multiOverlaps])
+            self.queue.put([self.binCollection, self.multiOverlaps])
         except BaseException as e:
             self._exceptionSender.send(e)
     
@@ -333,7 +333,7 @@ class CollectionWorkerThread(Process):
 
 ####
 
-class FragmentFixThread(Process):
+class FragmentFixProcess(Process):
     '''
     This provides a modified Process which allows for fragment fixing to be run in
     parallel across multiple separate BinCollection() objects.
@@ -342,14 +342,14 @@ class FragmentFixThread(Process):
         binCollection -- an existing BinCollection object to add GMAP alignments to.
         multiOverlaps -- a list containing GFF3 Feature objects indicating
                          GMAP alignments that overlapped more than one bin.
-        connection -- a multiprocessing.Pipe() object to send the return value through.
+        queue -- a multiprocessing.Queue() object to send the return value through.
     '''
-    def __init__(self, binCollection, multiOverlaps, connection):
+    def __init__(self, binCollection, multiOverlaps, queue):
         Process.__init__(self)
         
         self.binCollection = binCollection
         self.multiOverlaps = multiOverlaps
-        self.connection = connection
+        self.queue = queue
         
         # Exception handling
         self._exceptionReceiver, self._exceptionSender = Pipe()
@@ -358,7 +358,7 @@ class FragmentFixThread(Process):
     def run(self):
         try:
             self.binCollection.fix_fragments(self.multiOverlaps)
-            self.connection.send(self.binCollection)
+            self.queue.put(self.binCollection)
         except BaseException as e:
             self._exceptionSender.send(e)
     
@@ -371,7 +371,7 @@ class FragmentFixThread(Process):
 
 ####
 
-class CollectionSeedThread(Process):
+class CollectionSeedProcess(Process):
     '''
     This provides a modified Process which allows for generate_bin_collections() to
     be run in parallel for multiple genomes.
@@ -379,14 +379,14 @@ class CollectionSeedThread(Process):
     Parameters:
         gff3File -- a string pointing to a GFF3 file giving annotations for a genome,
                     or None if no pre-seeding is to occur.
-        connection -- a multiprocessing.Pipe() object to send the return value through.
+        queue -- a multiprocessing.Queue() object to send the return value through.
     '''
-    def __init__(self, gff3File, connection):
+    def __init__(self, gff3File, queue):
         Process.__init__(self)
         
         self.gff3File = gff3File
         self.binCollection = None
-        self.connection = connection
+        self.queue = queue
         
         # Exception handling
         self._exceptionReceiver, self._exceptionSender = Pipe()
@@ -418,7 +418,7 @@ class CollectionSeedThread(Process):
     def run(self):
         try:
             self.bin_seeder()
-            self.connection.send(self.binCollection)
+            self.queue.put(self.binCollection)
         except BaseException as e:
             self._exceptionSender.send(e)
     
