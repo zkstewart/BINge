@@ -45,8 +45,8 @@ def setup_gmap_indices(workingDirectory, gmapDir, threads):
                 genomeFile = needsIndexing[i+x]
                 
                 indexWorkerThread = GmapIndexProcess(genomeFile, gmapDir)
-                processing.append(indexWorkerThread)
                 indexWorkerThread.start()
+                processing.append(indexWorkerThread)
         
         # Gather results
         for indexWorkerThread in processing:

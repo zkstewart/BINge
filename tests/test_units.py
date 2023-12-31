@@ -15,7 +15,7 @@ from modules.thread_workers import GmapBinProcess, CollectionSeedProcess
 
 def _generate_bin_collections_via_seeder(gff3Files, threads):
     # Start up threads
-    finished = []
+    collectionList = []
     for i in range(0, len(gff3Files), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
@@ -29,15 +29,10 @@ def _generate_bin_collections_via_seeder(gff3Files, threads):
         
         # Wait on processes to end
         for seedWorkerThread in processing:
+            binCollection = seedWorkerThread.get_result()
             seedWorkerThread.join()
-            finished.append(seedWorkerThread)
-    
-    # Gather results
-    collectionList = []
-    for seedWorkerThread in finished:
-        seedWorkerThread.check_errors()
-        binCollection = seedWorkerThread.get_result(1)
-        collectionList.append(binCollection)
+            seedWorkerThread.check_errors()
+            collectionList.append(binCollection)
     
     return collectionList
 
@@ -112,7 +107,7 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
         threadData.append([thisGmapFiles, thisBinCollection, thisMultiOverlap])
     
     # Start up threads
-    finished = []
+    resultBinCollection, resultMultiOverlaps = [], []
     for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
@@ -128,16 +123,11 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
         
         # Gather results
         for populateWorkerThread in processing:
+            binCollection, multiOverlap = populateWorkerThread.get_result()
             populateWorkerThread.join()
-            finished.append(populateWorkerThread)
-    
-    # Gather results
-    resultBinCollection, resultMultiOverlaps = [], []
-    for populateWorkerThread in finished:
-        populateWorkerThread.check_errors()
-        binCollection, multiOverlap = populateWorkerThread.get_result(1)
-        resultBinCollection.append(binCollection)
-        resultMultiOverlaps.append(multiOverlap)
+            populateWorkerThread.check_errors()
+            resultBinCollection.append(binCollection)
+            resultMultiOverlaps.append(multiOverlap)
     
     return resultBinCollection, resultMultiOverlaps
 
@@ -628,9 +618,9 @@ class TestGmapBinProcess(unittest.TestCase):
         # Act
         processor = GmapBinProcess(gff3Files, binCollection, 0.95)
         processor.start()
+        resultCollection, resultMultiOverlap = processor.get_result()
         processor.join()
         processor.check_errors()
-        resultCollection, resultMultiOverlap = processor.get_result(1)
         
         # Assert
         self.assertEqual(len(resultCollection), 2, "Should have two bins")

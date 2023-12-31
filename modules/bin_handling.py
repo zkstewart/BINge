@@ -1,10 +1,7 @@
 import os
-from multiprocessing import Queue
 
 from .thread_workers import GmapBinProcess, FragmentFixProcess, \
     CollectionSeedProcess
-
-TIMEOUT_LIMIT = 60 # seconds
 
 def generate_bin_collections(workingDirectory, threads):
     '''
@@ -58,7 +55,7 @@ def generate_bin_collections(workingDirectory, threads):
         "consecutively numbered, which is important for later program logic!")
     
     # Start up threads
-    finished = []
+    collectionList = []
     for i in range(0, len(filePairs), threads): # only process n (threads) at a time
         processing = []
         for x in range(threads): # begin processing n collections
@@ -66,21 +63,16 @@ def generate_bin_collections(workingDirectory, threads):
                 gff3File, _, _ = filePairs[i+x]
                 
                 seedWorkerThread = CollectionSeedProcess(gff3File)
-                
-                processing.append(seedWorkerThread)
                 seedWorkerThread.start()
+                processing.append(seedWorkerThread)
         
         # Wait on processes to end
         for seedWorkerThread in processing:
+            binCollection = seedWorkerThread.get_result()
             seedWorkerThread.join()
-            finished.append(seedWorkerThread)
-    
-    # Gather results
-    collectionList = []
-    for seedWorkerThread in finished:
-        seedWorkerThread.check_errors()
-        binCollection = seedWorkerThread.get_result(TIMEOUT_LIMIT)
-        collectionList.append(binCollection)
+            seedWorkerThread.check_errors()
+            
+            collectionList.append(binCollection)
     
     return collectionList
 
@@ -125,7 +117,7 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         threadData.append([thisGmapFiles, thisBinCollection])
     
     # Start up threads
-    finished = []
+    resultBinCollections, resultMultiOverlaps = [], []
     for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
@@ -134,22 +126,17 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
                 
                 populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
                                                       gmapIdentity)
-                
-                processing.append(populateWorkerThread)
                 populateWorkerThread.start()
+                processing.append(populateWorkerThread)
         
         # Wait on processes to end
         for populateWorkerThread in processing:
+            binCollection, multiOverlap = populateWorkerThread.get_result()
             populateWorkerThread.join()
-            finished.append(populateWorkerThread)
-    
-    # Gather results
-    resultBinCollections, resultMultiOverlaps = [], []
-    for populateWorkerThread in finished:
-        populateWorkerThread.check_errors()
-        binCollection, multiOverlap = populateWorkerThread.get_result(TIMEOUT_LIMIT)
-        resultBinCollections.append(binCollection)
-        resultMultiOverlaps.append(multiOverlap)
+            populateWorkerThread.check_errors()
+            
+            resultBinCollections.append(binCollection)
+            resultMultiOverlaps.append(multiOverlap)
     
     return resultBinCollections, resultMultiOverlaps
 
@@ -178,7 +165,7 @@ def fix_collection_fragments(collectionList, multiOverlaps, threads):
         "fix_collection_fragments expects threads argument to be >= 1"
     
     # Start up threads
-    finished = []
+    resultCollectionList = []
     for i in range(0, len(collectionList), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
@@ -187,21 +174,16 @@ def fix_collection_fragments(collectionList, multiOverlaps, threads):
                 
                 fragmentWorkerThread = FragmentFixProcess(thisBinCollection,
                                                           thisMultiOverlap)
-                
-                processing.append(fragmentWorkerThread)
                 fragmentWorkerThread.start()
+                processing.append(fragmentWorkerThread)
         
         # Wait on processes to end
         for fragmentWorkerThread in processing:
+            binCollection = fragmentWorkerThread.get_result()
             fragmentWorkerThread.join()
-            finished.append(fragmentWorkerThread)
-    
-    # Gather results
-    resultCollectionList = []
-    for fragmentWorkerThread in finished:
-        fragmentWorkerThread.check_errors()
-        binCollection = fragmentWorkerThread.get_result(TIMEOUT_LIMIT)
-        resultCollectionList.append(binCollection)
+            fragmentWorkerThread.check_errors()
+            
+            resultCollectionList.append(binCollection)
     
     return resultCollectionList
 
