@@ -1,7 +1,6 @@
 import os, sys
 
-from .gff3_handling import GFF3
-from .thread_workers import GmapIndexThread
+from .thread_workers import GmapIndexProcess
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_MapIO import GMAP_DB, GMAP
@@ -45,13 +44,14 @@ def setup_gmap_indices(workingDirectory, gmapDir, threads):
             if i+x < len(needsIndexing): # parent loop may excess if n > the number of files needing indexing
                 genomeFile = needsIndexing[i+x]
                 
-                indexWorkerThread = GmapIndexThread(genomeFile, gmapDir)
+                indexWorkerThread = GmapIndexProcess(genomeFile, gmapDir)
                 processing.append(indexWorkerThread)
                 indexWorkerThread.start()
         
         # Gather results
         for indexWorkerThread in processing:
             indexWorkerThread.join()
+            indexWorkerThread.check_errors()
 
 def auto_gmapping(workingDirectory, gmapDir, threads):
     '''

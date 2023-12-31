@@ -2,14 +2,12 @@
 
 import os, sys, unittest
 from copy import deepcopy
-from multiprocessing import Pipe
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
 from modules.bins import BinCollection, Bin
-from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
-    multithread_bin_splitter, iterative_bin_self_linking
-from modules.thread_workers import GmapBinThread
+from modules.bin_handling import iterative_bin_self_linking
+from modules.thread_workers import GmapBinProcess
 
 ###
 
@@ -80,32 +78,29 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
         threadData.append([thisGmapFiles, thisBinCollection])
     
     # Start up threads
-    receivers = []
+    finished = []
     for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
                 thisGmapFiles, thisBinCollection = threadData[i+x]
-                thisMultiOverlap = []
-                thisReceiver, thisSender = Pipe()
                 
-                populateWorkerThread = GmapBinThread(thisGmapFiles, thisBinCollection,
-                                                     thisMultiOverlap, thisSender,
+                populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
                                                      gmapIdentity)
                 
                 processing.append(populateWorkerThread)
                 populateWorkerThread.start()
-                receivers.append(thisReceiver)
         
         # Gather results
         for populateWorkerThread in processing:
-            # Wait for thread to end
             populateWorkerThread.join()
+            finished.append(populateWorkerThread)
     
     # Gather results
     resultBinCollection, resultMultiOverlaps = [], []
-    for receiver in receivers:
-        binCollection, multiOverlap = receiver.recv()
+    for populateWorkerThread in finished:
+        populateWorkerThread.check_errors()
+        binCollection, multiOverlap = populateWorkerThread.get_result(1)
         resultBinCollection.append(binCollection)
         resultMultiOverlaps.append(multiOverlap)
     
@@ -131,9 +126,7 @@ def binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5, gm
     binCollection = binCollectionList[0]
     for i in range(1, len(binCollectionList)):
         binCollection.merge(binCollectionList[i])
-    
-    binCollection = multithread_bin_splitter(binCollection, threads)
-    
+        
     binCollection = iterative_bin_self_linking(binCollection, convergenceIters)
         
     return binCollection
@@ -156,13 +149,9 @@ def binge_runner2(binCollectionList, gmapFiles, threads=1, convergenceIters=5, g
     binCollection = binCollectionList[0]
     for i in range(1, len(binCollectionList)):
         binCollection.merge(binCollectionList[i])
-    
-    binCollection = multithread_bin_splitter(binCollection, threads)
-    
+        
     binCollection = iterative_bin_self_linking(binCollection, convergenceIters)
-    
-    binCollection = iterative_bin_self_linking(binCollection, convergenceIters)
-    
+        
     return binCollection
 
 # Define test helper functions
@@ -232,82 +221,6 @@ class TestNormal(unittest.TestCase):
         self.assertEqual(len(binOverlap[0].ids), 2, "Should contain 2 IDs")
         self.assertEqual(len(binOverlap2[0].ids), 2, "Should contain 2 IDs")
 
-class TestBinSplitter(unittest.TestCase):
-    def test_splitter_normal(self):
-        '''
-        This test should result in no splitting occurring. I think this test is kind of
-        broken now, not really sure what it's testing tbh.
-        '''
-        # Arrange
-        threads = 1
-        binCollection = get_binCollection_in_range(os.path.join(dataDir, "annotation.gff3"),
-                                                   "contig1", 1, 100)
-        for i, bin in enumerate(binCollection):
-            bin.data.ids = {f"example{i+1}"}
-            if i == 0:
-                bin.data.exons = {f"example{i+1}": [[1, 50]]}
-            else:
-                bin.data.exons = {f"example{i+1}": [[51, 100]]}
-        
-        binCollectionList = [binCollection]
-        gmapFiles = [os.path.join(dataDir, "gmap.gff3")]
-        
-        binCollectionList, multiOverlaps = _populate_bin_collections(binCollectionList, gmapFiles,
-                                                                     threads, 0.95)
-        
-        binCollection = binCollectionList[0]
-        for i in range(1, len(binCollectionList)):
-            binCollection.merge(binCollectionList[i])
-        
-        # Act
-        binCollection = multithread_bin_splitter(binCollection, threads)
-        
-        # Assert
-        self.assertEqual(len(binCollection), 8, "Should contain 8 bins")
-    
-    def test_splitter_nested(self):
-        '''
-        This test should result in splitting of the nested features from the
-        parent gene feature.
-        '''
-        # Arrange
-        threads = 1
-        binCollection = get_binCollection_in_range(os.path.join(dataDir, "annotation.gff3"),
-                                                   "contig1", 210, 300)
-        origNumBins = len(binCollection)
-        
-        # Act
-        binCollection = multithread_bin_splitter(binCollection, threads)
-        newNumBins = len(binCollection)
-        
-        # Assert
-        self.assertEqual(origNumBins, 1, "Should contain 1 bin")
-        self.assertEqual(newNumBins, 2, "Should contain 2 bins")
-    
-    def test_splitter_overlapping(self):
-        '''
-        This test should result in splitting of the overlapping features since their
-        length of overlap is minimal
-        '''
-        # Arrange
-        threads = 1
-        binCollection = get_binCollection_in_range(os.path.join(dataDir, "annotation.gff3"),
-                                                   "contig1", 310, 400)
-        origNumBins = len(binCollection)
-        origNumIDs = [ len(bin.data.ids) for bin in binCollection ]
-        
-        # Act
-        binCollection = multithread_bin_splitter(binCollection, threads)
-        newNumBins = len(binCollection)
-        newNumIDs = [ len(bin.data.ids) for bin in binCollection ]
-        
-        # Assert
-        self.assertEqual(origNumBins, 1, "Should contain 1 bin")
-        self.assertEqual(newNumBins, 2, "Should contain 2 bins")
-        
-        self.assertEqual(origNumIDs, [4], "Should contain 1 bin with 4 IDs")
-        self.assertEqual(newNumIDs, [2, 2], "Should contain 2 bins with 2 IDs each")
-
 class TestFragmentMerger(unittest.TestCase):
     def test_fragment_merger(self):
         '''
@@ -337,6 +250,3 @@ class TestFragmentMerger(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-threads=1
-convergenceIters=5

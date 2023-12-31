@@ -2,18 +2,44 @@
 
 import os, sys, unittest, time
 import networkx as nx
-from multiprocessing import Pipe
+from multiprocessing import Queue
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
 from modules.bins import BinCollection, Bin
 from modules.gff3_handling import iterate_through_gff3
-from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
-    multithread_bin_splitter, iterative_bin_self_linking
-from test_scenarios import get_binCollection_in_range, binge_runner
-from modules.thread_workers import GmapBinThread
+from modules.bin_handling import iterative_bin_self_linking
+from modules.thread_workers import GmapBinProcess, CollectionSeedProcess
 
 ###
+
+def _generate_bin_collections_via_seeder(gff3Files, threads):
+    # Start up threads
+    finished = []
+    for i in range(0, len(gff3Files), threads): # only process n (threads) collections at a time
+        processing = []
+        for x in range(threads): # begin processing n collections
+            if i+x < len(gff3Files): # parent loop may excess if n > the number of GMAP files
+                gff3File = gff3Files[i+x]
+                
+                seedWorkerThread = CollectionSeedProcess(gff3File)
+                
+                processing.append(seedWorkerThread)
+                seedWorkerThread.start()
+        
+        # Wait on processes to end
+        for seedWorkerThread in processing:
+            seedWorkerThread.join()
+            finished.append(seedWorkerThread)
+    
+    # Gather results
+    collectionList = []
+    for seedWorkerThread in finished:
+        seedWorkerThread.check_errors()
+        binCollection = seedWorkerThread.get_result(1)
+        collectionList.append(binCollection)
+    
+    return collectionList
 
 def _generate_bin_collections(gff3Files):
     '''
@@ -86,32 +112,30 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
         threadData.append([thisGmapFiles, thisBinCollection, thisMultiOverlap])
     
     # Start up threads
-    receivers = []
+    finished = []
     for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
                 thisGmapFiles, thisBinCollection, \
                     thisMultiOverlap = threadData[i+x]
-                thisReceiver, thisSender = Pipe()
                 
-                populateWorkerThread = GmapBinThread(thisGmapFiles, thisBinCollection,
-                                                     thisMultiOverlap, thisSender,
+                populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
                                                      gmapIdentity)
                 
                 processing.append(populateWorkerThread)
                 populateWorkerThread.start()
-                receivers.append(thisReceiver)
         
         # Gather results
         for populateWorkerThread in processing:
-            # Wait for thread to end
             populateWorkerThread.join()
+            finished.append(populateWorkerThread)
     
     # Gather results
     resultBinCollection, resultMultiOverlaps = [], []
-    for receiver in receivers:
-        binCollection, multiOverlap = receiver.recv()
+    for populateWorkerThread in finished:
+        populateWorkerThread.check_errors()
+        binCollection, multiOverlap = populateWorkerThread.get_result(1)
         resultBinCollection.append(binCollection)
         resultMultiOverlaps.append(multiOverlap)
     
@@ -353,45 +377,6 @@ class TestNovelPopulate(unittest.TestCase):
             if bin.data.start == 1 or bin.data.start == 51:
                 self.assertEqual(len(bin.data.ids), 2, f"Should have 2 IDs in bin")
 
-class TestThreadExceptions(unittest.TestCase):
-    def test_BinSplitWorker_has_exception(self):
-        # Arrange
-        binCollection = get_binCollection_in_range(os.path.join(dataDir, "annotation.gff3"),
-                                                   "contig1", 1, 100)
-        for i, bin in enumerate(binCollection):
-            bin.data.ids = {f"example{i+1}"}
-        
-        binCollectionList = [binCollection]
-        gmapFiles = [os.path.join(dataDir, "gmap_normal.gff3")]
-        
-        # Act
-        try:
-            binCollection = binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5)
-            self.assertTrue(False, "Not having exception is a test fail")
-        # Assert
-        except KeyError as e:
-            self.assertEqual(eval(str(e)), "example1", "Should have exception at example1")
-    
-    def test_BinSplitWorker_not_has_exception(self):
-        # Arrange
-        binCollection = get_binCollection_in_range(os.path.join(dataDir, "annotation.gff3"),
-                                                   "contig1", 1, 100)
-        for i, bin in enumerate(binCollection):
-            bin.data.ids = {f"example{i+1}"}
-            if i == 0:
-                bin.data.exons = {f"example{i+1}":[[1, 50]]}
-            else:
-                bin.data.exons = {f"example{i+1}":[[51, 100]]}
-        
-        binCollectionList = [binCollection]
-        gmapFiles = [os.path.join(dataDir, "gmap_normal.gff3")]
-        
-        # Act
-        binCollection = binge_runner(binCollectionList, gmapFiles, threads=1, convergenceIters=5)
-        
-        # Assert
-        self.assertTrue(True, "Not having exception is a test pass")
-
 class TestNetworkX(unittest.TestCase):
     def test_connected_component_numbers(self):
         # Arrange
@@ -589,6 +574,66 @@ class TestMultiProcessing(unittest.TestCase):
             
             # Assert
             self.assertGreater(act1Time, act2Time, "time 2 should be less than time 1")
+
+class TestBinSeederThread(unittest.TestCase):
+    def test_binCollection_seeder(self):
+        # Arrange
+        threads=4
+        gff3Files = [os.path.join(dataDir, "gmap_normal.gff3")]
+        binCollectionList = _generate_bin_collections_via_seeder(gff3Files, threads)
+        binCollection = binCollectionList[0]
+        
+        # Act
+        ## N/A
+        
+        # Assert
+        self.assertEqual(len(binCollection), 2, "Should be 2")
+
+    def test_seeder_has_exception(self):
+        # Arrange
+        gff3File = os.path.join(dataDir, "gmap_normal.notexist.gff3")
+        
+        # Act and Assert
+        try:
+            seedWorkerThread = CollectionSeedProcess(gff3File)
+            seedWorkerThread.start()
+            seedWorkerThread.join()
+            seedWorkerThread.check_errors()
+            self.assertTrue(False, "Not having exception is a test fail")
+        except FileNotFoundError:
+            self.assertTrue(True, "Having FileNotFoundError is a test pass")
+
+    def test_seeder_does_work(self):
+        # Arrange
+        gff3File = os.path.join(dataDir, "gmap_normal.gff3")
+        
+        # Act
+        seedWorkerThread = CollectionSeedProcess(gff3File)
+        seedWorkerThread.start()
+        seedWorkerThread.join()
+        seedWorkerThread.check_errors()
+        result = seedWorkerThread.get_result(1)
+        
+        # Assert
+        self.assertEqual(len(result), 2, "Result should have 2 bins")
+
+class TestGmapBinProcess(unittest.TestCase):
+    def test_gmap_bin_process(self):
+        # Arrange
+        threads=4
+        gff3Files = [os.path.join(dataDir, "gmap_normal.gff3")]
+        binCollection = BinCollection()
+        thisQueue = Queue()
+        
+        # Act
+        processor = GmapBinProcess(gff3Files, binCollection, 0.95)
+        processor.start()
+        processor.join()
+        processor.check_errors()
+        resultCollection, resultMultiOverlap = processor.get_result(1)
+        
+        # Assert
+        self.assertEqual(len(resultCollection), 2, "Should have two bins")
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,39 +1,10 @@
-# Prevent circular imports
-def add_bin_to_collection(binCollection, binOverlap, newBin):
-    '''
-    Assistant function to add a new bin on the basis of whatever bins it is
-    overlapping. Modifies the binCollection input in place.
-    
-    Parameters:
-        binCollection -- a BinCollection() object from which binOverlap was generated,
-                         and the newBin is intended to be added to.
-        binOverlap -- a list containing zero or more Bin() objects that the newBin
-                      is overlapping.
-        newBin -- a Bin() for addition to the binCollection input.
-    '''
-    # If the newBin does not overlap anything, add it in as-is
-    if len(binOverlap) == 0:
-        binCollection.add(newBin)
-    
-    # Otherwise...
-    else:
-        # ... merge any overlapping bins together
-        for overlappingBin in binOverlap:
-            newBin.merge(overlappingBin)
-        
-        # ... delete the overlapping bins
-        for overlappingBin in binOverlap:
-            binCollection.delete(overlappingBin)
-        
-        # ... and add the new bin in its place
-        binCollection.add(newBin)
-
-# Resume normal script organisation
 import os
-from multiprocessing import Pipe, JoinableQueue, Queue
+from multiprocessing import Queue
 
-from .thread_workers import GmapBinProcess, BinSplitWorkerThread, \
-    CollectionWorkerThread, FragmentFixProcess, CollectionSeedProcess
+from .thread_workers import GmapBinProcess, FragmentFixProcess, \
+    CollectionSeedProcess
+
+TIMEOUT_LIMIT = 60 # seconds
 
 def generate_bin_collections(workingDirectory, threads):
     '''
@@ -87,28 +58,28 @@ def generate_bin_collections(workingDirectory, threads):
         "consecutively numbered, which is important for later program logic!")
     
     # Start up threads
-    receivers = []
+    finished = []
     for i in range(0, len(filePairs), threads): # only process n (threads) at a time
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(filePairs): # parent loop may excess if n > the number of GMAP files
                 gff3File, _, _ = filePairs[i+x]
                 
-                thisQueue = Queue()
-                seedWorkerThread = CollectionSeedProcess(gff3File, thisQueue)
+                seedWorkerThread = CollectionSeedProcess(gff3File)
                 
                 processing.append(seedWorkerThread)
                 seedWorkerThread.start()
-                receivers.append(thisQueue)
         
         # Wait on processes to end
         for seedWorkerThread in processing:
             seedWorkerThread.join()
+            finished.append(seedWorkerThread)
     
     # Gather results
     collectionList = []
-    for receiver in receivers:
-        binCollection = receiver.get()
+    for seedWorkerThread in finished:
+        seedWorkerThread.check_errors()
+        binCollection = seedWorkerThread.get_result(TIMEOUT_LIMIT)
         collectionList.append(binCollection)
     
     return collectionList
@@ -154,31 +125,29 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         threadData.append([thisGmapFiles, thisBinCollection])
     
     # Start up threads
-    receivers = []
+    finished = []
     for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
                 thisGmapFiles, thisBinCollection = threadData[i+x]
-                thisMultiOverlap = []
                 
-                thisQueue = Queue()
                 populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
-                                                      thisMultiOverlap, thisQueue,
                                                       gmapIdentity)
                 
                 processing.append(populateWorkerThread)
                 populateWorkerThread.start()
-                receivers.append(thisQueue)
         
         # Wait on processes to end
         for populateWorkerThread in processing:
             populateWorkerThread.join()
+            finished.append(populateWorkerThread)
     
     # Gather results
     resultBinCollections, resultMultiOverlaps = [], []
-    for receiver in receivers:
-        binCollection, multiOverlap = receiver.get()
+    for populateWorkerThread in finished:
+        populateWorkerThread.check_errors()
+        binCollection, multiOverlap = populateWorkerThread.get_result(TIMEOUT_LIMIT)
         resultBinCollections.append(binCollection)
         resultMultiOverlaps.append(multiOverlap)
     
@@ -209,30 +178,29 @@ def fix_collection_fragments(collectionList, multiOverlaps, threads):
         "fix_collection_fragments expects threads argument to be >= 1"
     
     # Start up threads
-    receivers = []
+    finished = []
     for i in range(0, len(collectionList), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(collectionList): # parent loop may excess if n > the number of GMAP files
                 thisBinCollection, thisMultiOverlap = collectionList[i+x], multiOverlaps[i+x]
                 
-                thisQueue = Queue()
                 fragmentWorkerThread = FragmentFixProcess(thisBinCollection,
-                                                          thisMultiOverlap,
-                                                          thisQueue)
+                                                          thisMultiOverlap)
                 
                 processing.append(fragmentWorkerThread)
                 fragmentWorkerThread.start()
-                receivers.append(thisQueue)
         
         # Wait on processes to end
         for fragmentWorkerThread in processing:
             fragmentWorkerThread.join()
+            finished.append(fragmentWorkerThread)
     
     # Gather results
     resultCollectionList = []
-    for receiver in receivers:
-        binCollection = receiver.get()
+    for fragmentWorkerThread in finished:
+        fragmentWorkerThread.check_errors()
+        binCollection = fragmentWorkerThread.get_result(TIMEOUT_LIMIT)
         resultCollectionList.append(binCollection)
     
     return resultCollectionList
@@ -254,59 +222,3 @@ def iterative_bin_self_linking(binCollection, convergenceIters):
             break
         prevCollectionCount = len(binCollection.bins)
     return binCollection
-
-def multithread_bin_splitter(binCollection, threads):
-    '''
-    Using a queue system, worker threads will grab bins from the binCollection parameter
-    process with the BinSplitter class. They will put their results into the output
-    worker which will help to format a new BinCollection object as output.
-    
-    We want to split bins because each bin is only guaranteed to contain
-    sequences that generally align well over a predicted genomic region. There's no
-    guarantee that they are isoforms of the same gene, or even share any exonic content.
-    This splitting step is very lax and designed specifically for separating out nested
-    genes within the introns of what might be considered the "main gene" the
-    bin represents.
-    
-    Parameters:
-        binCollection -- a BinCollection containing Bins which have aligned against
-                         a reference genome, and hence have informative .exons values.
-        threads -- an integer indicating how many threads to run.
-    Returns:
-        newBinCollection -- a new BinCollection object to replace the original one.
-    '''
-    # Set up queueing system for multi-threading
-    workerQueue = JoinableQueue(maxsize=int(threads * 10)) # allow queue to scale with threads
-    outputQueue = JoinableQueue(maxsize=int(threads * 20))
-    
-    # Start up threads for clustering of bins
-    workers = []
-    for _ in range(threads):
-        worker = BinSplitWorkerThread(workerQueue, outputQueue)
-        worker.daemon = True
-        worker.start()
-        workers.append(worker)
-    
-    outputReceiver, outputSender = Pipe()
-    outputWorker = CollectionWorkerThread(outputQueue, outputSender)
-    outputWorker.daemon = True
-    outputWorker.start()
-    
-    # Put bins in queue for worker threads
-    for interval in binCollection:
-        bin = interval.data
-        workerQueue.put(bin)
-    
-    # Close up shop on the threading structures
-    for i in range(threads):
-        workerQueue.put(None) # this is a marker for the worker threads to stop
-    for worker in workers:
-        worker.join() # need to call .join() on the workers themselves, not the queue!
-    
-    outputQueue.put([None, None]) # marker for the output thead to stop; needs 2 Nones!
-    outputWorker.join()
-    
-    # Get the resulting binCollection via the receiver pipe
-    newBinCollection = outputReceiver.recv()
-    
-    return newBinCollection
