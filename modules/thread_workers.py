@@ -83,6 +83,7 @@ class ReturningProcess(BasicProcess):
             self.queue.put(result)
         except Exception as e:
             self._exception_sender.send(e)
+            self.queue.put(None)
     
     def task(self, *args, **kwargs):
         # Override this method in a subclass
@@ -269,8 +270,8 @@ class BinSplitterProcess(ReturningProcess):
             
             # Identify connected IDs which form clusters
             for connectedIDs in nx.connected_components(idsGraph):
-                start = 0 # start is not needed anymore
-                end = 1 # end is not needed anymore
+                start = 1 # start is not needed anymore
+                end = 10 # end is not needed anymore
                 exonsDict = { seqID : [] for seqID in connectedIDs } # exons are not needed anymore
                 
                 # Create a bin for this split cluster
