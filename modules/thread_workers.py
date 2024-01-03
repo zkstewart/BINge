@@ -1,7 +1,8 @@
 import os, sys
+import networkx as nx
 from multiprocessing import Process, Pipe, Queue
 
-from .gff3_handling import GFF3, iterate_through_gff3
+from .gff3_handling import GFF3, iterate_gmap_gff3
 from .bins import BinCollection, Bin
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -37,16 +38,9 @@ def add_bin_to_collection(binCollection, binOverlap, newBin):
         # ... and add the new bin in its place
         binCollection.add(newBin)
 
-def _create_novel_bin(mrnaFeature, exonList):
-    '''
-    Helper function to create a Bin from a mRNA feature parsed out of a GFF3 file.
-    exonList is fed in directly since it's already created in the parent function
-    and this should offer a slight optimisation benefit.
-    '''
-    baseID = mrnaFeature.ID.rsplit(".", maxsplit=1)[0]
-    thisBin = Bin(mrnaFeature.contig, mrnaFeature.start, mrnaFeature.end)
-    thisBin.add(baseID, exonList) # we don't want the .path# / .mrna# suffix attached to this bin
-    
+def _create_novel_bin(dataDict):
+    thisBin = Bin(dataDict["contig"], dataDict["start"], dataDict["end"])
+    thisBin.add(dataDict["Name"], dataDict["exons"])
     return thisBin
 
 # Create base classes to inherit from
@@ -170,17 +164,14 @@ class GmapBinProcess(ReturningProcess):
         # Iterate through GMAP files
         for gmapFile in gmapFiles:
             pathDict = {} # holds onto sequences we've already checked a path for        
-            for feature in iterate_through_gff3(gmapFile):
-                mrnaFeature = feature.mRNA[0]
-                
+            for dataDict in iterate_gmap_gff3(gmapFile):
                 # Get alignment statistics
-                coverage, identity = float(mrnaFeature.coverage), float(mrnaFeature.identity)
-                exonList = Bin.format_exons_from_gff3_feature(mrnaFeature)
+                coverage, identity = float(dataDict["coverage"]), float(dataDict["identity"])
                 exonLength = sum([
                     end - start + 1
-                    for start, end in exonList
+                    for start, end in dataDict["exons"]
                 ])
-                indelProportion = int(mrnaFeature.indels) / exonLength
+                indelProportion = int(dataDict["indels"]) / exonLength
                 
                 # Skip processing if the alignment sucks
                 isGoodAlignment = coverage >= OKAY_COVERAGE \
@@ -190,9 +181,8 @@ class GmapBinProcess(ReturningProcess):
                     continue
                 
                 # See if this path should be skipped because another better one was processed
-                baseID = feature.ID.rsplit(".", maxsplit=1)[0]
-                if baseID in pathDict:
-                    prevCov, prevIdent = pathDict[baseID]
+                if dataDict["Name"] in pathDict:
+                    prevCov, prevIdent = pathDict[dataDict["Name"]]
                     
                     # Skip if the first path was the best
                     if (coverage + ALLOWED_COV_DIFF) < prevCov \
@@ -202,50 +192,92 @@ class GmapBinProcess(ReturningProcess):
                 # Now that we've checked if this path is good, we'll remember it
                 """This means on the next loop if there's another path for this gene, 
                 but it's worse than this current one, we'll just skip it"""
-                pathDict.setdefault(baseID, [coverage, identity])
+                pathDict.setdefault(dataDict["Name"], [coverage, identity])
                 
                 # Create a new bin for this features
-                newBin = _create_novel_bin(mrnaFeature, exonList)
+                newBin = _create_novel_bin(dataDict)
                 
                 # See if this overlaps an existing bin
-                coordinateOverlaps = binCollection.find(feature.contig, feature.start, feature.end)
-                binOverlap = []
-                for bin in coordinateOverlaps:
-                    shouldMerge = newBin.is_overlapping(bin)
-                    if shouldMerge:
-                        binOverlap.append(bin)
+                binOverlap = binCollection.find(dataDict["contig"], dataDict["start"],
+                                                dataDict["end"])
                 
-                # If it does not overlap an existing bin ...
-                if len(binOverlap) == 0:
-                    # ... add the novel bin into the collection
-                    binCollection.add(newBin)
-                
-                # Exclude any transcripts that overlap multiple bins
-                elif len(binOverlap) > 1:
-                    """We expect these occurrences to be chimeric transcripts which should
-                    be filtered. Otherwise, fragmented transcripts being loaded in may
-                    result in a single loci having multiple bins over it if the full length
-                    one doesn't get processed first. We'll need to fix those later by
-                    assessing these multi-overlaps."""
-                    multiOverlaps.append(feature)
-                
-                # If it overlaps exactly 1 bin ...
-                else:
-                    # ... merge the bins together
-                    add_bin_to_collection(binCollection, binOverlap, newBin)
+                # Add a new bin, or merge any bins as appropriate
+                add_bin_to_collection(binCollection, binOverlap, newBin)
         
         return binCollection, multiOverlaps
 
-class FragmentFixProcess(ReturningProcess):
+class BinSplitterProcess(ReturningProcess):
     '''
-    Allows for fragment fixing to be run in parallel across multiple separate
+    Allows for bin splitting to be run in parallel across multiple separate
     BinCollection() objects.
     
     Parameters:
-        binCollection -- an existing BinCollection object to add GMAP alignments to.
-        multiOverlaps -- a list containing GFF3 Feature objects indicating
-                         GMAP alignments that overlapped more than one bin.
+        binCollection -- an existing BinCollection object to split.
+        shorterCovPct -- a float value indicating the percentage of the shortest
+                         sequence's coverage that must be covered by the longer sequence;
+                         default==0.30.
+        longerCovPct -- a float value indicating the percentage of the longest
+                        sequence's coverage that must be covered by the shorter sequence;
+                        default==0.20.
+    Returns:
+        newBinCollection -- the updated BinCollection object with split bins.
     '''
-    def task(self, binCollection, multiOverlaps):
-        binCollection.fix_fragments(multiOverlaps)
-        return binCollection
+    def task(self, binCollection, shorterCovPct=0.30, longerCovPct=0.20):
+        newBinCollection = BinCollection()
+        
+        # Iterate through bins
+        for interval in binCollection:
+            bin = interval.data
+            ids = list(bin.ids) # ensure we always use this in consistent ordering
+            
+            # Model links between sequences as a graph structure
+            idsGraph = nx.Graph()
+            idsGraph.add_nodes_from(ids)
+            
+            # Figure out which sequences have links through shared exons
+            for i in range(len(ids)-1):
+                for x in range(i+1, len(ids)):
+                    id1, id2 = ids[i], ids[x]
+                    exons1, exons2 = bin.exons[id1], bin.exons[id2]
+                    
+                    # Calculate the amount of overlap between their exons
+                    exonOverlap = sum([
+                        abs(max(exons1[n][0], exons2[m][0]) - min(exons1[n][1], exons2[m][1])) + 1
+                        for n in range(len(exons1))
+                        for m in range(len(exons2))
+                        if exons1[n][0] <= exons2[m][1] and exons1[n][1] >= exons2[m][0]
+                    ])
+                    
+                    # Calculate the percentage of each sequence being overlapped by the other
+                    len1 = sum([ end - start + 1 for start, end in exons1 ])
+                    len2 = sum([ end - start + 1 for start, end in exons2 ])
+                    
+                    pct1 = exonOverlap / len1
+                    pct2 = exonOverlap / len2
+                    
+                    # See if this meets any coverage pct cutoffs
+                    if len1 <= len2:
+                        shorterPct = pct1
+                        longerPct = pct2
+                    else:
+                        shorterPct = pct2
+                        longerPct = pct1
+                    
+                    if shorterPct >= shorterCovPct and longerPct >= longerCovPct:
+                        # If this met the cutoff, add an edge between these nodes in the graph
+                        idsGraph.add_edge(id1, id2)
+            
+            # Identify connected IDs which form clusters
+            for connectedIDs in nx.connected_components(idsGraph):
+                start = 0 # start is not needed anymore
+                end = 1 # end is not needed anymore
+                exonsDict = { seqID : [] for seqID in connectedIDs } # exons are not needed anymore
+                
+                # Create a bin for this split cluster
+                newBin = Bin(bin.contig, start, end)
+                newBin.union(connectedIDs, exonsDict)
+                
+                # Store it in the new BinCollection
+                newBinCollection.add(newBin)
+        
+        return newBinCollection

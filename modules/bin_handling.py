@@ -1,6 +1,6 @@
 import os
 
-from .thread_workers import GmapBinProcess, FragmentFixProcess, \
+from .thread_workers import GmapBinProcess, BinSplitterProcess, \
     CollectionSeedProcess
 
 def generate_bin_collections(workingDirectory, threads):
@@ -93,9 +93,6 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
                    if you have only 1 GMAP file then only 1 thread will be used.
         gmapIdentity -- a float indicating what identity value a GMAP alignment
                         must have for it to be considered for binning.
-    Modifies:
-        collectionList -- the BinCollection objects in this list will have alignment IDs
-                          added to the contained Bin objects.
     Returns:
         novelBinCollection -- a BinCollection containing Bins which did not overlap existing
                               Bins part of the input collectionList.
@@ -140,52 +137,47 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
     
     return resultBinCollections, resultMultiOverlaps
 
-def fix_collection_fragments(collectionList, multiOverlaps, threads):
+def multithread_bin_splitter(collectionList, threads):
     '''
-    Connects bins which are putatively fragmented and should be merged
-    into a single bin. The input collectionList and multiOverlaps objects
-    should be ordered equivalently, such that each value in multiOverlaps
-    is used for fragment fixing of its respectively indexed collectionList.
+    We want to split bins because each bin is only guaranteed to contain
+    sequences that generally align well over a predicted genomic region. There's no
+    guarantee that they are isoforms of the same gene, or even share any exonic content.
+    This may be useful for separating out nested genes within the introns of what might
+    be considered the "main gene" the bin represents. It may also be useful for separating
+    out chimeras to be their own bin; in such cases, it is not the place of the BINge program
+    to determine whether the chimeric gene is a real gene or not, it is up to the user to
+    determine this during downstream analysis.
     
     Parameters:
-        collectionList -- a list containing one or more BinCollection
-                          objects.
-        multiOverlaps -- a list containing GFF3 Feature objects indicating
-                         GMAP alignments that overlapped more than one bin.
-        threads -- an integer indicating how many threads to run.
+        collectionList -- a list of BinCollection objects as resulting from
+                          generate_bin_collections().
+        threads -- an integer indicating how many threads to run; this code is
+                   parallelised in terms of processing multiple GMAP files at a time,
+                   if you have only 1 GMAP file then only 1 thread will be used.
     Returns:
-
+        newCollectionList -- a new BinCollection object to replace the original one.
     '''
-    # Validate inputs
-    assert len(collectionList) == len(multiOverlaps), \
-        "fix_collection_fragments expects the two input lists to be equally sized!"
-    assert isinstance(threads, int), \
-        "fix_collection_fragments expects threads argument to be an integer!"
-    assert threads >= 1, \
-        "fix_collection_fragments expects threads argument to be >= 1"
-    
     # Start up threads
-    resultCollectionList = []
+    newCollectionList = []
     for i in range(0, len(collectionList), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(collectionList): # parent loop may excess if n > the number of GMAP files
-                thisBinCollection, thisMultiOverlap = collectionList[i+x], multiOverlaps[i+x]
+                thisBinCollection = collectionList[i+x]
                 
-                fragmentWorkerThread = FragmentFixProcess(thisBinCollection,
-                                                          thisMultiOverlap)
-                fragmentWorkerThread.start()
-                processing.append(fragmentWorkerThread)
+                splittingWorkerThread = BinSplitterProcess(thisBinCollection)
+                splittingWorkerThread.start()
+                processing.append(splittingWorkerThread)
         
         # Wait on processes to end
-        for fragmentWorkerThread in processing:
-            binCollection = fragmentWorkerThread.get_result()
-            fragmentWorkerThread.join()
-            fragmentWorkerThread.check_errors()
+        for splittingWorkerThread in processing:
+            binCollection = splittingWorkerThread.get_result()
+            splittingWorkerThread.join()
+            splittingWorkerThread.check_errors()
             
-            resultCollectionList.append(binCollection)
+            newCollectionList.append(binCollection)
     
-    return resultCollectionList
+    return newCollectionList
 
 def iterative_bin_self_linking(binCollection, convergenceIters):
     '''

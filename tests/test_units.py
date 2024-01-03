@@ -7,7 +7,7 @@ from multiprocessing import Queue
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
 from modules.bins import BinCollection, Bin
-from modules.gff3_handling import iterate_through_gff3
+from modules.gff3_handling import iterate_gmap_gff3
 from modules.bin_handling import iterative_bin_self_linking
 from modules.thread_workers import GmapBinProcess, CollectionSeedProcess
 
@@ -286,7 +286,7 @@ class TestGff3Iterate(unittest.TestCase):
         
         # Act and assert
         try:
-            for feature in iterate_through_gff3(gmapFile):
+            for feature in iterate_gmap_gff3(gmapFile):
                 pass
         except:
             self.assertTrue(True, "Should error out here")
@@ -298,15 +298,14 @@ class TestGff3Iterate(unittest.TestCase):
         # Act
         numFeatures = 0
         mrnaIDs = []
-        for feature in iterate_through_gff3(gmapFile):
+        for feature in iterate_gmap_gff3(gmapFile):
             numFeatures += 1
-            mrnaFeature = feature.mRNA[0]
-            mrnaIDs.append(mrnaFeature.ID)
+            mrnaIDs.append(feature["Name"])
         
         # Assert
         self.assertEqual(numFeatures, 2, "Should contain 2 bins")
-        self.assertEqual(mrnaIDs, ['contig1.1.mrna1', 'contig1.2.mrna1'],
-                         "Should be ['contig1.1.mrna1', 'contig1.2.mrna1']")
+        self.assertEqual(mrnaIDs, ['contig1.1', 'contig1.2'],
+                         "Should be ['contig1.1', 'contig1.2']")
 
 class TestNovelPopulate(unittest.TestCase):
     def test_populate_reject_novel(self):

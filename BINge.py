@@ -16,7 +16,7 @@ from hashlib import sha256
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
-    fix_collection_fragments, iterative_bin_self_linking
+    multithread_bin_splitter, iterative_bin_self_linking
 from modules.fasta_handling import AnnotationExtractor, FastaCollection
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
@@ -327,6 +327,11 @@ def _debug_pickler(objectToPickle, outputFileName):
         with open(outputFileName, "wb") as pickleOut:
             pickle.dump(objectToPickle, pickleOut)
 
+def _debug_loader(pickleFileName):
+    with open(pickleFileName, "rb") as pickleIn:
+        results = pickle.load(pickleIn)
+    return results
+
 ## Main
 def main():
     showHiddenArgs = '--help-long' in sys.argv
@@ -573,6 +578,7 @@ def main():
     # Perform GMAP mapping
     gmapFiles = auto_gmapping(args.outputDirectory, args.gmapDir, args.threads)
     _debug_pickler(gmapFiles, os.path.join(args.outputDirectory, f"{paramHash}.gmapFiles.pkl"))
+    #gmapFiles = _debug_loader(os.path.join(args.outputDirectory, f"{paramHash}.gmapFiles.pkl"))
     
     # Figure out what our pickle file is called
     pickleFile = os.path.join(args.outputDirectory, f"{paramHash}.binge.pkl")
@@ -602,6 +608,7 @@ def main():
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} contains {len(_cl)} bins")
         _debug_pickler(collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.setup.pkl"))
+        #collectionList = _debug_loader(os.path.join(args.outputDirectory, f"{paramHash}.collectionList.setup.pkl"))
         
         # Parse GMAP alignments into our bin collection with multiple threads
         collectionList, multiOverlaps = populate_bin_collections(collectionList, gmapFiles,
@@ -611,14 +618,16 @@ def main():
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} now contains {len(_cl)} bins")
         _debug_pickler([collectionList, multiOverlaps], os.path.join(args.outputDirectory, f"{paramHash}.collectionList.populated.pkl"))
+        #_debug_loader()
         
-        # Merge bins resulting from fragmented annotation models
-        fix_collection_fragments(collectionList, multiOverlaps, args.threads)
+        # Split bins to separate non-overlapping gene models
+        collectionList = multithread_bin_splitter(collectionList, args.threads)
         if args.debug:
-            print(f"# Fixed fragmented bins based on multi overlaps list")
+            print(f"# Split bins based on lack of overlap")
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} now contains {len(_cl)} bins")
         _debug_pickler(collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.fragmentfixed.pkl"))
+        #_debug_loader()
         
         # Merge gene bins together
         binCollection = collectionList[0]
@@ -628,8 +637,9 @@ def main():
             print(f"# Merged all the separate bins together")
             print(f"# The combined collection now contains {len(binCollection)} bins")
         _debug_pickler(binCollection, os.path.join(args.outputDirectory, f"{paramHash}.binCollection.squashed.pkl"))
+        #_debug_loader()
         
-        # Merge bin collections together bins across genomes / across gene copies
+        # Merge bin collections across genomes / across gene copies
         """Usually linking will unify multiple genomes together, but it may detect
         bins of identical gene copies and link them together which is reasonable
         since these would confound DGE to keep separate anyway."""
