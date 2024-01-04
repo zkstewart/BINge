@@ -16,7 +16,7 @@ from hashlib import sha256
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
-    multithread_bin_splitter, iterative_bin_self_linking
+    queued_bin_splitter, iterative_bin_self_linking
 from modules.fasta_handling import AnnotationExtractor, FastaCollection
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
@@ -621,22 +621,11 @@ def main():
         #_debug_loader()
         
         # Split bins to separate non-overlapping gene models
-        collectionList = multithread_bin_splitter(collectionList, args.threads)
+        binCollection = queued_bin_splitter(collectionList, args.threads)
         if args.debug:
             print(f"# Split bins based on lack of overlap")
-            for index, _cl in enumerate(collectionList):
-                print(f"# Collection #{index+1} now contains {len(_cl)} bins")
-        _debug_pickler(collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.fragmentfixed.pkl"))
-        #_debug_loader()
-        
-        # Merge gene bins together
-        binCollection = collectionList[0]
-        for i in range(1, len(collectionList)):
-            binCollection.merge(collectionList[i])
-        if args.debug:
-            print(f"# Merged all the separate bins together")
             print(f"# The combined collection now contains {len(binCollection)} bins")
-        _debug_pickler(binCollection, os.path.join(args.outputDirectory, f"{paramHash}.binCollection.squashed.pkl"))
+        _debug_pickler(binCollection, os.path.join(args.outputDirectory, f"{paramHash}.binCollection.split.pkl"))
         #_debug_loader()
         
         # Merge bin collections across genomes / across gene copies

@@ -1,7 +1,8 @@
 import os
+from multiprocessing import JoinableQueue
 
-from .thread_workers import GmapBinProcess, BinSplitterProcess, \
-    CollectionSeedProcess
+from .thread_workers import CollectionSeedProcess, GmapBinProcess, \
+    QueuedBinSplitterProcess, CollectionWorkerProcess
 
 def generate_bin_collections(workingDirectory, threads):
     '''
@@ -137,7 +138,7 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
     
     return resultBinCollections, resultMultiOverlaps
 
-def multithread_bin_splitter(collectionList, threads):
+def queued_bin_splitter(collectionList, threads, shorterCovPct=0.40, longerCovPct=0.20):
     '''
     We want to split bins because each bin is only guaranteed to contain
     sequences that generally align well over a predicted genomic region. There's no
@@ -154,30 +155,50 @@ def multithread_bin_splitter(collectionList, threads):
         threads -- an integer indicating how many threads to run; this code is
                    parallelised in terms of processing multiple GMAP files at a time,
                    if you have only 1 GMAP file then only 1 thread will be used.
+        shorterCovPct -- a float value indicating the percentage of the shortest
+                         sequence's coverage that must be covered by the longer sequence;
+                         default==0.40.
+        longerCovPct -- a float value indicating the percentage of the longest
+                        sequence's coverage that must be covered by the shorter sequence;
+                        default==0.20.
     Returns:
         newCollectionList -- a new BinCollection object to replace the original one.
     '''
-    # Start up threads
-    newCollectionList = []
-    for i in range(0, len(collectionList), threads): # only process n (threads) collections at a time
-        processing = []
-        for x in range(threads): # begin processing n collections
-            if i+x < len(collectionList): # parent loop may excess if n > the number of GMAP files
-                thisBinCollection = collectionList[i+x]
-                
-                splittingWorkerThread = BinSplitterProcess(thisBinCollection)
-                splittingWorkerThread.start()
-                processing.append(splittingWorkerThread)
-        
-        # Wait on processes to end
-        for splittingWorkerThread in processing:
-            binCollection = splittingWorkerThread.get_result()
-            splittingWorkerThread.join()
-            splittingWorkerThread.check_errors()
-            
-            newCollectionList.append(binCollection)
+    # Set up queueing system for multi-threading
+    workerQueue = JoinableQueue(maxsize=0)
+    outputQueue = JoinableQueue(maxsize=0)
     
-    return newCollectionList
+    # Start up threads
+    workers = []
+    for _ in range(threads):
+        worker = QueuedBinSplitterProcess(workerQueue, outputQueue, \
+            shorterCovPct, longerCovPct)
+        worker.start()
+        workers.append(worker)
+    
+    outputWorker = CollectionWorkerProcess(outputQueue)
+    outputWorker.start()
+    
+    # Put bins in queue for worker threads
+    for binCollection in collectionList:
+        for interval in binCollection:
+            bin = interval.data
+            workerQueue.put(bin)
+    
+    # Exit out of the worker processes
+    for _ in range(threads):
+        workerQueue.put(None) # this is a marker for the worker processes to stop
+    for worker in workers:
+        worker.join()
+        worker.check_errors()
+    
+    # Receive output process' results
+    outputQueue.put(None) # marker for the output process to stop
+    binCollection = outputWorker.get_result()
+    outputWorker.join()
+    outputWorker.check_errors()
+    
+    return binCollection
 
 def iterative_bin_self_linking(binCollection, convergenceIters):
     '''

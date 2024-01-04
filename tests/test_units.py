@@ -2,14 +2,15 @@
 
 import os, sys, unittest, time
 import networkx as nx
-from multiprocessing import Queue
+from multiprocessing import JoinableQueue
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
 from modules.bins import BinCollection, Bin
 from modules.gff3_handling import iterate_gmap_gff3
-from modules.bin_handling import iterative_bin_self_linking
-from modules.thread_workers import GmapBinProcess, CollectionSeedProcess
+from modules.bin_handling import iterative_bin_self_linking, queued_bin_splitter
+from modules.thread_workers import GmapBinProcess, CollectionSeedProcess, \
+    QueuedBinSplitterProcess, CollectionWorkerProcess
 
 ###
 
@@ -612,7 +613,6 @@ class TestGmapBinProcess(unittest.TestCase):
         threads=4
         gff3Files = [os.path.join(dataDir, "gmap_normal.gff3")]
         binCollection = BinCollection()
-        thisQueue = Queue()
         
         # Act
         processor = GmapBinProcess(gff3Files, binCollection, 0.95)
@@ -623,6 +623,60 @@ class TestGmapBinProcess(unittest.TestCase):
         
         # Assert
         self.assertEqual(len(resultCollection), 2, "Should have two bins")
+
+class TestQueuedBinSplitterProcess(unittest.TestCase):
+    def test_queued_splitter_process(self):
+        # Arrange
+        threads=4
+        gff3Files = [os.path.join(dataDir, "gmap_fragments.gff3")]
+        binCollectionList = _generate_bin_collections(gff3Files)
+        workerQueue = JoinableQueue(maxsize=int(threads * 10))
+        outputQueue = JoinableQueue(maxsize=int(threads * 20))
+        
+        # Start up threads
+        workers = []
+        for _ in range(threads):
+            worker = QueuedBinSplitterProcess(workerQueue, outputQueue, 
+                                              shorterCovPct=0.90, longerCovPct=0.90)
+            worker.start()
+            workers.append(worker)
+        
+        outputWorker = CollectionWorkerProcess(outputQueue)
+        outputWorker.start()
+        
+        # Put bins in queue for worker threads
+        for binCollection in binCollectionList:
+            for interval in binCollection:
+                bin = interval.data
+                workerQueue.put(bin)
+        
+        # Exit out of the worker processes
+        for _ in range(threads):
+            workerQueue.put(None) # this is a marker for the worker processes to stop
+        for worker in workers:
+            worker.join()
+            worker.check_errors()
+        
+        # Receive output process' results
+        outputQueue.put(None) # marker for the output process to stop
+        binCollection = outputWorker.get_result()
+        outputWorker.join()
+        outputWorker.check_errors()
+        
+        # Assert
+        self.assertEqual(len(binCollection), 3, "Should have three bins")
+    
+    def test_queued_splitter_function(self):
+        # Arrange
+        threads=4
+        gff3Files = [os.path.join(dataDir, "gmap_fragments.gff3")]
+        binCollectionList = _generate_bin_collections(gff3Files)
+        
+        # Act
+        binCollection = queued_bin_splitter(binCollectionList, threads, 0.40, 0.40)
+        
+        # Assert
+        self.assertEqual(len(binCollection), 3, "Should have three bins")
 
 if __name__ == '__main__':
     unittest.main()

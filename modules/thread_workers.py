@@ -1,4 +1,4 @@
-import os, sys
+import os, sys, time
 import networkx as nx
 from multiprocessing import Process, Pipe, Queue
 
@@ -207,78 +207,132 @@ class GmapBinProcess(ReturningProcess):
         
         return binCollection, multiOverlaps
 
-class BinSplitterProcess(ReturningProcess):
+class QueuedBinSplitterProcess(BasicProcess):
     '''
     Allows for bin splitting to be run in parallel across multiple separate
-    BinCollection() objects.
+    BinCollection() objects. Utilises a queue to receive and send Bin() objects.
     
     Parameters:
-        binCollection -- an existing BinCollection object to split.
+        inputQueue -- a multiprocessing.Queue() object to receive Bin() objects from.
+        outputQueue -- a multiprocessing.Queue() object to send Bin() objects to.
         shorterCovPct -- a float value indicating the percentage of the shortest
                          sequence's coverage that must be covered by the longer sequence;
-                         default==0.30.
+                         default==0.40.
         longerCovPct -- a float value indicating the percentage of the longest
                         sequence's coverage that must be covered by the shorter sequence;
                         default==0.20.
-    Returns:
-        newBinCollection -- the updated BinCollection object with split bins.
     '''
-    def task(self, binCollection, shorterCovPct=0.30, longerCovPct=0.20):
-        newBinCollection = BinCollection()
+    def task(self, inputQueue, outputQueue, shorterCovPct=0.40, longerCovPct=0.20):
+        while True:
+            # Continue condition
+            if inputQueue.empty():
+                time.sleep(0.5)
+                continue
+            
+            # Grabbing condition
+            bin = inputQueue.get()
+            
+            # Exit condition
+            if bin == None:
+                inputQueue.task_done()
+                break
+            
+            # Perform work
+            binList = self._work_function(bin, shorterCovPct, longerCovPct)
+            
+            # Store result(s) in output queue
+            for bin in binList:
+                outputQueue.put(bin)
+            
+            # Mark work completion
+            inputQueue.task_done()
+    
+    def _work_function(self, bin, shorterCovPct, longerCovPct):
+        ids = list(bin.ids) # ensure we always use this in consistent ordering
+            
+        # Model links between sequences as a graph structure
+        idsGraph = nx.Graph()
+        idsGraph.add_nodes_from(ids)
         
-        # Iterate through bins
-        for interval in binCollection:
-            bin = interval.data
-            ids = list(bin.ids) # ensure we always use this in consistent ordering
-            
-            # Model links between sequences as a graph structure
-            idsGraph = nx.Graph()
-            idsGraph.add_nodes_from(ids)
-            
-            # Figure out which sequences have links through shared exons
-            for i in range(len(ids)-1):
-                for x in range(i+1, len(ids)):
-                    id1, id2 = ids[i], ids[x]
-                    exons1, exons2 = bin.exons[id1], bin.exons[id2]
-                    
-                    # Calculate the amount of overlap between their exons
-                    exonOverlap = sum([
-                        abs(max(exons1[n][0], exons2[m][0]) - min(exons1[n][1], exons2[m][1])) + 1
-                        for n in range(len(exons1))
-                        for m in range(len(exons2))
-                        if exons1[n][0] <= exons2[m][1] and exons1[n][1] >= exons2[m][0]
-                    ])
-                    
-                    # Calculate the percentage of each sequence being overlapped by the other
-                    len1 = sum([ end - start + 1 for start, end in exons1 ])
-                    len2 = sum([ end - start + 1 for start, end in exons2 ])
-                    
-                    pct1 = exonOverlap / len1
-                    pct2 = exonOverlap / len2
-                    
-                    # See if this meets any coverage pct cutoffs
-                    if len1 <= len2:
-                        shorterPct = pct1
-                        longerPct = pct2
-                    else:
-                        shorterPct = pct2
-                        longerPct = pct1
-                    
-                    if shorterPct >= shorterCovPct and longerPct >= longerCovPct:
-                        # If this met the cutoff, add an edge between these nodes in the graph
-                        idsGraph.add_edge(id1, id2)
-            
-            # Identify connected IDs which form clusters
-            for connectedIDs in nx.connected_components(idsGraph):
-                start = 1 # start is not needed anymore
-                end = 10 # end is not needed anymore
-                exonsDict = { seqID : [] for seqID in connectedIDs } # exons are not needed anymore
+        # Figure out which sequences have links through shared exons
+        for i in range(len(ids)-1):
+            for x in range(i+1, len(ids)):
+                id1, id2 = ids[i], ids[x]
+                exons1, exons2 = bin.exons[id1], bin.exons[id2]
                 
-                # Create a bin for this split cluster
-                newBin = Bin(bin.contig, start, end)
-                newBin.union(connectedIDs, exonsDict)
+                # Calculate the amount of overlap between their exons
+                exonOverlap = sum([
+                    abs(max(exons1[n][0], exons2[m][0]) - min(exons1[n][1], exons2[m][1])) + 1
+                    for n in range(len(exons1))
+                    for m in range(len(exons2))
+                    if exons1[n][0] <= exons2[m][1] and exons1[n][1] >= exons2[m][0]
+                ])
                 
-                # Store it in the new BinCollection
-                newBinCollection.add(newBin)
+                # Calculate the percentage of each sequence being overlapped by the other
+                len1 = sum([ end - start + 1 for start, end in exons1 ])
+                len2 = sum([ end - start + 1 for start, end in exons2 ])
+                
+                pct1 = exonOverlap / len1
+                pct2 = exonOverlap / len2
+                
+                # See if this meets any coverage pct cutoffs
+                if len1 <= len2:
+                    shorterPct = pct1
+                    longerPct = pct2
+                else:
+                    shorterPct = pct2
+                    longerPct = pct1
+                
+                if shorterPct >= shorterCovPct and longerPct >= longerCovPct:
+                    # If this met the cutoff, add an edge between these nodes in the graph
+                    idsGraph.add_edge(id1, id2)
         
-        return newBinCollection
+        # Identify connected IDs which form clusters
+        binList = []
+        for connectedIDs in nx.connected_components(idsGraph):
+            start = 1 # start is not needed anymore
+            end = 10 # end is not needed anymore
+            exonsDict = { seqID : [] for seqID in connectedIDs } # exons are not needed anymore
+            
+            # Create a bin for this split cluster
+            newBin = Bin(bin.contig, start, end)
+            newBin.union(connectedIDs, exonsDict)
+            
+            binList.append(newBin)
+        
+        return binList
+
+class CollectionWorkerProcess(ReturningProcess):
+    '''
+    This provides a modified Process which allows for multiple BinSplitter objects to
+    run in parallel, feeding their output to an instance of this Class which combines
+    their results into a new BinCollection.
+    
+    Parameters:
+        inputQueue -- a multiprocessing.Queue object that receives outputs from worker threads.
+    '''
+    def task(self, inputQueue):
+        binCollection = BinCollection()
+        
+        # Process results as they become available
+        while True:
+            # Continue condition
+            if inputQueue.empty():
+                time.sleep(0.5)
+                continue
+            
+            # Grabbing condition
+            bin = inputQueue.get()
+            
+            # Exit condition
+            if bin == None:
+                inputQueue.task_done()
+                break
+            
+            # Perform work
+            binCollection.add(bin)
+            
+            # Mark work completion
+            inputQueue.task_done()
+
+        return binCollection
