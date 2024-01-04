@@ -2,7 +2,7 @@
 
 import os, sys, unittest, time
 import networkx as nx
-from multiprocessing import JoinableQueue
+from multiprocessing import Queue
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
@@ -10,7 +10,7 @@ from modules.bins import BinCollection, Bin
 from modules.gff3_handling import iterate_gmap_gff3
 from modules.bin_handling import iterative_bin_self_linking, queued_bin_splitter
 from modules.thread_workers import GmapBinProcess, CollectionSeedProcess, \
-    QueuedBinSplitterProcess, CollectionWorkerProcess
+    QueuedBinSplitterProcess
 
 ###
 
@@ -630,19 +630,14 @@ class TestQueuedBinSplitterProcess(unittest.TestCase):
         threads=4
         gff3Files = [os.path.join(dataDir, "gmap_fragments.gff3")]
         binCollectionList = _generate_bin_collections(gff3Files)
-        workerQueue = JoinableQueue(maxsize=int(threads * 10))
-        outputQueue = JoinableQueue(maxsize=int(threads * 20))
+        workerQueue = Queue(maxsize=0)
         
         # Start up threads
         workers = []
         for _ in range(threads):
-            worker = QueuedBinSplitterProcess(workerQueue, outputQueue, 
-                                              shorterCovPct=0.90, longerCovPct=0.90)
+            worker = QueuedBinSplitterProcess(workerQueue, shorterCovPct=0.90, longerCovPct=0.90)
             worker.start()
             workers.append(worker)
-        
-        outputWorker = CollectionWorkerProcess(outputQueue)
-        outputWorker.start()
         
         # Put bins in queue for worker threads
         for binCollection in binCollectionList:
@@ -653,16 +648,20 @@ class TestQueuedBinSplitterProcess(unittest.TestCase):
         # Exit out of the worker processes
         for _ in range(threads):
             workerQueue.put(None) # this is a marker for the worker processes to stop
+        
+        resultBinCollections = []
         for worker in workers:
+            binCollection = worker.get_result()
             worker.join()
             worker.check_errors()
+            
+            resultBinCollections.append(binCollection)
         
-        # Receive output process' results
-        outputQueue.put(None) # marker for the output process to stop
-        binCollection = outputWorker.get_result()
-        outputWorker.join()
-        outputWorker.check_errors()
-        
+        # Merge all the bin collections together
+        binCollection = resultBinCollections[0]
+        for otherBinCollection in resultBinCollections[1:]:
+            binCollection.merge(otherBinCollection)
+            
         # Assert
         self.assertEqual(len(binCollection), 3, "Should have three bins")
     

@@ -207,14 +207,13 @@ class GmapBinProcess(ReturningProcess):
         
         return binCollection, multiOverlaps
 
-class QueuedBinSplitterProcess(BasicProcess):
+class QueuedBinSplitterProcess(ReturningProcess):
     '''
     Allows for bin splitting to be run in parallel across multiple separate
     BinCollection() objects. Utilises a queue to receive and send Bin() objects.
     
     Parameters:
         inputQueue -- a multiprocessing.Queue() object to receive Bin() objects from.
-        outputQueue -- a multiprocessing.Queue() object to send Bin() objects to.
         shorterCovPct -- a float value indicating the percentage of the shortest
                          sequence's coverage that must be covered by the longer sequence;
                          default==0.40.
@@ -222,7 +221,9 @@ class QueuedBinSplitterProcess(BasicProcess):
                         sequence's coverage that must be covered by the shorter sequence;
                         default==0.20.
     '''
-    def task(self, inputQueue, outputQueue, shorterCovPct=0.40, longerCovPct=0.20):
+    def task(self, inputQueue, shorterCovPct=0.40, longerCovPct=0.20):
+        binCollection = BinCollection()
+        
         while True:
             # Continue condition
             if inputQueue.empty():
@@ -234,22 +235,20 @@ class QueuedBinSplitterProcess(BasicProcess):
             
             # Exit condition
             if bin == None:
-                inputQueue.task_done()
                 break
             
             # Perform work
             binList = self._work_function(bin, shorterCovPct, longerCovPct)
             
-            # Store result(s) in output queue
+            # Store results
             for bin in binList:
-                outputQueue.put(bin)
-            
-            # Mark work completion
-            inputQueue.task_done()
+                binCollection.add(bin)
+        
+        return binCollection
     
     def _work_function(self, bin, shorterCovPct, longerCovPct):
         ids = list(bin.ids) # ensure we always use this in consistent ordering
-            
+        
         # Model links between sequences as a graph structure
         idsGraph = nx.Graph()
         idsGraph.add_nodes_from(ids)
@@ -301,38 +300,3 @@ class QueuedBinSplitterProcess(BasicProcess):
             binList.append(newBin)
         
         return binList
-
-class CollectionWorkerProcess(ReturningProcess):
-    '''
-    This provides a modified Process which allows for multiple BinSplitter objects to
-    run in parallel, feeding their output to an instance of this Class which combines
-    their results into a new BinCollection.
-    
-    Parameters:
-        inputQueue -- a multiprocessing.Queue object that receives outputs from worker threads.
-    '''
-    def task(self, inputQueue):
-        binCollection = BinCollection()
-        
-        # Process results as they become available
-        while True:
-            # Continue condition
-            if inputQueue.empty():
-                time.sleep(0.5)
-                continue
-            
-            # Grabbing condition
-            bin = inputQueue.get()
-            
-            # Exit condition
-            if bin == None:
-                inputQueue.task_done()
-                break
-            
-            # Perform work
-            binCollection.add(bin)
-            
-            # Mark work completion
-            inputQueue.task_done()
-
-        return binCollection

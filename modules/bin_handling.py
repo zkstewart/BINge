@@ -1,8 +1,8 @@
 import os
-from multiprocessing import JoinableQueue
+from multiprocessing import Queue
 
 from .thread_workers import CollectionSeedProcess, GmapBinProcess, \
-    QueuedBinSplitterProcess, CollectionWorkerProcess
+    QueuedBinSplitterProcess
 
 def generate_bin_collections(workingDirectory, threads):
     '''
@@ -164,20 +164,15 @@ def queued_bin_splitter(collectionList, threads, shorterCovPct=0.40, longerCovPc
     Returns:
         newCollectionList -- a new BinCollection object to replace the original one.
     '''
-    # Set up queueing system for multi-threading
-    workerQueue = JoinableQueue(maxsize=0)
-    outputQueue = JoinableQueue(maxsize=0)
+    # Set up queueing system for processes
+    workerQueue = Queue(maxsize=0)
     
-    # Start up threads
+    # Start up processes
     workers = []
     for _ in range(threads):
-        worker = QueuedBinSplitterProcess(workerQueue, outputQueue, \
-            shorterCovPct, longerCovPct)
+        worker = QueuedBinSplitterProcess(workerQueue, shorterCovPct, longerCovPct)
         worker.start()
         workers.append(worker)
-    
-    outputWorker = CollectionWorkerProcess(outputQueue)
-    outputWorker.start()
     
     # Put bins in queue for worker threads
     for binCollection in collectionList:
@@ -188,15 +183,19 @@ def queued_bin_splitter(collectionList, threads, shorterCovPct=0.40, longerCovPc
     # Exit out of the worker processes
     for _ in range(threads):
         workerQueue.put(None) # this is a marker for the worker processes to stop
+    
+    resultBinCollections = []
     for worker in workers:
+        binCollection = worker.get_result()
         worker.join()
         worker.check_errors()
+        
+        resultBinCollections.append(binCollection)
     
-    # Receive output process' results
-    outputQueue.put(None) # marker for the output process to stop
-    binCollection = outputWorker.get_result()
-    outputWorker.join()
-    outputWorker.check_errors()
+    # Merge all the bin collections together
+    binCollection = resultBinCollections[0]
+    for otherBinCollection in resultBinCollections[1:]:
+        binCollection.merge(otherBinCollection)
     
     return binCollection
 
