@@ -230,16 +230,52 @@ class BinCollection:
                     newBin.merge(ovlBin)
                 newBin.merge(bin.data)
     
+    def __len__(self):
+        return len(self.bins)
+    
+    def __iter__(self):
+        return iter(self.bins)
+    
+    def __repr__(self):
+        return "<BinCollection object;num_bins={0}>".format(
+            len(self)
+        )
+
+class BinBundle:
+    '''
+    Encapsulates a simple list of Bin objects for storage and manipulation when the searching
+    of an IntervalTree (as provided by BinCollection) is not needed.
+    
+    The naming is arbitrary. A bundle is less organised than a collection I suppose?
+    '''
+    def __init__(self):
+        self.bins = []
+    
+    def add(self, bin):
+        self.bins.append(bin)
+    
+    def merge(self, otherBinCollection, otherType="BinCollection"):
+        '''
+        Merges the otherBinCollection into this one, adding all its Bins into this. This
+        results in changes to this object. Can handle BinBundle or BinCollection
+        objects.
+        '''
+        assert otherType in ["BinCollection", "BinBundle"], \
+            "otherType must be either 'BinCollection' or 'BinBundle'"
+        
+        if otherType == "BinCollection":
+            for bin in otherBinCollection:
+                self.add(bin.data)
+        else:
+            for bin in otherBinCollection:
+                self.add(bin)
+    
     def link_bins(self, VOTE_THRESHOLD = 0.5):
         '''
         This will attempt to merge bins that are "equivalent" across the genomes using
         a graph-based approach to modelling the relationships between the bins. The
-        result is a BinCollection that unifies all input data and is appropriate for
+        result is a BinBundle that unifies all input data and is appropriate for
         sequence clustering.
-        
-        After performing this process, you should expect that the bin attributes
-        relating to sequence coordinates i.e., contig, start, and end, will no
-        longer be accurate. *Don't try to use them afterwards!*
         
         Note: this function is not guaranteed to produce a stable output i.e., if
         you feed its result back in, you may get different results. It should
@@ -250,9 +286,9 @@ class BinCollection:
             VOTE_THRESHOLD -- a float greater than 0, and less than or equal to 1.0.
                               This represents a ratio 
         Returns:
-            linkedBinCollection -- a NEW BinCollection object where bins from the
-                                   current object have been merged where deemed
-                                   appropriate.
+            linkedBinBundle -- a NEW BinBundle object where bins from the
+                               current object have been merged where deemed
+                               appropriate.
         '''
         assert 0 < VOTE_THRESHOLD <= 1.0, \
             "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
@@ -262,7 +298,7 @@ class BinCollection:
         binDict = {}
         binCounter = 0
         for bin in self:
-            binDict[binCounter] = bin.data
+            binDict[binCounter] = bin
             binCounter += 1
         
         # Figure out which bins have links through shared sequences
@@ -297,192 +333,16 @@ class BinCollection:
         
         # Merge bins on the basis of link identification
         "At this point, the bins will lose any meaning they have in their .contig, .start, etc"
-        linkedBinCollection = BinCollection()
+        linkedBinBundle = BinBundle()
         for connectedBins in nx.connected_components(binGraph):
             connectedBins = list(connectedBins)
             
             newBin = binDict[connectedBins[0]]
             for index in connectedBins[1:]:
                 newBin.union(binDict[index].ids, binDict[index].exons)
-            linkedBinCollection.add(newBin)
+            linkedBinBundle.add(newBin)
         
-        return linkedBinCollection
-    
-    def fix_fragments(self, multiOverlap, VOTE_THRESHOLD = 0.5):
-        '''
-        Attempt to merge bins that are likely to be fragmentary.
-        
-        It does this using 'multiOverlap', a list of GMAP alignment Features which
-        overlap more than one Bin. It is assumed that these Bins have been previously
-        seeded from the genome's annotation, and hence this function will help us to
-        identify situations where the genome annotation has flaws.
-        
-        The method of performing this is similar to that seen in bin_self_linker()
-        where it's leveraging the graph-based approach to model bins which should
-        merge. Merging decisions are made based on comparing the 'weight' of an edge
-        (i.e., how many GMAP alignments support the bin's merging) to the number of
-        IDs which do not support the merging (i.e., how many GMAP alignments only
-        overlapped a single bin). The vote threshold decides whether we should merge
-        or not.
-        
-        Note: it's unsure if this function will produce a stable output i.e., it's
-        possible that, if you feed its result back in, you may get different results.
-        Theoretically, the first pass of this function should capture just about
-        everything so it probably doesn't need to be run iteratively.
-        
-        Parameters:
-            multiOverlap -- a list containing GFF3 Features which were found to
-                            overlap more than one Bin in the binCollection.
-            VOTE_THRESHOLD -- a float value in the range of 0 < VOTE_THRESHOLD <= 1.0
-                              determining what percentage (e.g., 0.5 = 50%) of GMAP
-                              alignments should support bin merging via overlap before
-                              we actually merge the bins together.
-        Returns:
-            linkedBinCollection -- a NEW BinCollection object where bins from the
-                                   current object have been merged where deemed
-                                   appropriate.
-        '''
-        assert 0 < VOTE_THRESHOLD <= 1.0, \
-            "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
-        
-        # Format bins into a dictionary
-        binDict = {}
-        numBins = 0
-        for bin in self:
-            binDict[bin.data.sha256()] = bin.data
-            numBins += 1
-        assert len(binDict) == numBins, \
-            "Hash collision occurred! I can't handle this, and you should buy a lottery ticket..."
-        
-        # Model links between bins as a graph structure
-        binGraph = nx.Graph()
-        binGraph.add_nodes_from(binDict.keys())
-        
-        # Process bins that are multi-overlapped
-        for overlappingFeature in multiOverlap:
-            # Find the bins which are overlapped
-            binOverlap = self.find(overlappingFeature.contig, overlappingFeature.start, overlappingFeature.end)
-            assert len(binOverlap) > 1, "Found a non-multi-overlapper somehow?"
-            binOverlap = [ bin.sha256() for bin in binOverlap ]
-            
-            # Add edges between overlapped bins
-            for i in range(0, len(binOverlap)-1):
-                for x in range(i+1, len(binOverlap)):
-                    baseID = overlappingFeature.ID.rsplit(".", maxsplit=1)[0]
-                    exons = Bin.format_exons_from_gff3_feature(overlappingFeature)
-                    
-                    # Add new edge
-                    if not binGraph.has_edge(binOverlap[i], binOverlap[x]):
-                        binGraph.add_edge(binOverlap[i], binOverlap[x],
-                                        weight=1, ids=[baseID],
-                                        exons={baseID: exons})
-                    
-                    # Increase weight of existing edge
-                    else:
-                        binGraph[binOverlap[i]][binOverlap[x]]["weight"] += 1
-                        binGraph[binOverlap[i]][binOverlap[x]]["ids"].append(baseID)
-                        binGraph[binOverlap[i]][binOverlap[x]]["exons"][baseID] = exons
-        
-        # Create a new network with edges set if they exceed the unlinked number of IDs
-        finalGraph = nx.Graph()
-        finalGraph.add_nodes_from(binDict.keys())
-        
-        for connectedBins in nx.connected_components(binGraph):
-            connectedBins = list(connectedBins)
-            
-            # Check that this bin is fully connected
-            "Non-fully connected graphs at this stage are dodgy"
-            allConnected = True
-            for i in range(0, len(connectedBins)-1):
-                for x in range(i+1, len(connectedBins)):
-                    binHash1 = connectedBins[i]
-                    binHash2 = connectedBins[x]
-                    try:
-                        binGraph[binHash1][binHash2]
-                    except:
-                        allConnected = False
-                        break # small speed up, won't fully exit loop
-            if allConnected == False:
-                continue
-            
-            # Check weights for voting and making connections between nodes
-            for i in range(0, len(connectedBins)-1):
-                for x in range(i+1, len(connectedBins)):
-                    binHash1 = connectedBins[i]
-                    binHash2 = connectedBins[x]
-                    edgeWeight = binGraph[binHash1][binHash2]["weight"]
-                    distanceWeight = sum([
-                        len(binDict[binHash1].ids), len(binDict[binHash2].ids)
-                    ])
-                    
-                    mergeVote = edgeWeight / (edgeWeight + distanceWeight)
-                    if mergeVote >= VOTE_THRESHOLD:
-                        finalGraph.add_edge(binHash1, binHash2,
-                                            ids = binGraph[binHash1][binHash2]["ids"],
-                                            exons = binGraph[binHash1][binHash2]["exons"])
-        
-        # Merge bins on the basis of link identification
-        linkedBinCollection = BinCollection()
-        for connectedBins in nx.connected_components(finalGraph):
-            connectedBins = list(connectedBins)
-            
-            # Check that this bin is fully connected
-            "Non-fully connected graphs at this stage cause errors"
-            allConnected = True
-            binHash1 = connectedBins[0]
-            for binHash2 in connectedBins[1:]:
-                try:
-                    finalGraph[binHash1][binHash2]
-                except:
-                    allConnected = False
-                    break
-            
-            # Merge bins if they're fully connected
-            if allConnected == True:
-                newBin = binDict[connectedBins[0]]
-                binHash1 = connectedBins[0]
-                
-                for binHash2 in connectedBins[1:]:
-                    newBin2 = Bin(newBin.contig, binDict[binHash2].start, binDict[binHash2].end)
-                    newBin2.ids = set(finalGraph[binHash1][binHash2]["ids"]).union(binDict[binHash2].ids)
-                    
-                    newBin2.exons = finalGraph[binHash1][binHash2]["exons"]
-                    newBin2.exons.update(binDict[binHash2].exons)
-                    
-                    newBin.merge(newBin2)
-                linkedBinCollection.add(newBin)
-            
-            # Skip the merger if they're not fully connected
-            else:
-                for binHash in connectedBins:
-                    linkedBinCollection.add(binDict[binHash])
-        
-        return linkedBinCollection
-    
-    def fix_chimeras(self, VOTE_THRESHOLD = 0.5):
-        '''
-        Attempt to fragment bins that are likely to be chimeric. This is different
-        than what BinSplitter does, as it's not merely separating bin members into
-        2 or more individual bins. Instead, it's cutting one or more lines through
-        a bin, and ...
-        
-        I think this function is too hard to implement here. It's really deserving
-        of being its own fully fledged program.
-        
-        Parameters:
-            VOTE_THRESHOLD -- a float value in the range of 0 < VOTE_THRESHOLD <= 1.0
-                              determining what percentage (e.g., 0.5 = 50%) of GMAP
-                              alignments should support bin merging via overlap before
-                              we actually merge the bins together.
-        Returns:
-            linkedBinCollection -- a NEW BinCollection object where bins from the
-                                   current object have been merged where deemed
-                                   appropriate.
-        '''
-        assert 0 < VOTE_THRESHOLD <= 1.0, \
-            "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
-        
-        raise NotImplementedError()
+        return linkedBinBundle
     
     def __len__(self):
         return len(self.bins)
@@ -491,6 +351,6 @@ class BinCollection:
         return iter(self.bins)
     
     def __repr__(self):
-        return "<BinCollection object;num_bins={0}>".format(
+        return "<BinBundle object;num_bins={0}>".format(
             len(self)
         )

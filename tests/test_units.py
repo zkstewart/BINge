@@ -6,7 +6,7 @@ from multiprocessing import Queue
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
-from modules.bins import BinCollection, Bin
+from modules.bins import BinCollection, Bin, BinBundle
 from modules.gff3_handling import iterate_gmap_gff3
 from modules.bin_handling import iterative_bin_self_linking, queued_bin_splitter
 from modules.thread_workers import GmapBinProcess, CollectionSeedProcess, \
@@ -405,41 +405,6 @@ class TestNetworkX(unittest.TestCase):
             connectedBins = list(connectedBins)
             self.assertEqual(len(connectedBins), 3, "Should have 3 connected components")
 
-class TestFragmentMerger(unittest.TestCase):
-    def test_fragment_merger(self):
-        '''
-        This test should result in the fragmented gene bins being merged together
-        '''
-        # Arrange
-        gff3Files = [os.path.join(dataDir, "annotation_fragments.gff3")]
-        binCollectionList = _generate_bin_collections(gff3Files)
-        binCollection = binCollectionList[0]
-        gmapFiles = [os.path.join(dataDir, "gmap_fragments.gff3")]
-        
-        binCollectionList, multiOverlaps = _populate_bin_collections(binCollectionList, gmapFiles,
-                                                                     threads=1, gmapIdentity=0.95)
-        
-        binCollectionList = _generate_bin_collections(gff3Files)
-        binCollection = binCollectionList[0] # offset the change to this test
-        
-        # Act
-        origNumBins = len(binCollection)
-        origNumIDs = [ len(bin.data.ids) for bin in binCollection ]
-        
-        for i in range(len(binCollectionList)):
-            binCollection = binCollectionList[i].fix_fragments(multiOverlaps[i])
-            binCollectionList[i] = binCollection
-        
-        newNumBins = len(binCollection)
-        newNumIDs = [ len(bin.data.ids) for bin in binCollection ]
-        
-        # Assert
-        self.assertEqual(origNumBins, 2, "Should contain 2 bins")
-        self.assertEqual(newNumBins, 1, "Should contain 1 bin")
-        
-        self.assertEqual(origNumIDs, [1, 1], "Should contain 2 bins with 1 ID each")
-        self.assertEqual(newNumIDs, [4], "Should contain 1 bin with 4 IDs")
-
 class TestBinLinking(unittest.TestCase):
     def test_bin_selfmerger(self):
         '''
@@ -476,13 +441,16 @@ class TestBinLinking(unittest.TestCase):
         mergedExons = [ bin.data.exons for bin in binCollection ]
         mergedContigs = [ bin.data.contig for bin in binCollection ]
         
-        binCollection = iterative_bin_self_linking(binCollection, convergenceIters)
+        binBundle = BinBundle()
+        binBundle.merge(binCollection, otherType="BinCollection")
         
-        newNumBins = len(binCollection)
-        newNumIDs = [ len(bin.data.ids) for bin in binCollection ]
-        newIDs = [ bin.data.ids for bin in binCollection ]
-        newExons = [ bin.data.exons for bin in binCollection ]
-        newContigs = [ bin.data.contig for bin in binCollection ]
+        binBundle = iterative_bin_self_linking(binBundle, convergenceIters)
+        
+        newNumBins = len(binBundle)
+        newNumIDs = [ len(bin.ids) for bin in binBundle ]
+        newIDs = [ bin.ids for bin in binBundle ]
+        newExons = [ bin.exons for bin in binBundle ]
+        newContigs = [ bin.contig for bin in binBundle ]
         
         # Assert
         self.assertEqual(origNumBins, [1, 1, 1, 1], "Should contain 4 binCollections with 1 bin each")
@@ -665,17 +633,28 @@ class TestQueuedBinSplitterProcess(unittest.TestCase):
         # Assert
         self.assertEqual(len(binCollection), 3, "Should have three bins")
     
-    def test_queued_splitter_function(self):
+    def test_queued_splitter_function_splits(self):
         # Arrange
         threads=4
         gff3Files = [os.path.join(dataDir, "gmap_fragments.gff3")]
         binCollectionList = _generate_bin_collections(gff3Files)
         
         # Act
-        binCollection = queued_bin_splitter(binCollectionList, threads, 0.40, 0.40)
+        binCollection = queued_bin_splitter(binCollectionList, threads, 0.90, 0.90)
         
         # Assert
         self.assertEqual(len(binCollection), 3, "Should have three bins")
 
+    def test_queued_splitter_function_doesnt_split(self):
+        # Arrange
+        threads=4
+        gff3Files = [os.path.join(dataDir, "gmap_fragments.gff3")]
+        binCollectionList = _generate_bin_collections(gff3Files)
+        
+        # Act
+        binCollection = queued_bin_splitter(binCollectionList, threads, 0.10, 0.10)
+        
+        # Assert
+        self.assertEqual(len(binCollection), 1, "Should have 1 bin")
 if __name__ == '__main__':
     unittest.main()

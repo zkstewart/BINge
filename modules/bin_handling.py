@@ -162,7 +162,7 @@ def queued_bin_splitter(collectionList, threads, shorterCovPct=0.40, longerCovPc
                         sequence's coverage that must be covered by the shorter sequence;
                         default==0.20.
     Returns:
-        newCollectionList -- a new BinCollection object to replace the original one.
+        newBinBundle -- a new BinBundle object to replace the original BinCollection.
     '''
     # Set up queueing system for processes
     workerQueue = Queue(maxsize=0)
@@ -184,35 +184,35 @@ def queued_bin_splitter(collectionList, threads, shorterCovPct=0.40, longerCovPc
     for _ in range(threads):
         workerQueue.put(None) # this is a marker for the worker processes to stop
     
-    resultBinCollections = []
+    resultBinBundles = []
     for worker in workers:
         binCollection = worker.get_result()
         worker.join()
         worker.check_errors()
         
-        resultBinCollections.append(binCollection)
+        resultBinBundles.append(binCollection)
     
     # Merge all the bin collections together
-    binCollection = resultBinCollections[0]
-    for otherBinCollection in resultBinCollections[1:]:
-        binCollection.merge(otherBinCollection)
+    binBundle = resultBinBundles[0]
+    for otherBinBundle in resultBinBundles[1:]:
+        binBundle.merge(otherBinBundle, otherType="BinBundle")
     
-    return binCollection
+    return binBundle
 
-def iterative_bin_self_linking(binCollection, convergenceIters):
+def iterative_bin_self_linking(binBundle, convergenceIters):
     '''
-    Links the bins in a BinCollection to themselves iteratively until
+    Links the bins in a BinBundle to themselves iteratively until
     it converges or convergenceIters is reached.
     
     Parameters:
-        binCollection -- a BinCollection object
+        binBundle -- a BinBundle object
         convergenceIters -- an integer providing a maximum limit for
                             the amount of iterations that may occur.
     '''
-    prevCollectionCount = len(binCollection.bins)
+    prevCollectionCount = len(binBundle)
     for _ in range(convergenceIters):
-        binCollection = binCollection.link_bins()
-        if len(binCollection.bins) == prevCollectionCount:
+        binBundle = binBundle.link_bins()
+        if len(binBundle) == prevCollectionCount:
             break
-        prevCollectionCount = len(binCollection.bins)
-    return binCollection
+        prevCollectionCount = len(binBundle)
+    return binBundle

@@ -3,7 +3,7 @@ import networkx as nx
 from multiprocessing import Process, Pipe, Queue
 
 from .gff3_handling import GFF3, iterate_gmap_gff3
-from .bins import BinCollection, Bin
+from .bins import Bin, BinBundle, BinCollection
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_MapIO import GMAP_DB
@@ -220,9 +220,13 @@ class QueuedBinSplitterProcess(ReturningProcess):
         longerCovPct -- a float value indicating the percentage of the longest
                         sequence's coverage that must be covered by the shorter sequence;
                         default==0.20.
+    Returns:
+        newBinBundle -- a BinBundle() object containing all the new bins created. Since
+                        start, stop, exons, etc. should no longer be relevant, we do not
+                        return a BinCollection() object.
     '''
     def task(self, inputQueue, shorterCovPct=0.40, longerCovPct=0.20):
-        binCollection = BinCollection()
+        binBundle = BinBundle()
         
         while True:
             # Continue condition
@@ -242,9 +246,9 @@ class QueuedBinSplitterProcess(ReturningProcess):
             
             # Store results
             for bin in binList:
-                binCollection.add(bin)
+                binBundle.add(bin)
         
-        return binCollection
+        return binBundle
     
     def _work_function(self, bin, shorterCovPct, longerCovPct):
         ids = list(bin.ids) # ensure we always use this in consistent ordering
