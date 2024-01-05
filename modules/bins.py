@@ -168,8 +168,13 @@ class Bin:
                 exonFeature.coords
                 for exonFeature in gff3Feature.exon
             ])
+        elif hasattr(gff3Feature, "CDS"):
+            exons = sorted([
+                cdsFeature.coords
+                for cdsFeature in gff3Feature.CDS
+            ])
         else:
-            raise ValueError("GFF3 feature does not have exon or mRNA subfeatures!")
+            raise ValueError("GFF3 feature does not have exon, CDS, or mRNA subfeatures!")
         
         return exons
 

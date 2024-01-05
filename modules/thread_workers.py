@@ -135,11 +135,7 @@ class CollectionSeedProcess(ReturningProcess):
                         "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
                         continue
                 else:
-                    try:
-                        featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
-                    except:
-                        "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
-                        continue
+                    featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
                 
                 # See if this overlaps an existing bin
                 binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
