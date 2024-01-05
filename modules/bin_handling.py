@@ -4,7 +4,7 @@ from multiprocessing import Queue
 from .thread_workers import CollectionSeedProcess, GmapBinProcess, \
     QueuedBinSplitterProcess
 
-def generate_bin_collections(workingDirectory, threads):
+def generate_bin_collections(workingDirectory, threads, isMicrobial):
     '''
     Receives a list of genome FASTA files and generates bin collections each of these
     into BinCollection structures which are separately stored in the returned list.
@@ -13,6 +13,9 @@ def generate_bin_collections(workingDirectory, threads):
         workingDirectory -- a string indicating an existing directory with genome GFF3
                             and/or FASTA files in the subdirectory 'genomes'.
         threads -- an integer indicating how many threads to run.
+        isMicrobial -- a boolean indicating whether the genomes are microbial or not which,
+                       in turn, determines whether we will parse mRNA features (False) or
+                       gene features (True).
     Returns:
         collectionList -- a list containing BinCollections in numerical order of the genome
                           files.
@@ -63,7 +66,7 @@ def generate_bin_collections(workingDirectory, threads):
             if i+x < len(filePairs): # parent loop may excess if n > the number of GMAP files
                 gff3File, _, _ = filePairs[i+x]
                 
-                seedWorkerThread = CollectionSeedProcess(gff3File)
+                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial)
                 seedWorkerThread.start()
                 processing.append(seedWorkerThread)
         

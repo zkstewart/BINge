@@ -113,9 +113,11 @@ class CollectionSeedProcess(ReturningProcess):
     Parameters:
         gff3File -- a string pointing to a GFF3 file giving annotations for a genome,
                     or None if no pre-seeding is to occur.
-        queue -- a multiprocessing.Queue() object to send the return value through.
+        isMicrobial -- a boolean indicating whether the genomes are microbial or not which,
+                       in turn, determines whether we will parse mRNA features (False) or
+                       gene features (True).
     '''
-    def task(self, gff3File):
+    def task(self, gff3File, isMicrobial=False):
         binCollection = BinCollection()
         
         # Seed bin collection if GFF3 is available
@@ -125,12 +127,19 @@ class CollectionSeedProcess(ReturningProcess):
                 
                 # Create a bin for this feature
                 featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
-                try:
-                    for mrnaFeature in geneFeature.mRNA:
-                        featureBin.add(mrnaFeature.ID, Bin.format_exons_from_gff3_feature(mrnaFeature))
-                except:
-                    "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
-                    continue
+                if not isMicrobial:
+                    try:
+                        for mrnaFeature in geneFeature.mRNA:
+                            featureBin.add(mrnaFeature.ID, Bin.format_exons_from_gff3_feature(mrnaFeature))
+                    except:
+                        "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
+                        continue
+                else:
+                    try:
+                        featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
+                    except:
+                        "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
+                        continue
                 
                 # See if this overlaps an existing bin
                 binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)

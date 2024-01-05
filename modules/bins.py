@@ -152,10 +152,7 @@ class Bin:
         assert gff3Feature.type in ["gene", "mRNA"], \
             "Can only format exons from a GFF3 feature that is a gene or mRNA!"
         
-        if gff3Feature.type == "gene":
-            assert hasattr(gff3Feature, "mRNA"), \
-                "Gene GFF3 feature does not have mRNA attribute; cannot format exons..."
-            
+        if hasattr(gff3Feature, "mRNA"):
             tree = IntervalTree.from_tuples([
                 [ exonFeature.start, exonFeature.end+1 ] # prevent errors for 1-bp exons
                 for mrnaFeature in gff3Feature.mRNA
@@ -166,12 +163,14 @@ class Bin:
                 [interval.begin, interval.end-1]
                 for interval in tree
             ])
-        else:
+        elif hasattr(gff3Feature, "exon"):
             exons = sorted([
                 exonFeature.coords
                 for exonFeature in gff3Feature.exon
             ])
-
+        else:
+            raise ValueError("GFF3 feature does not have exon or mRNA subfeatures!")
+        
         return exons
 
 class BinCollection:

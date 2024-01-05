@@ -601,7 +601,7 @@ def main():
     # ... or begin pre-external clustering BINge
     else:
         # Set up a bin collection structure for each genome
-        collectionList = generate_bin_collections(args.outputDirectory, args.threads)
+        collectionList = generate_bin_collections(args.outputDirectory, args.threads, args.isMicrobial)
         if args.debug:
             print(f"# Generated a list with {len(collectionList)} collections")
             for index, _cl in enumerate(collectionList):
