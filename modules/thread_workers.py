@@ -38,6 +38,28 @@ def add_bin_to_collection(binCollection, binOverlap, newBin):
         # ... and add the new bin in its place
         binCollection.add(newBin)
 
+def find_overlapping_bins(binCollection, binQuery):
+    '''
+    Assistant function to help with taking the bins found to overlap a query region
+    via the IntervalTree underlying a BinCollection, and then filtering those bins
+    to only those that share a substantial proportion of overlap.
+    
+    Parameters:
+        binCollection -- a BinCollection() object to use the .find() method on.
+        binQuery -- a Bin() which we want to find overlapping bins from the binCollection
+                    from.
+    Returns:
+        binOverlap -- a list of Bin() objects that overlap the binQuery, and share a
+                      substantial proportion of overlap.
+    '''
+    foundBins = binCollection.find(binQuery.contig, binQuery.start, binQuery.end)
+    
+    binOverlap = []
+    for bin in foundBins:
+        if binQuery.is_overlapping(bin):
+            binOverlap.append(bin)
+    return binOverlap
+
 def _create_novel_bin(dataDict):
     thisBin = Bin(dataDict["contig"], dataDict["start"], dataDict["end"])
     thisBin.add(dataDict["Name"], dataDict["exons"])
@@ -142,7 +164,7 @@ class CollectionSeedProcess(ReturningProcess):
                         continue
                 
                 # See if this overlaps an existing bin
-                binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
+                binOverlap = find_overlapping_bins(binCollection, featureBin)
                 
                 # Handle the storing of this bin in its collection
                 add_bin_to_collection(binCollection, binOverlap, featureBin)
@@ -159,9 +181,7 @@ class GmapBinProcess(ReturningProcess):
         minIdentity -- (optional) a float fraction indicating what identity value is
                        minimally required for us to use a GMAP alignment; default=0.95.
     '''
-    def task(self, gmapFiles, binCollection, minIdentity=0.95):
-        multiOverlaps = []
-        
+    def task(self, gmapFiles, binCollection, minIdentity=0.95):        
         # Behavioural parameters (static for now, may change later)
         "These statics are for filtering GMAP alignments that are poor quality"
         OKAY_COVERAGE = 96.5
@@ -208,13 +228,12 @@ class GmapBinProcess(ReturningProcess):
                 newBin = _create_novel_bin(dataDict)
                 
                 # See if this overlaps an existing bin
-                binOverlap = binCollection.find(dataDict["contig"], dataDict["start"],
-                                                dataDict["end"])
+                binOverlap = find_overlapping_bins(binCollection, newBin)
                 
                 # Add a new bin, or merge any bins as appropriate
                 add_bin_to_collection(binCollection, binOverlap, newBin)
         
-        return binCollection, multiOverlaps
+        return binCollection
 
 class QueuedBinSplitterProcess(ReturningProcess):
     '''

@@ -118,7 +118,7 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         threadData.append([thisGmapFiles, thisBinCollection])
     
     # Start up threads
-    resultBinCollections, resultMultiOverlaps = [], []
+    resultBinCollections = []
     for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
@@ -132,14 +132,13 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         
         # Wait on processes to end
         for populateWorkerThread in processing:
-            binCollection, multiOverlap = populateWorkerThread.get_result()
+            binCollection = populateWorkerThread.get_result()
             populateWorkerThread.join()
             populateWorkerThread.check_errors()
             
             resultBinCollections.append(binCollection)
-            resultMultiOverlaps.append(multiOverlap)
-    
-    return resultBinCollections, resultMultiOverlaps
+        
+    return resultBinCollections
 
 def queued_bin_splitter(collectionList, threads, shorterCovPct=0.40, longerCovPct=0.20):
     '''

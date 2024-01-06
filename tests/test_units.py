@@ -90,10 +90,7 @@ def _generate_bin_collections(gff3Files):
 def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity=0.95):
     '''
     A re-implement with the same logic just minus some of the setup.
-    '''
-    # Establish data structures for holding onto results
-    multiOverlaps = [[] for _ in range(len(collectionList))] # consolidated within threads
-    
+    '''    
     # Establish lists for feeding data into threads
     threadData = []
     for i in range(len(collectionList)):
@@ -102,19 +99,17 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
         
         # Get other data structures for this genome
         thisBinCollection = collectionList[i]
-        thisMultiOverlap = multiOverlaps[i]
         
         # Store for threading
-        threadData.append([thisGmapFiles, thisBinCollection, thisMultiOverlap])
+        threadData.append([thisGmapFiles, thisBinCollection])
     
     # Start up threads
-    resultBinCollection, resultMultiOverlaps = [], []
+    resultBinCollection = []
     for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
-                thisGmapFiles, thisBinCollection, \
-                    thisMultiOverlap = threadData[i+x]
+                thisGmapFiles, thisBinCollection = threadData[i+x]
                 
                 populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
                                                      gmapIdentity)
@@ -124,13 +119,12 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
         
         # Gather results
         for populateWorkerThread in processing:
-            binCollection, multiOverlap = populateWorkerThread.get_result()
+            binCollection = populateWorkerThread.get_result()
             populateWorkerThread.join()
             populateWorkerThread.check_errors()
             resultBinCollection.append(binCollection)
-            resultMultiOverlaps.append(multiOverlap)
     
-    return resultBinCollection, resultMultiOverlaps
+    return resultBinCollection
 
 ###
 
@@ -315,7 +309,7 @@ class TestNovelPopulate(unittest.TestCase):
         gmapFiles = [os.path.join(dataDir, "gmap_bad.gff3")]
         
         # Act
-        binCollectionList, multiOverlaps = _populate_bin_collections(binCollectionList, gmapFiles,
+        binCollectionList = _populate_bin_collections(binCollectionList, gmapFiles,
                                                   threads=1, gmapIdentity=0.95)
         binCollection = binCollectionList[0]
         
@@ -329,7 +323,7 @@ class TestNovelPopulate(unittest.TestCase):
         gmapFiles = [os.path.join(dataDir, "gmap_bad.gff3")]
         
         # Act
-        binCollectionList, multiOverlaps = _populate_bin_collections(binCollectionList, gmapFiles,
+        binCollectionList = _populate_bin_collections(binCollectionList, gmapFiles,
                                                                      threads=1, gmapIdentity=0.95)
         binCollection = binCollectionList[0]
         
@@ -342,7 +336,7 @@ class TestNovelPopulate(unittest.TestCase):
         gmapFiles = [os.path.join(dataDir, "gmap_normal.gff3")]
         
         # Act
-        binCollectionList, multiOverlaps = _populate_bin_collections(binCollectionList, gmapFiles,
+        binCollectionList = _populate_bin_collections(binCollectionList, gmapFiles,
                                                                      threads=1, gmapIdentity=0.95)
         binCollection = binCollectionList[0]
         
@@ -357,7 +351,7 @@ class TestNovelPopulate(unittest.TestCase):
         gmapFiles = [os.path.join(dataDir, "gmap_normal.gff3")]
         
         # Act
-        binCollectionList, multiOverlaps = _populate_bin_collections(binCollectionList, gmapFiles,
+        binCollectionList = _populate_bin_collections(binCollectionList, gmapFiles,
                                                                      threads=1, gmapIdentity=0.95)
         binCollection = binCollectionList[0]
         
@@ -419,7 +413,7 @@ class TestBinLinking(unittest.TestCase):
         ]
         binCollectionList = [ BinCollection() for _ in range(len(gmapFiles)) ]
         # collectionList = binCollectionList
-        binCollectionList, multiOverlaps = _populate_bin_collections(binCollectionList, gmapFiles,
+        binCollectionList = _populate_bin_collections(binCollectionList, gmapFiles,
                                                                      threads=1,
                                                                      gmapIdentity=0.95)
         convergenceIters = 5
@@ -474,7 +468,7 @@ class TestMultiProcessing(unittest.TestCase):
         
         # Act 1
         binCollectionList1 = [ BinCollection() for _ in range(len(gmapFiles)) ]
-        binCollectionList1, multiOverlaps1 = _populate_bin_collections(binCollectionList, gmapFiles,
+        binCollectionList1 = _populate_bin_collections(binCollectionList, gmapFiles,
                                                                      threads=1,
                                                                      gmapIdentity=0.95)
         origIDs1 = [ bin.data.ids for bc in binCollectionList1 for bin in bc ]
@@ -483,7 +477,7 @@ class TestMultiProcessing(unittest.TestCase):
         
         # Act 2
         binCollectionList2 = [ BinCollection() for _ in range(len(gmapFiles)) ]
-        binCollectionList2, multiOverlaps2 = _populate_bin_collections(binCollectionList, gmapFiles,
+        binCollectionList2 = _populate_bin_collections(binCollectionList, gmapFiles,
                                                                      threads=4,
                                                                      gmapIdentity=0.95)
         origIDs2 = [ bin.data.ids for bc in binCollectionList2 for bin in bc ]
@@ -515,7 +509,7 @@ class TestMultiProcessing(unittest.TestCase):
             for i in range(numTests):
                 timeStart = time.time()
                 binCollectionList1 = [ BinCollection() for _ in range(len(gmapFiles)) ]
-                binCollectionList1, multiOverlaps1 = _populate_bin_collections(binCollectionList, gmapFiles,
+                binCollectionList1 = _populate_bin_collections(binCollectionList, gmapFiles,
                                                                             threads=1,
                                                                             gmapIdentity=0.95)
                 act1Time += time.time() - timeStart
@@ -525,7 +519,7 @@ class TestMultiProcessing(unittest.TestCase):
             for i in range(numTests):
                 timeStart = time.time()
                 binCollectionList2 = [ BinCollection() for _ in range(len(gmapFiles)) ]
-                binCollectionList2, multiOverlaps2 = _populate_bin_collections(binCollectionList, gmapFiles,
+                binCollectionList2 = _populate_bin_collections(binCollectionList, gmapFiles,
                                                                             threads=4,
                                                                             gmapIdentity=0.95)
                 act2Time += time.time() - timeStart
@@ -585,7 +579,7 @@ class TestGmapBinProcess(unittest.TestCase):
         # Act
         processor = GmapBinProcess(gff3Files, binCollection, 0.95)
         processor.start()
-        resultCollection, resultMultiOverlap = processor.get_result()
+        resultCollection = processor.get_result()
         processor.join()
         processor.check_errors()
         
@@ -628,7 +622,7 @@ class TestQueuedBinSplitterProcess(unittest.TestCase):
         # Merge all the bin collections together
         binCollection = resultBinCollections[0]
         for otherBinCollection in resultBinCollections[1:]:
-            binCollection.merge(otherBinCollection)
+            binCollection.merge(otherBinCollection, "BinBundle")
             
         # Assert
         self.assertEqual(len(binCollection), 3, "Should have three bins")
@@ -656,5 +650,38 @@ class TestQueuedBinSplitterProcess(unittest.TestCase):
         
         # Assert
         self.assertEqual(len(binCollection), 1, "Should have 1 bin")
+
+class TestGFF3IterationSpeed(unittest.TestCase):
+    def test_iterators_for_speed(self):
+        # Arrange
+        gff3File = os.path.join(dataDir, "big.gff3")
+        timesToIterate = 5
+        
+        # Skip if test is not possible
+        if not os.path.exists(gff3File):
+            self.assertTrue(True, "Skipping test because big.gff3 does not exist")
+            return
+        
+        # Act
+        startTime1 = time.time()
+        for _ in range(timesToIterate):
+            for feature in iterate_gmap_gff3(gff3File):
+                pass
+        endTime1 = time.time() - startTime1
+        
+        startTime2 = time.time()
+        for _ in range(timesToIterate):
+            gff3Obj = GFF3(gff3File, strict_parse=False)
+            for geneFeature in gff3Obj.types["gene"]:
+                pass
+        endTime2 = time.time() - startTime2
+        
+        # Notify
+        print(f"test_iterators_for_speed: iterate_gmap_gff3 = {endTime1}")
+        print(f"test_iterators_for_speed: GFF3 = {endTime2}")
+        
+        # Assert
+        self.assertTrue(True, "Test result is printed to terminal")
+
 if __name__ == '__main__':
     unittest.main()

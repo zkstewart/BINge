@@ -24,10 +24,11 @@ def _build_data_to_yield(thisFeature):
     # Get the exons
     dataDict["exons"] = []
     for _sl in thisFeature[2:]:
-        contig, _, _, start, end, \
+        contig, _, featureType, start, end, \
             _, strand, _, attributes \
             = _sl
-        dataDict["exons"].append([int(start), int(end)])
+        if featureType == "exon":
+            dataDict["exons"].append([int(start), int(end)])
     dataDict["exons"] = sorted(dataDict["exons"])
     
     return dataDict

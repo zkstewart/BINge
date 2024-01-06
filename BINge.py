@@ -610,13 +610,13 @@ def main():
         #collectionList = _debug_loader(os.path.join(args.outputDirectory, f"{paramHash}.collectionList.setup.pkl"))
         
         # Parse GMAP alignments into our bin collection with multiple threads
-        collectionList, multiOverlaps = populate_bin_collections(collectionList, gmapFiles,
-                                                                 args.threads, args.gmapIdentity)
+        collectionList = populate_bin_collections(collectionList, gmapFiles,
+                                                  args.threads, args.gmapIdentity)
         if args.debug:
             print(f"# Populated collections based on GMAP alignments")
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} now contains {len(_cl)} bins")
-        _debug_pickler([collectionList, multiOverlaps], os.path.join(args.outputDirectory, f"{paramHash}.collectionList.populated.pkl"))
+        _debug_pickler(collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.populated.pkl"))
         #_debug_loader()
         
         # Split bins to separate non-overlapping gene models
