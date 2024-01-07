@@ -154,18 +154,7 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
         
         # Handle plain genome files
         else:
-            # Check that FASTA is a FASTA
-            isFASTA = validate_fasta(file)
-            if not isFASTA:
-                print(f"-g value '{file}' is not a FASTA file")
-                print("Make sure you specify the right file and/or location then try again.")
-                quit()
-            
-            # Symlink to main working directory if not already existing
-            linkedFASTA = os.path.join(genomesDir, f"genome{numGenomes}.fasta")
-            
-            if not check_file_exists(linkedFASTA):
-                symlinker(file, linkedFASTA)
+            raise Exception("This version of BINge does not support plain FASTA files as input.")
 
 def setup_param_cache(args, paramHash):
     '''
@@ -176,9 +165,6 @@ def setup_param_cache(args, paramHash):
         args -- the argparse object of BINge called through the main function.
         paramHash -- a string of the hash for these parameters to store in the param cache.
     '''
-    # Get relevant parameters from args object
-    workingDirectory = args.outputDirectory
-    
     # Parse any existing param cache file
     paramCacheFile = os.path.join(args.outputDirectory, "param_cache.json")
     if os.path.exists(paramCacheFile):

@@ -110,7 +110,7 @@ class Bin:
                     shorterPct = pct2
                     longerPct = pct1
                 
-                if shorterPct >= shorterCovPct and longerPct >= longerCovPct:
+                if shorterPct >= shorterCovPct or longerPct >= longerCovPct:
                     return True
         return False
     

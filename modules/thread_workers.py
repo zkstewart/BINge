@@ -230,7 +230,11 @@ class GmapBinProcess(ReturningProcess):
                 # See if this overlaps an existing bin
                 binOverlap = find_overlapping_bins(binCollection, newBin)
                 
-                # Add a new bin, or merge any bins as appropriate
+                # Skip this gene if it's potentially chimeric
+                if len(binOverlap) > 1:
+                    continue
+                
+                # Or add a new bin / merge any bins as appropriate
                 add_bin_to_collection(binCollection, binOverlap, newBin)
         
         return binCollection
@@ -298,6 +302,8 @@ class QueuedBinSplitterProcess(ReturningProcess):
                     for m in range(len(exons2))
                     if exons1[n][0] <= exons2[m][1] and exons1[n][1] >= exons2[m][0]
                 ])
+                if exonOverlap == 0:
+                    continue
                 
                 # Calculate the percentage of each sequence being overlapped by the other
                 len1 = sum([ end - start + 1 for start, end in exons1 ])
