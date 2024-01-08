@@ -13,7 +13,6 @@ class Bin:
         self.end = end
         
         self.ids = set() # set of sequence IDs
-        self.exons = {} # dictionary pairing set IDs to exon lists
     
     @property
     def contig(self):
@@ -48,16 +47,13 @@ class Bin:
             "A Bin must end at a value >= 1 (it behaves 1-based for indexing)"
         self._end = value
     
-    def add(self, idValue, exonList):
+    def add(self, idValue):
         assert isinstance(idValue, str)
         self.ids.add(idValue)
-        self.exons[idValue] = exonList
     
-    def union(self, ids, exons):
+    def union(self, ids):
         assert isinstance(ids, list) or isinstance(ids, set)
-        assert isinstance(exons, dict)
         self.ids = self.ids.union(ids)
-        self.exons.update(exons)
     
     def merge(self, otherBin):
         assert self.contig == otherBin.contig, \
@@ -65,7 +61,7 @@ class Bin:
         
         self.start = min(self.start, otherBin.start)
         self.end = max(self.end, otherBin.end)
-        self.union(otherBin.ids, otherBin.exons)
+        self.union(otherBin.ids)
     
     def is_overlapping(self, otherBin, shorterCovPct=0.25, longerCovPct=0.10):
         '''
@@ -86,34 +82,32 @@ class Bin:
             assert 0.0 <= num <= 1.0, \
                 "shorterCovPct and longerCovPct must be in the range bounded by 0 and 1"
         
-        for thisExon in self.exons.values():
-            for otherExon in otherBin.exons.values():
-                exonOverlap = sum([
-                    abs(max(thisExon[n][0], otherExon[m][0]) - min(thisExon[n][1], otherExon[m][1])) + 1
-                    for n in range(len(thisExon))
-                    for m in range(len(otherExon))
-                    if thisExon[n][0] <= otherExon[m][1] and thisExon[n][1] >= otherExon[m][0]
-                ])
-                
-                # Calculate the percentage of each sequence being overlapped by the other
-                len1 = sum([ end - start + 1 for start, end in thisExon ])
-                len2 = sum([ end - start + 1 for start, end in otherExon ])
-                
-                pct1 = exonOverlap / len1
-                pct2 = exonOverlap / len2
-                
-                # See if this meets any coverage pct cutoffs
-                if len1 <= len2:
-                    shorterPct = pct1
-                    longerPct = pct2
-                else:
-                    shorterPct = pct2
-                    longerPct = pct1
-                
-                if shorterPct >= shorterCovPct and longerPct >= longerCovPct:
-                    return True
-        return False
-    
+        if not (self.start <= otherBin.end and self.end >= otherBin.start):
+            return False
+        else:
+            # Calculate the percentage of overlap between the two bins
+            overlap = min(self.end, otherBin.end) - max(self.start, otherBin.start) + 1
+            assert overlap > 0, "Logic error in overlap calculation"
+            
+            len1 = self.end - self.start + 1
+            len2 = otherBin.end - otherBin.start + 1
+            
+            pct1 = overlap / len1
+            pct2 = overlap / len2
+            
+            # See if this meets any coverage pct cutoffs
+            if len1 <= len2:
+                shorterPct = pct1
+                longerPct = pct2
+            else:
+                shorterPct = pct2
+                longerPct = pct1
+            
+            if shorterPct >= shorterCovPct and longerPct >= longerCovPct:
+                return True
+            else:
+                return False
+        
     def __repr__(self):
         return (f"<Bin object;contig='{self.contig}';start={self.start};" +
                 f"end={self.end};num_ids={len(self.ids)}"
@@ -121,13 +115,13 @@ class Bin:
     
     def __hash__(self):
         return hash((self.contig, self.start, self.end,
-                     tuple(self.ids), hash(tuple(map(tuple, self.exons)))))
+                     tuple(self.ids)))
     
     def sha256(self):
         h = sha256()
         for s in (
                 self.contig.encode(), str(self.start).encode(), str(self.end).encode(),
-                str(self.ids).encode(), str(self.exons).encode()
+                str(self.ids).encode()
         ):
             h.update(s)
 
@@ -137,46 +131,6 @@ class Bin:
         if isinstance(other, Bin):
             return self.sha256() == other.sha256()
         return False
-    
-    @staticmethod
-    def format_exons_from_gff3_feature(gff3Feature):
-        '''
-        Helper function for getting exons from a GFF3 feature when creating
-        a Bin object. For mRNAs, this is simple - we just get the .exon coordinates.
-        For genes, we use the IntervalTree class to merge overlapping coordinate
-        ranges.
-        
-        Parameters:
-            gff3Feature -- a GFF3.Feature for a gene or mRNA object
-        '''
-        assert gff3Feature.type in ["gene", "mRNA"], \
-            "Can only format exons from a GFF3 feature that is a gene or mRNA!"
-        
-        if hasattr(gff3Feature, "mRNA"):
-            tree = IntervalTree.from_tuples([
-                [ exonFeature.start, exonFeature.end+1 ] # prevent errors for 1-bp exons
-                for mrnaFeature in gff3Feature.mRNA
-                for exonFeature in mrnaFeature.exon
-            ])
-            tree.merge_overlaps()
-            exons = sorted([
-                [interval.begin, interval.end-1]
-                for interval in tree
-            ])
-        elif hasattr(gff3Feature, "exon"):
-            exons = sorted([
-                exonFeature.coords
-                for exonFeature in gff3Feature.exon
-            ])
-        elif hasattr(gff3Feature, "CDS"):
-            exons = sorted([
-                cdsFeature.coords
-                for cdsFeature in gff3Feature.CDS
-            ])
-        else:
-            raise ValueError("GFF3 feature does not have exon, CDS, or mRNA subfeatures!")
-        
-        return exons
 
 class BinCollection:
     '''
@@ -184,10 +138,11 @@ class BinCollection:
     Indexes by exon not CDS.
     '''
     def __init__(self):
-        self.bins = IntervalTree()
+        self.bins = {}
     
     def add(self, bin):
-        self.bins[bin.start:bin.end+1] = bin
+        self.bins.setdefault(bin.contig, IntervalTree())
+        self.bins[bin.contig][bin.start:bin.end+1] = bin
     
     def find(self, contig, start, end):
         '''
@@ -195,14 +150,20 @@ class BinCollection:
         For example, searching for 100,100 will find overlaps at that exact
         position.
         '''
-        bins = [ b.data for b in self.bins[start:end+1] if b.data.contig == contig ]
+        if not contig in self.bins:
+            return []
+        else:
+            bins = [ b.data for b in self.bins[contig][start:end+1] ]
         return bins
     
     def delete(self, bin):
-        self.bins.remove(Interval(bin.start, bin.end+1, bin))
+        if not bin.contig in self.bins:
+            raise ValueError(f"This BinCollection does not contain any bins on contig '{bin.contig}'")
+        else:
+            self.bins[bin.contig].remove(Interval(bin.start, bin.end+1, bin))
     
     def replace(self, oldBin, newBin):
-        self.bins.remove(Interval(oldBin.start, oldBin.end+1, oldBin))
+        self.delete(oldBin)
         self.add(newBin)
     
     def merge(self, otherBinCollection):
@@ -213,32 +174,17 @@ class BinCollection:
         This will NOT merge overlapping bins in any way. It just purely adds the Bins of
         the other collection into this one.
         '''
-        for bin in otherBinCollection:
-            self.add(bin.data)
-    
-    def flatten(self, otherBinCollection):
-        '''
-        Flattens the otherBinCollection into this one, adding all its Bins into this. This
-        results in changes to this object.
-        
-        As opposed to .merge(), this WILL merge overlapping bins. It's a more costly operation
-        so it should only be done if necessary.
-        '''
-        for bin in otherBinCollection:
-            ovlBins = self.find(bin.data.contig, bin.data.start, bin.data.end)
-            if len(ovlBins) == 0:
+        for contig, tree in otherBinCollection.bins.items():
+            for bin in tree:
                 self.add(bin.data)
-            else:
-                newBin = ovlBins[0]
-                for ovlBin in ovlBins[1:]:
-                    newBin.merge(ovlBin)
-                newBin.merge(bin.data)
     
     def __len__(self):
-        return len(self.bins)
+        return sum([ len(tree) for contig, tree in self.bins.items() ])
     
     def __iter__(self):
-        return iter(self.bins)
+        for contig, tree in self.bins.items():
+            for bin in tree:
+                yield bin
     
     def __repr__(self):
         return "<BinCollection object;num_bins={0}>".format(
@@ -343,11 +289,49 @@ class BinBundle:
             
             newBin = binDict[connectedBins[0]]
             for index in connectedBins[1:]:
-                newBin.union(binDict[index].ids, binDict[index].exons)
+                newBin.union(binDict[index].ids)
             linkedBinBundle.add(newBin)
         
         return linkedBinBundle
     
+    @staticmethod
+    def create_from_collection(binCollection):
+        '''
+        Initializes a BinBundle object from a BinCollection object.
+        
+        Parameters:
+            binCollection -- a BinCollection object.
+        Returns:
+            binBundle -- a BinBundle object.
+        '''
+        newBundle = BinBundle()
+        for bin in binCollection:
+            newBundle.add(bin.data)
+        return newBundle
+    
+    @staticmethod
+    def create_from_multiple_collections(binCollectionList):
+        '''
+        Initializes a BinBundle object from one or more BinCollection objects.
+        The input value is expected to be a list of BinCollection objects.
+        The result is a single BinBundle object with all the bins squished
+        down into it.
+        
+        Parameters:
+            binCollectionList -- a list of BinCollection objects.
+        Returns:
+            binBundle -- a BinBundle object.
+        '''
+        assert isinstance(binCollectionList, list), \
+            "binCollectionList must be a list of BinCollection objects"
+        
+        newBundle = BinBundle()
+        for binCollection in binCollectionList:
+            for bin in binCollection:
+                newBundle.add(bin.data)
+        return newBundle
+        
+        
     def __len__(self):
         return len(self.bins)
     

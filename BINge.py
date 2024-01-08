@@ -15,6 +15,7 @@ from hashlib import sha256
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from modules.bins import BinBundle
 from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
     queued_bin_splitter, iterative_bin_self_linking
 from modules.fasta_handling import AnnotationExtractor, FastaCollection
@@ -250,7 +251,7 @@ def setup_sequences(workingDirectory, isMicrobial=False):
             with open(sequenceFileName, "w") as fileOut:
                 seqGenerator = AnnotationExtractor(gff3File, fastaFile, isMicrobial)
                 for mrnaID, exonSeq, cdsSeq in seqGenerator.iter_sequences():
-                    fileOut.write(f">{mrnaID}\n{exonSeq}\n")
+                    fileOut.write(f">{mrnaID}\n{cdsSeq}\n")
 
 def find_missing_sequence_id(binCollectionList, transcriptRecords):
     '''
@@ -619,23 +620,36 @@ def main():
         _debug_pickler(collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.populated.pkl"))
         #_debug_loader()
         
-        # Split bins to separate non-overlapping gene models
-        binBundle = queued_bin_splitter(collectionList, args.threads)
-        if args.debug:
-            print(f"# Split bins based on lack of overlap")
-            print(f"# The combined bundle now contains {len(binBundle)} bins")
-        _debug_pickler(binBundle, os.path.join(args.outputDirectory, f"{paramHash}.binBundle.split.pkl"))
+        # Convert collections into bundles
+        bundleList = [ BinBundle.create_from_collection(bc) for bc in collectionList ]
+        _debug_pickler(bundleList, os.path.join(args.outputDirectory, f"{paramHash}.bundleList.pkl"))
         #_debug_loader()
         
-        # Merge bin bundles across genomes / across gene copies
+        # Link bundles within genomes
         """Usually linking will unify multiple genomes together, but it may detect
         bins of identical gene copies and link them together which is reasonable
         since these would confound DGE to keep separate anyway."""
         
+        bundleList = [
+            iterative_bin_self_linking(bundle, args.convergenceIters)
+            for bundle in bundleList
+        ]
+        if args.debug:
+            print(f"# Iteratively self linked bins (within genomes) based on ID sharing")
+            for index, _bundle in enumerate(bundleList):
+                print(f"# Bundle #{index+1} now contains {len(_bundle)} bins")
+        _debug_pickler(bundleList, os.path.join(args.outputDirectory, f"{paramHash}.bundleList.linked.pkl"))
+        #_debug_loader()
+        
+        # Link bin bundles across genomes
+        binBundle = bundleList[0]
+        for otherBundle in bundleList[1:]:
+            binBundle.merge(otherBundle, otherType="BinBundle")
+        
         binBundle = iterative_bin_self_linking(binBundle, args.convergenceIters)
         if args.debug:
-            print(f"# Iteratively self linked bins based on ID sharing")
-            print(f"# The combined bundle now contains {len(binBundle)} bins")
+            print(f"# Iteratively self linked bins (across genomes) based on ID sharing")
+            print(f"# Combined bundle now contains {len(binBundle)} bins")
         
         # Write pickle file for potential resuming of program
         with open(pickleFile, "wb") as pickleOut:

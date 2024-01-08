@@ -60,11 +60,6 @@ def find_overlapping_bins(binCollection, binQuery):
             binOverlap.append(bin)
     return binOverlap
 
-def _create_novel_bin(dataDict):
-    thisBin = Bin(dataDict["contig"], dataDict["start"], dataDict["end"])
-    thisBin.add(dataDict["Name"], dataDict["exons"])
-    return thisBin
-
 # Create base classes to inherit from
 class BasicProcess(Process):
     def __init__(self, *args, **kwargs):
@@ -147,27 +142,31 @@ class CollectionSeedProcess(ReturningProcess):
             gff3Obj = GFF3(gff3File, strict_parse=False)
             for geneFeature in gff3Obj.types["gene"]:
                 
-                # Create a bin for this feature
-                featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
+                # Create a bin for each exon feature
+                exonBins = []
                 if not isMicrobial:
                     try:
                         for mrnaFeature in geneFeature.mRNA:
-                            featureBin.add(mrnaFeature.ID, Bin.format_exons_from_gff3_feature(mrnaFeature))
+                            for exonFeature in mrnaFeature.exon:
+                                exonBin = Bin(exonFeature.contig, exonFeature.start, exonFeature.end)
+                                exonBin.add(mrnaFeature.ID)
+                                exonBins.append(exonBin)
                     except:
                         "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
                         continue
                 else:
                     try:
-                        featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
+                        exonBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
+                        exonBin.add(geneFeature.ID)
+                        exonBins.append(exonBin)
                     except:
                         "This exception occurs if a gene feature has unusual children types e.g., rRNA"
                         continue
                 
-                # See if this overlaps an existing bin
-                binOverlap = find_overlapping_bins(binCollection, featureBin)
-                
-                # Handle the storing of this bin in its collection
-                add_bin_to_collection(binCollection, binOverlap, featureBin)
+                # Iteratively handle exon bins
+                for exonBin in exonBins:
+                    binOverlap = find_overlapping_bins(binCollection, exonBin)
+                    add_bin_to_collection(binCollection, binOverlap, exonBin)
         
         return binCollection
 
@@ -193,45 +192,66 @@ class GmapBinProcess(ReturningProcess):
         
         # Iterate through GMAP files
         for gmapFile in gmapFiles:
-            pathDict = {} # holds onto sequences we've already checked a path for        
+            # Hold onto the GMAP alignments for each gene
+            """GMAP is guaranteed to return alignments for each gene together, but not ordered
+            by quality. We'll sort them by quality and then process them iteratively"""
+            thisBlockID, thisBlockData = None, None
             for dataDict in iterate_gmap_gff3(gmapFile):
-                # Get alignment statistics
-                coverage, identity = float(dataDict["coverage"]), float(dataDict["identity"])
-                exonLength = sum([
-                    end - start + 1
-                    for start, end in dataDict["exons"]
-                ])
-                indelProportion = int(dataDict["indels"]) / exonLength
-                
-                # Skip processing if the alignment sucks
-                isGoodAlignment = coverage >= OKAY_COVERAGE \
-                                and identity >= minIdentity \
-                                and indelProportion <= OKAY_INDEL_PROPORTION
-                if not isGoodAlignment:
+                # Handle first iteration
+                if thisBlockID == None:
+                    thisBlockID = dataDict["Name"]
+                    thisBlockData = [dataDict]
                     continue
                 
-                # See if this path should be skipped because another better one was processed
-                if dataDict["Name"] in pathDict:
-                    prevCov, prevIdent = pathDict[dataDict["Name"]]
+                # Store data if this is from the same sequence
+                if dataDict["Name"] == thisBlockID:
+                    thisBlockData.append(dataDict)
+                    continue
+                
+                # Otherwise, sort the data dicts by their quality
+                "Higher coverage -> higher identity -> lower indels"
+                thisBlockData.sort(key = lambda x: (-x["coverage"], -x["identity"], x["indels"]))
+                
+                # Iterate through data dicts
+                bestCov, bestIdent = None, None
+                for blockDataDict in thisBlockData:
+                    # Get alignment statistics
+                    coverage, identity = blockDataDict["coverage"], blockDataDict["identity"]
+                    exonLength = sum([
+                        end - start + 1
+                        for start, end in blockDataDict["exons"]
+                    ])
+                    indelProportion = blockDataDict["indels"] / exonLength
                     
-                    # Skip if the first path was the best
-                    if (coverage + ALLOWED_COV_DIFF) < prevCov \
-                        or (identity + ALLOWED_IDENT_DIFF) < prevIdent:
+                    # Skip processing if the alignment sucks
+                    isGoodAlignment = coverage >= OKAY_COVERAGE \
+                                    and identity >= minIdentity \
+                                    and indelProportion <= OKAY_INDEL_PROPORTION
+                    if not isGoodAlignment:
                         continue
+                    
+                    # See if this path should be skipped because another better one was processed
+                    if bestCov != None:
+                        if (coverage + ALLOWED_COV_DIFF) < bestCov \
+                            or (identity + ALLOWED_IDENT_DIFF) < bestIdent:
+                            continue
+                    else:
+                        bestCov, bestIdent = coverage, identity # set if this is the 'best'
+                    
+                    # Iteratively handle exon features
+                    for exonStart, exonEnd in blockDataDict["exons"]:
+                        # Create a bin for each exon feature
+                        exonBin = Bin(blockDataDict["contig"], exonStart, exonEnd)
+                        exonBin.add(blockDataDict["Name"])
+                        
+                        # See if this overlaps an existing bin
+                        binOverlap = find_overlapping_bins(binCollection, exonBin)
+                        
+                        # Add a new bin, or merge any bins as appropriate
+                        add_bin_to_collection(binCollection, binOverlap, exonBin)
                 
-                # Now that we've checked if this path is good, we'll remember it
-                """This means on the next loop if there's another path for this gene, 
-                but it's worse than this current one, we'll just skip it"""
-                pathDict.setdefault(dataDict["Name"], [coverage, identity])
-                
-                # Create a new bin for this features
-                newBin = _create_novel_bin(dataDict)
-                
-                # See if this overlaps an existing bin
-                binOverlap = find_overlapping_bins(binCollection, newBin)
-                
-                # Add a new bin, or merge any bins as appropriate
-                add_bin_to_collection(binCollection, binOverlap, newBin)
+                # Reset for next iteration
+                thisBlockID, thisBlockData = dataDict["Name"], [dataDict]
         
         return binCollection
 
@@ -298,6 +318,8 @@ class QueuedBinSplitterProcess(ReturningProcess):
                     for m in range(len(exons2))
                     if exons1[n][0] <= exons2[m][1] and exons1[n][1] >= exons2[m][0]
                 ])
+                if exonOverlap == 0: # skip if there's no overlap
+                    continue
                 
                 # Calculate the percentage of each sequence being overlapped by the other
                 len1 = sum([ end - start + 1 for start, end in exons1 ])
