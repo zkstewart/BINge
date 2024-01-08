@@ -243,53 +243,29 @@ class BinBundle:
         assert 0 < VOTE_THRESHOLD <= 1.0, \
             "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
         
-        # Format bins into a dictionary
-        "It's not ideal for memory use but I need instant lookup and consistent ordering"
-        binDict = {}
-        binCounter = 0
-        for bin in self:
-            binDict[binCounter] = bin
-            binCounter += 1
-        
-        # Figure out which bins have links through shared sequences
-        idLinks = {}
-        for binIndex, bin in binDict.items():
-            for seqID in bin.ids:
-                idLinks.setdefault(seqID, set())
-                idLinks[seqID].add(binIndex)
-        
         # Model links between bins as a graph structure
         binGraph = nx.Graph()
-        binGraph.add_nodes_from(range(0, len(binDict)))
+        binGraph.add_nodes_from(range(0, len(self.bins)))
         
-        for binIndex, bin in binDict.items():
-            # Perform tallying and identify edges in the bin merging graph
-            votes = {}
-            for seqID in bin.ids:
-                for index in idLinks[seqID]:
-                    if index != binIndex:
-                        votes.setdefault(index, 0)
-                        votes[index] += 1
-            toLink = [
-                index
-                for index, count in votes.items()
-                if count / len(bin.ids) >= VOTE_THRESHOLD
-            ]
-            
-            # Add edges between any relevant bin nodes
-            if len(toLink) > 0:
-                for index in toLink:
-                    binGraph.add_edge(binIndex, index)
+        # Link bins where appropriate
+        for i in range(len(self.bins)-1):
+            for x in range(i+1, len(self.bins)):
+                b1, b2 = self.bins[i], self.bins[x]
+                numIntersectingIDs = len(b1.ids.intersection(b2.ids))
+                
+                if (numIntersectingIDs / len(b1.ids)) >= VOTE_THRESHOLD and \
+                    (numIntersectingIDs / len(b2.ids)) >= VOTE_THRESHOLD:
+                        binGraph.add_edge(i, x)
         
         # Merge bins on the basis of link identification
-        "At this point, the bins will lose any meaning they have in their .contig, .start, etc"
         linkedBinBundle = BinBundle()
         for connectedBins in nx.connected_components(binGraph):
             connectedBins = list(connectedBins)
             
-            newBin = binDict[connectedBins[0]]
+            newBin = self.bins[connectedBins[0]]
             for index in connectedBins[1:]:
-                newBin.union(binDict[index].ids)
+                newBin.union(self.bins[index].ids)
+            
             linkedBinBundle.add(newBin)
         
         return linkedBinBundle
