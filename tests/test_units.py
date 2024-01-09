@@ -8,11 +8,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
 from modules.bins import BinCollection, Bin, BinBundle
 from modules.gff3_handling import iterate_gmap_gff3
-from modules.bin_handling import iterative_bin_self_linking
 from modules.thread_workers import GmapBinProcess, CollectionSeedProcess, \
     QueuedBinSplitterProcess, find_overlapping_bins, add_bin_to_collection
 
 ###
+
+## Unit tests to be done:
+## cluster_by_occurrence
+## 
 
 def _generate_bin_collections_via_seeder(gff3Files, threads):
     # Start up threads
@@ -390,58 +393,6 @@ class TestNetworkX(unittest.TestCase):
         for connectedBins in nx.connected_components(binGraph):
             connectedBins = list(connectedBins)
             self.assertEqual(len(connectedBins), 3, "Should have 3 connected components")
-
-class TestBinLinking(unittest.TestCase):
-    def test_bin_selfmerger(self):
-        '''
-        This test should result in the bins (from separate genomes) being merged together.
-        '''
-        # Arrange
-        gmapFiles = [
-            os.path.join(dataDir, "gmap_cmj.gff3"),
-            os.path.join(dataDir, "gmap_cmj_cross.gff3"),
-            os.path.join(dataDir, "gmap_fh.gff3"),
-            os.path.join(dataDir, "gmap_fh_cross.gff3")
-        ]
-        binCollectionList = [ BinCollection() for _ in range(len(gmapFiles)) ]
-        # collectionList = binCollectionList
-        binCollectionList = _populate_bin_collections(binCollectionList, gmapFiles,
-                                                                     threads=1,
-                                                                     gmapIdentity=0.95)
-        convergenceIters = 5
-        
-        # Act
-        origNumBins = [ len(bc) for bc in binCollectionList ]
-        origNumIDs = [ len(bin.data.ids) for bc in binCollectionList for bin in bc ]
-        origIDs = [ bin.data.ids for bc in binCollectionList for bin in bc ]
-        origExons = [ bin.data.exons for bc in binCollectionList for bin in bc ]
-        origContigs = [ bin.data.contig for bc in binCollectionList for bin in bc ]
-        
-        binCollection = binCollectionList[0]
-        for i in range(1, len(binCollectionList)):
-            binCollection.merge(binCollectionList[i])
-        
-        mergedNumBins = len(binCollection)
-        mergedNumIDs = [ len(bin.data.ids) for bin in binCollection ]
-        mergedIDs = [ bin.data.ids for bin in binCollection ]
-        mergedExons = [ bin.data.exons for bin in binCollection ]
-        mergedContigs = [ bin.data.contig for bin in binCollection ]
-        
-        binBundle = BinBundle()
-        binBundle.merge(binCollection, otherType="BinCollection")
-        
-        binBundle = iterative_bin_self_linking(binBundle, convergenceIters)
-        
-        newNumBins = len(binBundle)
-        newNumIDs = [ len(bin.ids) for bin in binBundle ]
-        newIDs = [ bin.ids for bin in binBundle ]
-        newExons = [ bin.exons for bin in binBundle ]
-        newContigs = [ bin.contig for bin in binBundle ]
-        
-        # Assert
-        self.assertEqual(origNumBins, [1, 1, 1, 1], "Should contain 4 binCollections with 1 bin each")
-        self.assertEqual(newNumBins, 2, "Should contain 2 bins")
-        self.assertEqual(newNumIDs, [1, 1], "Should contain 2 bins with 1 ID each")
 
 class TestMultiProcessing(unittest.TestCase):
     def test_multiprocessing_equality(self):

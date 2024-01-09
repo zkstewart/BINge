@@ -220,7 +220,7 @@ class BinBundle:
             for bin in otherBinCollection:
                 self.add(bin)
     
-    def link_bins(self, VOTE_THRESHOLD = 0.5):
+    def link_by_sharing(self, VOTE_THRESHOLD = 0.5):
         '''
         This will attempt to merge bins that are "equivalent" across the genomes using
         a graph-based approach to modelling the relationships between the bins. The
@@ -264,6 +264,9 @@ class BinBundle:
             
             # See if the overlap is sufficient to link the bins
             for x in linkedIDs:
+                if i == x: # skip self comparison
+                    continue
+                
                 b2 = self.bins[x]
                 numIntersectingIDs = len(b1.ids.intersection(b2.ids))
                 
@@ -283,6 +286,65 @@ class BinBundle:
             linkedBinBundle.add(newBin)
         
         return linkedBinBundle
+    
+    def cluster_by_cooccurrence(self, VOTE_THRESHOLD = 0.5):
+        '''
+        This algorithm clusters sequences based on their co-occurrence in exon bins.
+        Sequences which co-occur in bins at a certain frequency of their total number
+        of bins that occur in are linked together. This linking occurs using a
+        graph-based approach to modelling the relationships between the bins.
+        
+        Unlike link_by_sharing, this algorithm is guaranteed to produce a stable output
+        and hence convergence is not a concern.
+        
+        Parameters:
+            VOTE_THRESHOLD -- a float greater than 0, and less than or equal to 1.0.
+                              This represents a ratio for which sequences must co-occur.
+        Returns:
+            clusterDict -- a dictionary where keys are integers from 0 -> n, and values
+                           are sets of sequence IDs.
+        '''
+        assert 0 < VOTE_THRESHOLD <= 1.0, \
+            "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
+        
+        # Figure out which bins each sequence occur in
+        occurrenceDict = {}
+        for binIndex, bin in enumerate(self.bins):
+            for seqID in bin.ids:
+                occurrenceDict.setdefault(seqID, set())
+                occurrenceDict[seqID].add(binIndex)
+        
+        # Initialise graph data structure to link sequences
+        binGraph = nx.Graph()
+        binGraph.add_nodes_from(occurrenceDict.keys())
+        
+        # Iterate through each sequence and link where appropriate
+        for seqID, binIndices in occurrenceDict.items():
+            # Count how many times other sequences occur in the same bin as this
+            seqLinkDict = {}
+            for binIndex in binIndices:
+                bin = self.bins[binIndex]
+                for otherSeqID in bin.ids:
+                    if otherSeqID == seqID:
+                        continue
+                    
+                    seqLinkDict.setdefault(otherSeqID, 0)
+                    seqLinkDict[otherSeqID] += 1
+            
+            # See if any sequences meet the threshold for linking
+            for otherSeqID, numOccurrence in seqLinkDict.items():
+                if (numOccurrence / len(binIndices)) >= VOTE_THRESHOLD:
+                    binGraph.add_edge(seqID, otherSeqID)
+                    print(f"Linking {seqID} to {otherSeqID}")
+        
+        # Create sequence bins based on the graph's connected components
+        clusterDict = {}
+        ongoingCount = 0
+        for connectedSeqIDs in nx.connected_components(binGraph):
+            clusterDict[ongoingCount] = set(connectedSeqIDs)
+            ongoingCount += 1
+        
+        return clusterDict
     
     @staticmethod
     def create_from_collection(binCollection):

@@ -16,8 +16,7 @@ from hashlib import sha256
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from modules.bins import BinBundle
-from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
-    iterative_bin_self_linking
+from modules.bin_handling import generate_bin_collections, populate_bin_collections
 from modules.fasta_handling import AnnotationExtractor, FastaCollection
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
@@ -25,7 +24,7 @@ from modules.validation import validate_args, validate_fasta
 from Various_scripts.Function_packages.ZS_Utility import convert_windows_to_wsl_path
 
 HASHING_PARAMS = ["inputFiles", "genomeFiles", # These hashes are the only ones which behaviourally
-                  "convergenceIters", "gmapIdentity"] # influence the pre-external clustering
+                  "gmapIdentity"]              # influence the pre-external clustering
 
 # Define functions
 def symlinker(src, dst):
@@ -276,14 +275,19 @@ def find_missing_sequence_id(binCollectionList, transcriptRecords):
                     return seqID
     return None
 
-def get_unbinned_sequence_ids(binBundleList, transcriptRecords):
+def get_unbinned_sequence_ids(clusterDict, transcriptRecords):
     '''
     Compares one or more BinBundle objects against the transcript sequences
     to see if any sequences indicated in transcriptRecords do not exist in
     any Bins.
     
     Parameters:
-        binBundleList -- a list containing BinBundle's
+        clusterDict -- a dictionary with structure like:
+                       {
+                           0 : [ "seq1", "seq2", "seq3" ],
+                           1 : [ "seq4", "seq5", "seq6" ],
+                           ...
+                        }
         transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
                              sequences
     Returns:
@@ -291,9 +295,8 @@ def get_unbinned_sequence_ids(binBundleList, transcriptRecords):
                        binned by BINge's main clustering process.
     '''
     binnedIDs = []
-    for binBundle in binBundleList:
-        for bin in binBundle:
-            binnedIDs.extend(bin.ids)
+    for seqIDs in clusterDict.values:
+        binnedIDs.extend(seqIDs)
     binnedIDs = set(binnedIDs)
     
     unbinnedIDs = set()
@@ -424,16 +427,6 @@ def main():
                    help="""Optionally, specify how many threads to run when multithreading
                    is available (default==1)""",
                    default=1)
-    p.add_argument("--convergence_iters", dest="convergenceIters",
-                   required=False,
-                   type=int,
-                   help="""Optionally, specify a maximum number of iterations allowed for
-                   bin convergence to be achieved (default==5); in most cases results will
-                   converge in fewer than 5 iterations, so setting a maximum acts merely as
-                   a safeguard against edge cases I have no reason to believe will ever
-                   happen"""
-                   if showHiddenArgs else argparse.SUPPRESS,
-                   default=5)
     p.add_argument("--gmapIdentity", dest="gmapIdentity",
                    required=False,
                    type=float,
@@ -620,40 +613,20 @@ def main():
         _debug_pickler(collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.populated.pkl"))
         #_debug_loader()
         
-        # Convert collections into bundles
-        bundleList = [ BinBundle.create_from_collection(bc) for bc in collectionList ]
-        _debug_pickler(bundleList, os.path.join(args.outputDirectory, f"{paramHash}.bundleList.pkl"))
+        # Convert collections into a bundle
+        binBundle = BinBundle.create_from_collections(collectionList)
+        _debug_pickler(binBundle, os.path.join(args.outputDirectory, f"{paramHash}.binBundle.pkl"))
         #_debug_loader()
         
-        # Link bundles within genomes
-        """Usually linking will unify multiple genomes together, but it may detect
-        bins of identical gene copies and link them together which is reasonable
-        since these would confound DGE to keep separate anyway."""
-        
-        bundleList = [
-            iterative_bin_self_linking(bundle, args.convergenceIters)
-            for bundle in bundleList
-        ]
+        # Cluster bundles across and within genomes
+        clusterDict = binBundle.cluster_by_cooccurrence()
         if args.debug:
-            print(f"# Iteratively self linked bins (within genomes) based on ID sharing")
-            for index, _bundle in enumerate(bundleList):
-                print(f"# Bundle #{index+1} now contains {len(_bundle)} bins")
-        _debug_pickler(bundleList, os.path.join(args.outputDirectory, f"{paramHash}.bundleList.linked.pkl"))
-        #_debug_loader()
-        
-        # Link bin bundles across genomes
-        binBundle = bundleList[0]
-        for otherBundle in bundleList[1:]:
-            binBundle.merge(otherBundle, otherType="BinBundle")
-        
-        binBundle = iterative_bin_self_linking(binBundle, args.convergenceIters)
-        if args.debug:
-            print(f"# Iteratively self linked bins (across genomes) based on ID sharing")
-            print(f"# Combined bundle now contains {len(binBundle)} bins")
+            print(f"# Clustered bundles (across and within genomes) based on ID occurrence")
+            print(f"# Cluster dictionary contains {len(clusterDict)} clusters")
         
         # Write pickle file for potential resuming of program
         with open(pickleFile, "wb") as pickleOut:
-            pickle.dump(binBundle, pickleOut)
+            pickle.dump(clusterDict, pickleOut)
     
     # Write binned clusters to file
     with open(outputFileName, "w") as fileOut:
@@ -662,11 +635,9 @@ def main():
         fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
         
         # Write content lines
-        numClusters = 0
-        for bin in binBundle:
-            for seqID in bin.ids:
-                fileOut.write(f"{numClusters+1}\t{seqID}\tbinned\n")
-            numClusters += 1
+        for clusterNum, seqIDs in clusterDict.items():
+            for seqID in seqIDs:
+                fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
     
     # Cluster remaining unbinned sequences
     transcriptRecords = FastaCollection([
@@ -674,7 +645,7 @@ def main():
         for f in os.listdir(args.outputDirectory)
         if f.endswith(".nucl")
     ])
-    unbinnedIDs = get_unbinned_sequence_ids([binBundle], transcriptRecords)
+    unbinnedIDs = get_unbinned_sequence_ids(clusterDict, transcriptRecords)
     if args.debug:
         print(f"# There are {len(unbinnedIDs)} unbinned sequences for external clustering")
     
@@ -686,10 +657,11 @@ def main():
         unbinnedClusterDict = {} # blank to append nothing to output file
     
     # Write output of clustering to file
+    numClusters = len(clusterDict)
     with open(outputFileName, "a") as fileOut:
         for clusterNum, clusterIDs in unbinnedClusterDict.items():
             for seqID in clusterIDs:
-                fileOut.write(f"{clusterNum+numClusters+1}\t{seqID}\tunbinned\n") # clusterType = "unbinned"
+                fileOut.write(f"{clusterNum+numClusters+1}\t{seqID}\tunbinned\n")
     
     print("Program completed successfully!")
 

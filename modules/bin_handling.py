@@ -1,8 +1,6 @@
 import os
-from multiprocessing import Queue
 
-from .thread_workers import CollectionSeedProcess, GmapBinProcess, \
-    QueuedBinSplitterProcess
+from .thread_workers import CollectionSeedProcess, GmapBinProcess
 
 def generate_bin_collections(workingDirectory, threads, isMicrobial):
     '''
@@ -139,21 +137,3 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
             resultBinCollections.append(binCollection)
         
     return resultBinCollections
-
-def iterative_bin_self_linking(binBundle, convergenceIters):
-    '''
-    Links the bins in a BinBundle to themselves iteratively until
-    it converges or convergenceIters is reached.
-    
-    Parameters:
-        binBundle -- a BinBundle object
-        convergenceIters -- an integer providing a maximum limit for
-                            the amount of iterations that may occur.
-    '''
-    prevCollectionCount = len(binBundle)
-    for _ in range(convergenceIters):
-        binBundle = binBundle.link_bins()
-        if len(binBundle) == prevCollectionCount:
-            break
-        prevCollectionCount = len(binBundle)
-    return binBundle
