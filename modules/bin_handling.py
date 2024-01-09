@@ -140,67 +140,6 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         
     return resultBinCollections
 
-def queued_bin_splitter(collectionList, threads, shorterCovPct=0.40, longerCovPct=0.20):
-    '''
-    We want to split bins because each bin is only guaranteed to contain
-    sequences that generally align well over a predicted genomic region. There's no
-    guarantee that they are isoforms of the same gene, or even share any exonic content.
-    This may be useful for separating out nested genes within the introns of what might
-    be considered the "main gene" the bin represents. It may also be useful for separating
-    out chimeras to be their own bin; in such cases, it is not the place of the BINge program
-    to determine whether the chimeric gene is a real gene or not, it is up to the user to
-    determine this during downstream analysis.
-    
-    Parameters:
-        collectionList -- a list of BinCollection objects as resulting from
-                          generate_bin_collections().
-        threads -- an integer indicating how many threads to run; this code is
-                   parallelised in terms of processing multiple GMAP files at a time,
-                   if you have only 1 GMAP file then only 1 thread will be used.
-        shorterCovPct -- a float value indicating the percentage of the shortest
-                         sequence's coverage that must be covered by the longer sequence;
-                         default==0.40.
-        longerCovPct -- a float value indicating the percentage of the longest
-                        sequence's coverage that must be covered by the shorter sequence;
-                        default==0.20.
-    Returns:
-        newBinBundle -- a new BinBundle object to replace the original BinCollection.
-    '''
-    # Set up queueing system for processes
-    workerQueue = Queue(maxsize=0)
-    
-    # Start up processes
-    workers = []
-    for _ in range(threads):
-        worker = QueuedBinSplitterProcess(workerQueue, shorterCovPct, longerCovPct)
-        worker.start()
-        workers.append(worker)
-    
-    # Put bins in queue for worker threads
-    for binCollection in collectionList:
-        for interval in binCollection:
-            bin = interval.data
-            workerQueue.put(bin)
-    
-    # Exit out of the worker processes
-    for _ in range(threads):
-        workerQueue.put(None) # this is a marker for the worker processes to stop
-    
-    resultBinBundles = []
-    for worker in workers:
-        binCollection = worker.get_result()
-        worker.join()
-        worker.check_errors()
-        
-        resultBinBundles.append(binCollection)
-    
-    # Merge all the bin collections together
-    binBundle = resultBinBundles[0]
-    for otherBinBundle in resultBinBundles[1:]:
-        binBundle.merge(otherBinBundle, otherType="BinBundle")
-    
-    return binBundle
-
 def iterative_bin_self_linking(binBundle, convergenceIters):
     '''
     Links the bins in a BinBundle to themselves iteratively until

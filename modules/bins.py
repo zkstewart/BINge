@@ -243,14 +243,28 @@ class BinBundle:
         assert 0 < VOTE_THRESHOLD <= 1.0, \
             "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
         
+        # Figure out which bins can link to each other via shared IDs
+        idLinks = {}
+        for binIndex, bin in enumerate(self.bins):
+            for seqID in bin.ids:
+                idLinks.setdefault(seqID, set())
+                idLinks[seqID].add(binIndex)
+        
         # Model links between bins as a graph structure
         binGraph = nx.Graph()
         binGraph.add_nodes_from(range(0, len(self.bins)))
         
         # Link bins where appropriate
-        for i in range(len(self.bins)-1):
-            for x in range(i+1, len(self.bins)):
-                b1, b2 = self.bins[i], self.bins[x]
+        for i in range(len(self.bins)):
+            b1 = self.bins[i]
+            
+            # See which bins its IDs has overlap with
+            "We do this to avoid poor O(n^2) performance of iterating through all bins"
+            linkedIDs = set([ _id for seqID in b1.ids for _id in idLinks[seqID] ])
+            
+            # See if the overlap is sufficient to link the bins
+            for x in linkedIDs:
+                b2 = self.bins[x]
                 numIntersectingIDs = len(b1.ids.intersection(b2.ids))
                 
                 if (numIntersectingIDs / len(b1.ids)) >= VOTE_THRESHOLD and \

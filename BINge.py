@@ -17,7 +17,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from modules.bins import BinBundle
 from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
-    queued_bin_splitter, iterative_bin_self_linking
+    iterative_bin_self_linking
 from modules.fasta_handling import AnnotationExtractor, FastaCollection
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
