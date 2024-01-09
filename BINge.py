@@ -614,7 +614,7 @@ def main():
         #_debug_loader()
         
         # Convert collections into a bundle
-        binBundle = BinBundle.create_from_collections(collectionList)
+        binBundle = BinBundle.create_from_multiple_collections(collectionList)
         _debug_pickler(binBundle, os.path.join(args.outputDirectory, f"{paramHash}.binBundle.pkl"))
         #_debug_loader()
         
