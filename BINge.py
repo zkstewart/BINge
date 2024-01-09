@@ -295,7 +295,7 @@ def get_unbinned_sequence_ids(clusterDict, transcriptRecords):
                        binned by BINge's main clustering process.
     '''
     binnedIDs = []
-    for seqIDs in clusterDict.values:
+    for seqIDs in clusterDict.values():
         binnedIDs.extend(seqIDs)
     binnedIDs = set(binnedIDs)
     

@@ -335,7 +335,6 @@ class BinBundle:
             for otherSeqID, numOccurrence in seqLinkDict.items():
                 if (numOccurrence / len(binIndices)) >= VOTE_THRESHOLD:
                     binGraph.add_edge(seqID, otherSeqID)
-                    print(f"Linking {seqID} to {otherSeqID}")
         
         # Create sequence bins based on the graph's connected components
         clusterDict = {}
