@@ -386,7 +386,15 @@ def main():
     against. For same species, use 0.98 or 0.99. If you're aligning against a different species
     in the same genus, use 0.95. If you're aligning against a different genus, consider 0.90.
     ###
-    Note 6: You're seeing the --help-long format of this message, which means you may want to
+    Note 6: The --clusterVoteThreshold, based on objective evidence, should be set to 0.5 or
+    0.66. Using a lower value will give a tighter clustering (fewer clusters) and a higher
+    value will give looser clustering (more clusters). A value of 0.66 is likely to be more
+    biologically correct based on objective evaluation, but the difference is very marginal
+    in terms of biological correctness and number of clusters (e.g., you may find up to 3%
+    more clusters in 0.66 relative to 0.5). Generally, just stick to the default and you'll
+    be alright.
+    ###
+    Note 7: You're seeing the --help-long format of this message, which means you may want to
     configure the way clustering of unbinned sequences works. Behavioural parameters of several
     features can be tuned here, but the defaults are expected to work most of the time.
     The main exception is CD-HIT's memory utilisation, which probably should be set depending
@@ -435,12 +443,13 @@ def main():
                    required=False,
                    type=float,
                    help="""Optionally, specify the clustering vote threshold used when
-                   clustering bins based on sequence ID co-occurrence (default == 0.5).
-                   Based on objective measures e.g., BUSCO, you may want to alter this to
-                   increase clustering strictness (higher value; gives more clusters) or
-                   decrease clustering strictness (lower value; gives fewer clusters)"""
+                   clustering bins based on sequence ID co-occurrence (default == 0.66).
+                   A higher value gives more clusters and a lower value gives fewer
+                   clusters; if you want to be more biologically correct, use 0.66, but
+                   if you want fewer gene clusters, use 0.5.
+                   """
                    if showHiddenArgs else argparse.SUPPRESS,
-                   default=0.5)
+                   default=0.66)
     # Optional - program behavioural controls
     p.add_argument("--microbial", dest="isMicrobial",
                    required=False,
