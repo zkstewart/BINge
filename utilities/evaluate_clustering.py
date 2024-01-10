@@ -289,7 +289,10 @@ def main():
         print("Unable to continue from this point, so program will exit now.")
         quit()
     else:
-        print("I see {0} mRNA features in the GFF3".format(len(gff3.types["mRNA"])))
+        if args.noMRNA == True:
+            print("I see {0} gene features in the GFF3".format(len(gff3.types["gene"])))
+        else:
+            print("I see {0} mRNA features in the GFF3".format(len(gff3.types["mRNA"])))
         print("From that, I've found {0} testable mRNA features".format(len(trueDict)))
         print(f"And I see {len(testDict)} sequences in the cluster file (after pruning to match the GFF3)")
         print("I will continue the evaluation, but if these numbers look odd then something may have gone wrong.")
