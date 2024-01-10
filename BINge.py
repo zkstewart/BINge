@@ -23,9 +23,9 @@ from modules.clustering import cluster_unbinned_sequences
 from modules.validation import validate_args, validate_fasta
 from Various_scripts.Function_packages.ZS_Utility import convert_windows_to_wsl_path
 
-HASHING_PARAMS = ["inputFiles", "genomeFiles", # These hashes are the only ones which behaviourally
-                  "gmapIdentity"]              # influence the pre-external clustering
-
+HASHING_PARAMS = ["inputFiles", "genomeFiles",            # These hashes are the only ones 
+                  "gmapIdentity", "clusterVoteThreshold"] # which behaviourally influence the 
+                                                          # pre-external clustering
 # Define functions
 def symlinker(src, dst):
     '''
@@ -325,16 +325,6 @@ def get_parameters_hash(args):
     
     return paramHash
 
-def _debug_pickler(objectToPickle, outputFileName):
-    if not os.path.exists(outputFileName):
-        with open(outputFileName, "wb") as pickleOut:
-            pickle.dump(objectToPickle, pickleOut)
-
-def _debug_loader(pickleFileName):
-    with open(pickleFileName, "rb") as pickleIn:
-        results = pickle.load(pickleIn)
-    return results
-
 ## Main
 def main():
     showHiddenArgs = '--help-long' in sys.argv
@@ -349,9 +339,9 @@ def main():
     annotations (if available and high quality) in the same style e.g., 
     'annotation.gff3,genome.fasta'
     4) Unbinned sequences will be cascade clustered using MMseqs2 by default which is
-    recommended; you can choose Linclust or CD-HIT if desired. 4) Many parameters are hidden
-    in this short help format since their defaults are adequate; specify --help-long to see
-    information for those options.
+    recommended; you can choose Linclust or CD-HIT if desired.
+    5) Many parameters are hidden in this short help format since their defaults are adequate;
+    specify --help-long to see information for those options.
     """
     
     usageLong = """%(prog)s (BIN Genes for Expression analyses) is a program which clusters
@@ -386,14 +376,17 @@ def main():
     genome it will pre-seed the bins along this genome based on the annotation. If the annotation
     is of a reasonable standard this is expected to make BINge perform better.
     ###
-    Note 3: Sequences which do not align against the genome are considered to be "unbinned".
+    Note 4: Sequences which do not align against the genome are considered to be "unbinned".
     These will be clustered with MMseqs2 cascaded clustering by default, which is the recommended
     choice. You can use Linclust (also okay, trades some accuracy for some speed) or CD-HIT
     (potentially very slow and possibly least accurate) if wanted.
     ###
-    Note 4: The --gmapIdentity parameter should be set in the range of ... TBD.
+    Note 5: The --gmapIdentity parameter should be set in the range of 0.90 to 0.99 depending
+    on the evolutionary distance between your input files and the genomes you're aligning
+    against. For same species, use 0.98 or 0.99. If you're aligning against a different species
+    in the same genus, use 0.95. If you're aligning against a different genus, consider 0.90.
     ###
-    Note 5: You're seeing the --help-long format of this message, which means you may want to
+    Note 6: You're seeing the --help-long format of this message, which means you may want to
     configure the way clustering of unbinned sequences works. Behavioural parameters of several
     features can be tuned here, but the defaults are expected to work most of the time.
     The main exception is CD-HIT's memory utilisation, which probably should be set depending
@@ -438,6 +431,16 @@ def main():
                    same genus alignment, and least strict for different genus alignments"""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=0.95)
+    p.add_argument("--clusterVoteThreshold", dest="clusterVoteThreshold",
+                   required=False,
+                   type=float,
+                   help="""Optionally, specify the clustering vote threshold used when
+                   clustering bins based on sequence ID co-occurrence (default == 0.5).
+                   Based on objective measures e.g., BUSCO, you may want to alter this to
+                   increase clustering strictness (higher value; gives more clusters) or
+                   decrease clustering strictness (lower value; gives fewer clusters)"""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=0.5)
     # Optional - program behavioural controls
     p.add_argument("--microbial", dest="isMicrobial",
                    required=False,
@@ -570,8 +573,6 @@ def main():
     
     # Perform GMAP mapping
     gmapFiles = auto_gmapping(args.outputDirectory, args.gmapDir, args.threads)
-    _debug_pickler(gmapFiles, os.path.join(args.outputDirectory, f"{paramHash}.gmapFiles.pkl"))
-    #gmapFiles = _debug_loader(os.path.join(args.outputDirectory, f"{paramHash}.gmapFiles.pkl"))
     
     # Figure out what our pickle file is called
     pickleFile = os.path.join(args.outputDirectory, f"{paramHash}.binge.pkl")
@@ -600,8 +601,6 @@ def main():
             print(f"# Generated a list with {len(collectionList)} collections")
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} contains {len(_cl)} bins")
-        _debug_pickler(collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.setup.pkl"))
-        #collectionList = _debug_loader(os.path.join(args.outputDirectory, f"{paramHash}.collectionList.setup.pkl"))
         
         # Parse GMAP alignments into our bin collection with multiple threads
         collectionList = populate_bin_collections(collectionList, gmapFiles,
@@ -610,16 +609,12 @@ def main():
             print(f"# Populated collections based on GMAP alignments")
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} now contains {len(_cl)} bins")
-        _debug_pickler(collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.populated.pkl"))
-        #_debug_loader()
         
         # Convert collections into a bundle
         binBundle = BinBundle.create_from_multiple_collections(collectionList)
-        _debug_pickler(binBundle, os.path.join(args.outputDirectory, f"{paramHash}.binBundle.pkl"))
-        #_debug_loader()
         
         # Cluster bundles across and within genomes
-        clusterDict = binBundle.cluster_by_cooccurrence()
+        clusterDict = binBundle.cluster_by_cooccurrence(args.clusterVoteThreshold)
         if args.debug:
             print(f"# Clustered bundles (across and within genomes) based on ID occurrence")
             print(f"# Cluster dictionary contains {len(clusterDict)} clusters")
