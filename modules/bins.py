@@ -68,7 +68,7 @@ class Bin:
         self.end = max(self.end, otherBin.end)
         self.union(otherBin.ids)
     
-    def is_overlapping(self, otherBin, shorterCovPct=0.25, longerCovPct=0.10):
+    def is_overlapping(self, otherBin, shorterCovPct=0.20, longerCovPct=0.10):
         '''
         Compares this bin to another bin to see if they overlap each other according
         to shorter sequence and longer sequence coverage cut-offs. Think of this
@@ -108,7 +108,7 @@ class Bin:
                 shorterPct = pct2
                 longerPct = pct1
             
-            if shorterPct >= shorterCovPct and longerPct >= longerCovPct:
+            if shorterPct >= shorterCovPct or longerPct >= longerCovPct:
                 return True
             else:
                 return False
