@@ -6,11 +6,18 @@ class Bin:
     '''
     Make sure to use this bin with 1-based indexing for start and end values,
     in the same way as a GFF3 would.
+    
+    Parameters:
+        contig -- a string indicating the contig name that this bin is on.
+        start -- an integer indicating the start position of the bin.
+        end -- an integer indicating the end position of the bin.
+        genome -- any value indicating which genome this bin is associated with.
     '''
-    def __init__(self, contig, start, end):
+    def __init__(self, contig, start, end, genome):
         self.contig = contig
         self.start = start
         self.end = end
+        self.genome = genome
         
         self.ids = set() # set of sequence IDs
     
@@ -287,7 +294,7 @@ class BinBundle:
         
         return linkedBinBundle
     
-    def cluster_by_cooccurrence(self, VOTE_THRESHOLD = 0.5):
+    def cluster_by_cooccurrence(self, VOTE_THRESHOLD = 0.66):
         '''
         This algorithm clusters sequences based on their co-occurrence in exon bins.
         Sequences which co-occur in bins at a certain frequency of their total number

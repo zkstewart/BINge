@@ -134,7 +134,7 @@ class CollectionSeedProcess(ReturningProcess):
                        in turn, determines whether we will parse mRNA features (False) or
                        gene features (True).
     '''
-    def task(self, gff3File, isMicrobial=False):
+    def task(self, gff3File, genomeIndex, isMicrobial=False):
         binCollection = BinCollection()
         
         # Seed bin collection if GFF3 is available
@@ -148,7 +148,8 @@ class CollectionSeedProcess(ReturningProcess):
                     try:
                         for mrnaFeature in geneFeature.mRNA:
                             for exonFeature in mrnaFeature.exon:
-                                exonBin = Bin(exonFeature.contig, exonFeature.start, exonFeature.end)
+                                exonBin = Bin(exonFeature.contig, exonFeature.start,
+                                              exonFeature.end, genomeIndex)
                                 exonBin.add(mrnaFeature.ID)
                                 exonBins.append(exonBin)
                     except:
@@ -156,7 +157,8 @@ class CollectionSeedProcess(ReturningProcess):
                         continue
                 else:
                     try:
-                        exonBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
+                        exonBin = Bin(geneFeature.contig, geneFeature.start,
+                                      geneFeature.end, genomeIndex)
                         exonBin.add(geneFeature.ID)
                         exonBins.append(exonBin)
                     except:
@@ -180,7 +182,7 @@ class GmapBinProcess(ReturningProcess):
         minIdentity -- (optional) a float fraction indicating what identity value is
                        minimally required for us to use a GMAP alignment; default=0.95.
     '''
-    def task(self, gmapFiles, binCollection, minIdentity=0.95):        
+    def task(self, gmapFiles, binCollection, genomeIndex, minIdentity=0.95):        
         # Behavioural parameters (static for now, may change later)
         "These statics are for filtering GMAP alignments that are poor quality"
         OKAY_COVERAGE = 96.5
@@ -241,7 +243,8 @@ class GmapBinProcess(ReturningProcess):
                     # Iteratively handle exon features
                     for exonStart, exonEnd in blockDataDict["exons"]:
                         # Create a bin for each exon feature
-                        exonBin = Bin(blockDataDict["contig"], exonStart, exonEnd)
+                        exonBin = Bin(blockDataDict["contig"], exonStart,
+                                      exonEnd, genomeIndex)
                         exonBin.add(blockDataDict["Name"])
                         
                         # See if this overlaps an existing bin
@@ -254,103 +257,3 @@ class GmapBinProcess(ReturningProcess):
                 thisBlockID, thisBlockData = dataDict["Name"], [dataDict]
         
         return binCollection
-
-class QueuedBinSplitterProcess(ReturningProcess):
-    '''
-    Allows for bin splitting to be run in parallel across multiple separate
-    BinCollection() objects. Utilises a queue to receive and send Bin() objects.
-    
-    Parameters:
-        inputQueue -- a multiprocessing.Queue() object to receive Bin() objects from.
-        shorterCovPct -- a float value indicating the percentage of the shortest
-                         sequence's coverage that must be covered by the longer sequence;
-                         default==0.40.
-        longerCovPct -- a float value indicating the percentage of the longest
-                        sequence's coverage that must be covered by the shorter sequence;
-                        default==0.20.
-    Returns:
-        newBinBundle -- a BinBundle() object containing all the new bins created. Since
-                        start, stop, exons, etc. should no longer be relevant, we do not
-                        return a BinCollection() object.
-    '''
-    def task(self, inputQueue, shorterCovPct=0.40, longerCovPct=0.20):
-        binBundle = BinBundle()
-        
-        while True:
-            # Continue condition
-            if inputQueue.empty():
-                time.sleep(0.5)
-                continue
-            
-            # Grabbing condition
-            bin = inputQueue.get()
-            
-            # Exit condition
-            if bin == None:
-                break
-            
-            # Perform work
-            binList = self._work_function(bin, shorterCovPct, longerCovPct)
-            
-            # Store results
-            for bin in binList:
-                binBundle.add(bin)
-        
-        return binBundle
-    
-    def _work_function(self, bin, shorterCovPct, longerCovPct):
-        ids = list(bin.ids) # ensure we always use this in consistent ordering
-        
-        # Model links between sequences as a graph structure
-        idsGraph = nx.Graph()
-        idsGraph.add_nodes_from(ids)
-        
-        # Figure out which sequences have links through shared exons
-        for i in range(len(ids)-1):
-            for x in range(i+1, len(ids)):
-                id1, id2 = ids[i], ids[x]
-                exons1, exons2 = bin.exons[id1], bin.exons[id2]
-                
-                # Calculate the amount of overlap between their exons
-                exonOverlap = sum([
-                    abs(max(exons1[n][0], exons2[m][0]) - min(exons1[n][1], exons2[m][1])) + 1
-                    for n in range(len(exons1))
-                    for m in range(len(exons2))
-                    if exons1[n][0] <= exons2[m][1] and exons1[n][1] >= exons2[m][0]
-                ])
-                if exonOverlap == 0: # skip if there's no overlap
-                    continue
-                
-                # Calculate the percentage of each sequence being overlapped by the other
-                len1 = sum([ end - start + 1 for start, end in exons1 ])
-                len2 = sum([ end - start + 1 for start, end in exons2 ])
-                
-                pct1 = exonOverlap / len1
-                pct2 = exonOverlap / len2
-                
-                # See if this meets any coverage pct cutoffs
-                if len1 <= len2:
-                    shorterPct = pct1
-                    longerPct = pct2
-                else:
-                    shorterPct = pct2
-                    longerPct = pct1
-                
-                if shorterPct >= shorterCovPct and longerPct >= longerCovPct:
-                    # If this met the cutoff, add an edge between these nodes in the graph
-                    idsGraph.add_edge(id1, id2)
-        
-        # Identify connected IDs which form clusters
-        binList = []
-        for connectedIDs in nx.connected_components(idsGraph):
-            start = 1 # start is not needed anymore
-            end = 10 # end is not needed anymore
-            exonsDict = { seqID : [] for seqID in connectedIDs } # exons are not needed anymore
-            
-            # Create a bin for this split cluster
-            newBin = Bin(bin.contig, start, end)
-            newBin.union(connectedIDs, exonsDict)
-            
-            binList.append(newBin)
-        
-        return binList

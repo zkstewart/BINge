@@ -37,7 +37,7 @@ def generate_bin_collections(workingDirectory, threads, isMicrobial):
                 f"FASTA file in '{genomesDir}' does not have a number suffix?"
             
             # Add value to pairings list
-            filePairs.append([None, os.path.join(genomesDir, file), suffixNum])
+            filePairs.append([None, suffixNum])
             
             # Add any corresponding GFF3 file if one exists
             gff3File = f"annotation{suffixNum}.gff3"
@@ -62,9 +62,9 @@ def generate_bin_collections(workingDirectory, threads, isMicrobial):
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(filePairs): # parent loop may excess if n > the number of GMAP files
-                gff3File, _, _ = filePairs[i+x]
+                gff3File, genomeIndex = filePairs[i+x]
                 
-                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial)
+                seedWorkerThread = CollectionSeedProcess(gff3File, genomeIndex, isMicrobial)
                 seedWorkerThread.start()
                 processing.append(seedWorkerThread)
         
@@ -113,7 +113,7 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         thisBinCollection = collectionList[genomeIndex]
         
         # Store for threading
-        threadData.append([thisGmapFiles, thisBinCollection])
+        threadData.append([thisGmapFiles, thisBinCollection, suffixNum])
     
     # Start up threads
     resultBinCollections = []
@@ -121,10 +121,10 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
-                thisGmapFiles, thisBinCollection = threadData[i+x]
+                thisGmapFiles, thisBinCollection, genomeIndex = threadData[i+x]
                 
                 populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
-                                                      gmapIdentity)
+                                                      genomeIndex, gmapIdentity)
                 populateWorkerThread.start()
                 processing.append(populateWorkerThread)
         
