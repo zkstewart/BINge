@@ -62,9 +62,9 @@ def generate_bin_collections(workingDirectory, threads, isMicrobial):
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(filePairs): # parent loop may excess if n > the number of GMAP files
-                gff3File, genomeIndex = filePairs[i+x]
+                gff3File, _ = filePairs[i+x]
                 
-                seedWorkerThread = CollectionSeedProcess(gff3File, genomeIndex, isMicrobial)
+                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial)
                 seedWorkerThread.start()
                 processing.append(seedWorkerThread)
         
@@ -113,7 +113,7 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         thisBinCollection = collectionList[genomeIndex]
         
         # Store for threading
-        threadData.append([thisGmapFiles, thisBinCollection, suffixNum])
+        threadData.append([thisGmapFiles, thisBinCollection])
     
     # Start up threads
     resultBinCollections = []
@@ -121,10 +121,10 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
-                thisGmapFiles, thisBinCollection, genomeIndex = threadData[i+x]
+                thisGmapFiles, thisBinCollection = threadData[i+x]
                 
                 populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
-                                                      genomeIndex, gmapIdentity)
+                                                      gmapIdentity)
                 populateWorkerThread.start()
                 processing.append(populateWorkerThread)
         

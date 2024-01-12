@@ -26,7 +26,7 @@ def _generate_bin_collections_via_seeder(gff3Files, threads):
             if i+x < len(gff3Files): # parent loop may excess if n > the number of GMAP files
                 gff3File = gff3Files[i+x]
                 
-                seedWorkerThread = CollectionSeedProcess(gff3File, i)
+                seedWorkerThread = CollectionSeedProcess(gff3File)
                 
                 processing.append(seedWorkerThread)
                 seedWorkerThread.start()
@@ -47,7 +47,7 @@ def _generate_bin_collections(gff3Files, isMicrobial=False):
     # Generate and seed bin collections
     collectionList = []
     
-    for genomeIndex, gff3File in enumerate(gff3Files):
+    for gff3File in gff3Files:
         binCollection = BinCollection()
         
         # Seed bin collection if GFF3 is available
@@ -61,8 +61,7 @@ def _generate_bin_collections(gff3Files, isMicrobial=False):
                     try:
                         for mrnaFeature in geneFeature.mRNA:
                             for exonFeature in mrnaFeature.exon:
-                                exonBin = Bin(exonFeature.contig, exonFeature.start,
-                                              exonFeature.end, genomeIndex)
+                                exonBin = Bin(exonFeature.contig, exonFeature.start, exonFeature.end)
                                 exonBin.add(mrnaFeature.ID)
                                 exonBins.append(exonBin)
                     except:
@@ -70,8 +69,7 @@ def _generate_bin_collections(gff3Files, isMicrobial=False):
                         continue
                 else:
                     try:
-                        exonBin = Bin(geneFeature.contig, geneFeature.start,
-                                      geneFeature.end, genomeIndex)
+                        exonBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
                         exonBin.add(geneFeature.ID)
                         exonBins.append(exonBin)
                     except:
@@ -113,7 +111,7 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
                 thisGmapFiles, thisBinCollection = threadData[i+x]
                 
                 populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
-                                                     i, gmapIdentity)
+                                                     gmapIdentity)
                 
                 processing.append(populateWorkerThread)
                 populateWorkerThread.start()
@@ -361,18 +359,16 @@ class TestNovelPopulate(unittest.TestCase):
 class TestNetworkX(unittest.TestCase):
     def test_connected_component_numbers(self):
         # Arrange
-        genomeIndex = 1
-        
         binCollection = BinCollection()
-        bin1 = Bin("contig1", 1, 100, genomeIndex)
+        bin1 = Bin("contig1", 1, 100)
         bin1.ids = {"contig1.1"}
         bin1.exons = {"contig1.1": [[1, 100]]}
         
-        bin2 = Bin("contig1", 99, 200, genomeIndex)
+        bin2 = Bin("contig1", 99, 200)
         bin2.ids = {"contig1.2"}
         bin2.exons = {"contig1.2": [[99, 100200]]}
         
-        bin3 = Bin("contig1", 199, 300, genomeIndex)
+        bin3 = Bin("contig1", 199, 300)
         bin3.ids = {"contig1.3"}
         bin3.exons = {"contig1.3": [[199, 300]]}
         
@@ -490,12 +486,11 @@ class TestBinSeederThread(unittest.TestCase):
 
     def test_seeder_has_exception(self):
         # Arrange
-        genomeIndex = 1
         gff3File = os.path.join(dataDir, "gmap_normal.notexist.gff3")
         
         # Act and Assert
         try:
-            seedWorkerThread = CollectionSeedProcess(gff3File, genomeIndex)
+            seedWorkerThread = CollectionSeedProcess(gff3File)
             seedWorkerThread.start()
             seedWorkerThread.join()
             seedWorkerThread.check_errors()
@@ -505,11 +500,10 @@ class TestBinSeederThread(unittest.TestCase):
 
     def test_seeder_does_work(self):
         # Arrange
-        genomeIndex = 1
         gff3File = os.path.join(dataDir, "gmap_normal.gff3")
         
         # Act
-        seedWorkerThread = CollectionSeedProcess(gff3File, genomeIndex)
+        seedWorkerThread = CollectionSeedProcess(gff3File)
         seedWorkerThread.start()
         seedWorkerThread.join()
         seedWorkerThread.check_errors()
@@ -521,13 +515,12 @@ class TestBinSeederThread(unittest.TestCase):
 class TestGmapBinProcess(unittest.TestCase):
     def test_gmap_bin_process(self):
         # Arrange
-        genomeIndex = 1
         threads=4
         gff3Files = [os.path.join(dataDir, "gmap_normal.gff3")]
         binCollection = BinCollection()
         
         # Act
-        processor = GmapBinProcess(gff3Files, binCollection, genomeIndex, 0.95)
+        processor = GmapBinProcess(gff3Files, binCollection, 0.95)
         processor.start()
         resultCollection = processor.get_result()
         processor.join()

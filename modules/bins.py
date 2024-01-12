@@ -11,13 +11,11 @@ class Bin:
         contig -- a string indicating the contig name that this bin is on.
         start -- an integer indicating the start position of the bin.
         end -- an integer indicating the end position of the bin.
-        genome -- any value indicating which genome this bin is associated with.
     '''
-    def __init__(self, contig, start, end, genome):
+    def __init__(self, contig, start, end):
         self.contig = contig
         self.start = start
         self.end = end
-        self.genome = genome
         
         self.ids = set() # set of sequence IDs
     
@@ -226,73 +224,6 @@ class BinBundle:
         else:
             for bin in otherBinCollection:
                 self.add(bin)
-    
-    def link_by_sharing(self, VOTE_THRESHOLD = 0.5):
-        '''
-        This will attempt to merge bins that are "equivalent" across the genomes using
-        a graph-based approach to modelling the relationships between the bins. The
-        result is a BinBundle that unifies all input data and is appropriate for
-        sequence clustering.
-        
-        Note: this function is not guaranteed to produce a stable output i.e., if
-        you feed its result back in, you may get different results. It should
-        eventually converge on a stable solution, but there might theoretically
-        be an edge case where that never happens.
-        
-        Parameters:
-            VOTE_THRESHOLD -- a float greater than 0, and less than or equal to 1.0.
-                              This represents a ratio 
-        Returns:
-            linkedBinBundle -- a NEW BinBundle object where bins from the
-                               current object have been merged where deemed
-                               appropriate.
-        '''
-        assert 0 < VOTE_THRESHOLD <= 1.0, \
-            "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
-        
-        # Figure out which bins can link to each other via shared IDs
-        idLinks = {}
-        for binIndex, bin in enumerate(self.bins):
-            for seqID in bin.ids:
-                idLinks.setdefault(seqID, set())
-                idLinks[seqID].add(binIndex)
-        
-        # Model links between bins as a graph structure
-        binGraph = nx.Graph()
-        binGraph.add_nodes_from(range(0, len(self.bins)))
-        
-        # Link bins where appropriate
-        for i in range(len(self.bins)):
-            b1 = self.bins[i]
-            
-            # See which bins its IDs has overlap with
-            "We do this to avoid poor O(n^2) performance of iterating through all bins"
-            linkedIDs = set([ _id for seqID in b1.ids for _id in idLinks[seqID] ])
-            
-            # See if the overlap is sufficient to link the bins
-            for x in linkedIDs:
-                if i == x: # skip self comparison
-                    continue
-                
-                b2 = self.bins[x]
-                numIntersectingIDs = len(b1.ids.intersection(b2.ids))
-                
-                if (numIntersectingIDs / len(b1.ids)) >= VOTE_THRESHOLD and \
-                    (numIntersectingIDs / len(b2.ids)) >= VOTE_THRESHOLD:
-                        binGraph.add_edge(i, x)
-        
-        # Merge bins on the basis of link identification
-        linkedBinBundle = BinBundle()
-        for connectedBins in nx.connected_components(binGraph):
-            connectedBins = list(connectedBins)
-            
-            newBin = self.bins[connectedBins[0]]
-            for index in connectedBins[1:]:
-                newBin.union(self.bins[index].ids)
-            
-            linkedBinBundle.add(newBin)
-        
-        return linkedBinBundle
     
     def cluster_by_cooccurrence(self, VOTE_THRESHOLD = 0.66):
         '''

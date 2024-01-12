@@ -134,7 +134,7 @@ class CollectionSeedProcess(ReturningProcess):
                        in turn, determines whether we will parse mRNA features (False) or
                        gene features (True).
     '''
-    def task(self, gff3File, genomeIndex, isMicrobial=False):
+    def task(self, gff3File, isMicrobial=False):
         binCollection = BinCollection()
         
         # Seed bin collection if GFF3 is available
@@ -148,8 +148,7 @@ class CollectionSeedProcess(ReturningProcess):
                     try:
                         for mrnaFeature in geneFeature.mRNA:
                             for exonFeature in mrnaFeature.exon:
-                                exonBin = Bin(exonFeature.contig, exonFeature.start,
-                                              exonFeature.end, genomeIndex)
+                                exonBin = Bin(exonFeature.contig, exonFeature.start, exonFeature.end)
                                 exonBin.add(mrnaFeature.ID)
                                 exonBins.append(exonBin)
                     except:
@@ -157,8 +156,7 @@ class CollectionSeedProcess(ReturningProcess):
                         continue
                 else:
                     try:
-                        exonBin = Bin(geneFeature.contig, geneFeature.start,
-                                      geneFeature.end, genomeIndex)
+                        exonBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
                         exonBin.add(geneFeature.ID)
                         exonBins.append(exonBin)
                     except:
@@ -182,7 +180,7 @@ class GmapBinProcess(ReturningProcess):
         minIdentity -- (optional) a float fraction indicating what identity value is
                        minimally required for us to use a GMAP alignment; default=0.95.
     '''
-    def task(self, gmapFiles, binCollection, genomeIndex, minIdentity=0.95):        
+    def task(self, gmapFiles, binCollection, minIdentity=0.95):        
         # Behavioural parameters (static for now, may change later)
         "These statics are for filtering GMAP alignments that are poor quality"
         OKAY_COVERAGE = 96.5
@@ -243,8 +241,7 @@ class GmapBinProcess(ReturningProcess):
                     # Iteratively handle exon features
                     for exonStart, exonEnd in blockDataDict["exons"]:
                         # Create a bin for each exon feature
-                        exonBin = Bin(blockDataDict["contig"], exonStart,
-                                      exonEnd, genomeIndex)
+                        exonBin = Bin(blockDataDict["contig"], exonStart, exonEnd)
                         exonBin.add(blockDataDict["Name"])
                         
                         # See if this overlaps an existing bin
