@@ -49,8 +49,8 @@ def generate_bin_collections(workingDirectory, threads, isMicrobial):
     
     # Sort the list for consistency of ordering
     "If there are gaps in the suffixNum's, ordering is important to keep things paired up"
-    filePairs.sort(key = lambda x: int(x[2]))
-    suffixes = [ int(x[2]) for x in filePairs ]
+    filePairs.sort(key = lambda x: int(x[1]))
+    suffixes = [ int(x[1]) for x in filePairs ]
     isConsecutive = suffixes == list(range(1, len(suffixes)+1))
     assert isConsecutive, \
         (f"generate_bin_collections failed because genome files in '{genomesDir}' are not " + 
