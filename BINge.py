@@ -232,8 +232,8 @@ def setup_sequences(workingDirectory, isMicrobial=False):
             
             # Check that the corresponding genome file exists
             genomeFile = os.path.join(gff3Dir, f"genome{suffixNum}.fasta")
-            assert check_file_exists(), \
-                f"Expected to find file 'genome{suffixNum}.fasta' in directory '{gff3Dir}' but couldn't?"
+            assert check_file_exists(genomeFile), \
+                f"Expected to find file 'genome{suffixNum}.fasta' at '{gff3Dir}' but couldn't?"
             
             # Index the genome's contig lengths if not already done
             generate_sequence_length_index(genomeFile)
