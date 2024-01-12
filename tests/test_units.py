@@ -11,6 +11,9 @@ from modules.gff3_handling import iterate_gmap_gff3
 from modules.thread_workers import GmapBinProcess, CollectionSeedProcess, \
     find_overlapping_bins, add_bin_to_collection
 
+# Specify data locations
+dataDir = os.path.join(os.getcwd(), "data")
+
 ###
 
 ## Unit tests to be done:
@@ -109,9 +112,10 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
                 thisGmapFiles, thisBinCollection = threadData[i+x]
+                indexFile = os.path.join(dataDir, "length_index.pkl")
                 
                 populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
-                                                     gmapIdentity)
+                                                     indexFile, gmapIdentity)
                 
                 processing.append(populateWorkerThread)
                 populateWorkerThread.start()
@@ -126,9 +130,6 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
     return resultBinCollection
 
 ###
-
-# Specify data locations
-dataDir = os.path.join(os.getcwd(), "data")
 
 # Define unit tests
 class TestBinCollection(unittest.TestCase):
@@ -517,10 +518,11 @@ class TestGmapBinProcess(unittest.TestCase):
         # Arrange
         threads=4
         gff3Files = [os.path.join(dataDir, "gmap_normal.gff3")]
+        indexFile = os.path.join(dataDir, "length_index.pkl")
         binCollection = BinCollection()
         
         # Act
-        processor = GmapBinProcess(gff3Files, binCollection, 0.95)
+        processor = GmapBinProcess(gff3Files, binCollection, indexFile, 0.95)
         processor.start()
         resultCollection = processor.get_result()
         processor.join()

@@ -1,9 +1,9 @@
-import os, sys, time
-import networkx as nx
+import os, sys
 from multiprocessing import Process, Pipe, Queue
 
 from .gff3_handling import GFF3, iterate_gmap_gff3
-from .bins import Bin, BinBundle, BinCollection
+from .fasta_handling import load_sequence_length_index
+from .bins import Bin, BinCollection
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_MapIO import GMAP_DB
@@ -177,10 +177,12 @@ class GmapBinProcess(ReturningProcess):
     Parameters:
         gmapFile -- a string indicating the location of a GMAP GFF3 for parsing.
         binCollection -- an existing BinCollection object to add GMAP alignments to.
+        indexFileName -- a string indicating the location of a pickled dictionary
+                         linking sequence IDs (key) to lengths (value).
         minIdentity -- (optional) a float fraction indicating what identity value is
                        minimally required for us to use a GMAP alignment; default=0.95.
     '''
-    def task(self, gmapFiles, binCollection, minIdentity=0.95):        
+    def task(self, gmapFiles, binCollection, indexFileName, minIdentity=0.95):
         # Behavioural parameters (static for now, may change later)
         "These statics are for filtering GMAP alignments that are poor quality"
         OKAY_COVERAGE = 96.5
@@ -189,6 +191,12 @@ class GmapBinProcess(ReturningProcess):
         "These statics prevent a gene mapping to multiple locations when it has a clear best"
         ALLOWED_COV_DIFF = 1
         ALLOWED_IDENT_DIFF = 0.1
+        ##
+        "This static allows coverage to be lower if the alignment is close to the contig's edge"
+        LENIENT_BOUNDARY_LENGTH = 1000
+        
+        # Load in the lengths index
+        seqLenDict = load_sequence_length_index(indexFileName)
         
         # Iterate through GMAP files
         for gmapFile in gmapFiles:
@@ -223,8 +231,22 @@ class GmapBinProcess(ReturningProcess):
                     ])
                     indelProportion = blockDataDict["indels"] / exonLength
                     
+                    # Apply leniency if the alignment is close to the contig's boundaries
+                    """This helps to deal with fragmented genes aligning well to a contig's
+                    edge, but the full length model not being binned because its coverage is
+                    too low."""
+                    beLenient = False
+                    if coverage < OKAY_COVERAGE:
+                        contigLength = seqLenDict[blockDataDict["contig"]]
+                        alignmentStart = min(min(blockDataDict["exons"]))
+                        alignmentEnd = max(max(blockDataDict["exons"]))
+                        
+                        if (alignmentStart < LENIENT_BOUNDARY_LENGTH) \
+                            or (alignmentEnd + LENIENT_BOUNDARY_LENGTH) > contigLength:
+                            beLenient = True
+                    
                     # Skip processing if the alignment sucks
-                    isGoodAlignment = coverage >= OKAY_COVERAGE \
+                    isGoodAlignment = (True if beLenient else coverage >= OKAY_COVERAGE) \
                                     and identity >= minIdentity \
                                     and indelProportion <= OKAY_INDEL_PROPORTION
                     if not isGoodAlignment:

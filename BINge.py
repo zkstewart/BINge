@@ -17,12 +17,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from modules.bins import BinBundle
 from modules.bin_handling import generate_bin_collections, populate_bin_collections
-from modules.fasta_handling import AnnotationExtractor, FastaCollection
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
 from modules.validation import validate_args, validate_fasta
 from Various_scripts.Function_packages.ZS_Utility import convert_windows_to_wsl_path
-
+from modules.fasta_handling import AnnotationExtractor, FastaCollection, \
+    generate_sequence_length_index
 HASHING_PARAMS = ["inputFiles", "genomeFiles",            # These hashes are the only ones 
                   "gmapIdentity", "clusterVoteThreshold"] # which behaviourally influence the 
                                                           # pre-external clustering
@@ -176,9 +176,6 @@ def setup_param_cache(args, paramHash):
         args -- the argparse object of BINge called through the main function.
         paramHash -- a string of the hash for these parameters to store in the param cache.
     '''
-    # Get relevant parameters from args object
-    workingDirectory = args.outputDirectory
-    
     # Parse any existing param cache file
     paramCacheFile = os.path.join(args.outputDirectory, "param_cache.json")
     if os.path.exists(paramCacheFile):
@@ -234,12 +231,15 @@ def setup_sequences(workingDirectory, isMicrobial=False):
                 f"GFF3 file in '{gff3Dir}' does not have a number suffix?"
             
             # Check that the corresponding genome file exists
-            genomeFile = f"genome{suffixNum}.fasta"
-            assert check_file_exists(os.path.join(gff3Dir, genomeFile)), \
-                f"Expected to find file '{genomeFile}' in directory '{gff3Dir}' but couldn't?"
+            genomeFile = os.path.join(gff3Dir, f"genome{suffixNum}.fasta")
+            assert check_file_exists(), \
+                f"Expected to find file 'genome{suffixNum}.fasta' in directory '{gff3Dir}' but couldn't?"
+            
+            # Index the genome's contig lengths if not already done
+            generate_sequence_length_index(genomeFile)
             
             # Store the pairing
-            filePairs.append([os.path.join(gff3Dir, file), os.path.join(gff3Dir, genomeFile), suffixNum])
+            filePairs.append([os.path.join(gff3Dir, file), genomeFile, suffixNum])
     
     # Parse out mRNA sequences from each GFF3/genome pair
     for gff3File, fastaFile, suffixNum in filePairs:
@@ -418,27 +418,12 @@ def main():
                    required=True,
                    help="Output directory for intermediate and final results")
     # Optional - BINge
-    p.add_argument("--gmapDir", dest="gmapDir",
-                   required=False,
-                   help="""If GMAP is not discoverable in your PATH, specify the directory
-                   containing the mmseqs executable""")
     p.add_argument("--threads", dest="threads",
                    required=False,
                    type=int,
                    help="""Optionally, specify how many threads to run when multithreading
                    is available (default==1)""",
                    default=1)
-    p.add_argument("--gmapIdentity", dest="gmapIdentity",
-                   required=False,
-                   type=float,
-                   help="""Optionally, specify the identity threshold for accepting a GMAP
-                   alignment (default==0.95); note that this value operates independently
-                   of --identity and its strictness should depend on the largest evolutionary
-                   distance you have between a file given to -i and a genome given to -g e.g.,
-                   this should be strict for same species only alignment, less strict for
-                   same genus alignment, and least strict for different genus alignments"""
-                   if showHiddenArgs else argparse.SUPPRESS,
-                   default=0.95)
     p.add_argument("--clusterVoteThreshold", dest="clusterVoteThreshold",
                    required=False,
                    type=float,
@@ -450,6 +435,22 @@ def main():
                    """
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=0.66)
+    # Optional - GMAP
+    p.add_argument("--gmapDir", dest="gmapDir",
+                   required=False,
+                   help="""If GMAP is not discoverable in your PATH, specify the directory
+                   containing the mmseqs executable""")
+    p.add_argument("--gmapIdentity", dest="gmapIdentity",
+                   required=False,
+                   type=float,
+                   help="""Optionally, specify the identity threshold for accepting a GMAP
+                   alignment (default==0.95); note that this value operates independently
+                   of --identity and its strictness should depend on the largest evolutionary
+                   distance you have between a file given to -i and a genome given to -g e.g.,
+                   this should be strict for same species only alignment, less strict for
+                   same genus alignment, and least strict for different genus alignments"""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=0.95)
     # Optional - program behavioural controls
     p.add_argument("--microbial", dest="isMicrobial",
                    required=False,
@@ -458,13 +459,6 @@ def main():
                    file from a bacteria, archaea, or just any organism in which the GFF3
                    does not contain mRNA and exon features; in this case, I expect the GFF3
                    feature to have 'gene' and 'CDS' features."""
-                   if showHiddenArgs else argparse.SUPPRESS,
-                   default=False)
-    p.add_argument("--debug", dest="debug",
-                   required=False,
-                   action="store_true",
-                   help="""Optionally provide this argument if you want to generate detailed
-                   logging information along the way to help with debugging."""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=False)
     p.add_argument("--clusterer", dest="unbinnedClusterer",
@@ -549,7 +543,14 @@ def main():
                    provide CD-HIT (default==6000)"""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=6000)
-    # Help controller
+    # Help controller and meta arguments
+    p.add_argument("--debug", dest="debug",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally provide this argument if you want to generate detailed
+                   logging information along the way to help with debugging."""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=False)
     p.add_argument("--help-long", dest="help-long",
                    action="help",
                    help="""Show all options, including those that are not
@@ -612,7 +613,8 @@ def main():
                 print(f"# Collection #{index+1} contains {len(_cl)} bins")
         
         # Parse GMAP alignments into our bin collection with multiple threads
-        collectionList = populate_bin_collections(collectionList, gmapFiles,
+        collectionList = populate_bin_collections(args.outputDirectory,
+                                                  collectionList, gmapFiles,
                                                   args.threads, args.gmapIdentity)
         if args.debug:
             print(f"# Populated collections based on GMAP alignments")

@@ -78,7 +78,8 @@ def generate_bin_collections(workingDirectory, threads, isMicrobial):
     
     return collectionList
 
-def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
+def populate_bin_collections(workingDirectory, collectionList, gmapFiles,
+                             threads, gmapIdentity):
     '''
     Receives a list of BinCollection objects, alongside a list of GMAP GFF3 file
     locations, and uses multiple threads to parse the GMAP files and add them into
@@ -103,17 +104,21 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
     threadData = []
     for suffixNum in range(1, len(collectionList) + 1):
         # Figure out which genome we're looking at
-        genomePrefix = f"genome{suffixNum}_"
+        genomePrefix = f"genome{suffixNum}"
         genomeIndex = int(suffixNum) - 1
         
+        # Get the location of the genome length index
+        thisGenomeIndex = os.path.join(workingDirectory, "genomes",
+                                       f"{genomePrefix}.fasta.lengths.pkl")
+        
         # Get all GMAP files associated with this genome
-        thisGmapFiles = [ gmFile for gmFile in gmapFiles if genomePrefix in gmFile]
+        thisGmapFiles = [ gmFile for gmFile in gmapFiles if f"{genomePrefix}_" in gmFile]
         
         # Get other data structures for this genome
         thisBinCollection = collectionList[genomeIndex]
         
         # Store for threading
-        threadData.append([thisGmapFiles, thisBinCollection])
+        threadData.append([thisGmapFiles, thisBinCollection, thisGenomeIndex])
     
     # Start up threads
     resultBinCollections = []
@@ -121,10 +126,10 @@ def populate_bin_collections(collectionList, gmapFiles, threads, gmapIdentity):
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
-                thisGmapFiles, thisBinCollection = threadData[i+x]
+                thisGmapFiles, thisBinCollection, thisGenomeIndex = threadData[i+x]
                 
                 populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
-                                                      gmapIdentity)
+                                                      thisGenomeIndex, gmapIdentity)
                 populateWorkerThread.start()
                 processing.append(populateWorkerThread)
         
