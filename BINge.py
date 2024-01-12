@@ -151,6 +151,9 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
                 symlinker(gff3, linkedGFF3)
             if not check_file_exists(linkedFASTA):
                 symlinker(fasta, linkedFASTA)
+            
+            # Index the genome's contig lengths if not already done
+            generate_sequence_length_index(linkedFASTA)
         
         # Handle plain genome files
         else:
@@ -166,6 +169,9 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
             
             if not check_file_exists(linkedFASTA):
                 symlinker(file, linkedFASTA)
+            
+            # Index the genome's contig lengths if not already done
+            generate_sequence_length_index(linkedFASTA)
 
 def setup_param_cache(args, paramHash):
     '''
@@ -234,9 +240,6 @@ def setup_sequences(workingDirectory, isMicrobial=False):
             genomeFile = os.path.join(gff3Dir, f"genome{suffixNum}.fasta")
             assert check_file_exists(genomeFile), \
                 f"Expected to find file 'genome{suffixNum}.fasta' at '{gff3Dir}' but couldn't?"
-            
-            # Index the genome's contig lengths if not already done
-            generate_sequence_length_index(genomeFile)
             
             # Store the pairing
             filePairs.append([os.path.join(gff3Dir, file), genomeFile, suffixNum])
