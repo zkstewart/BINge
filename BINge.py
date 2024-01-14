@@ -632,9 +632,9 @@ def main():
         graphList = [ BinGraph([binCollection]) for binCollection in collectionList ]
         graphList = prune_graphs(graphList, args.threads)
         
-        # Join BinGraphs together for a final combined prune
+        # Join BinGraphs together for a final clustering
         graphList = BinGraph(graphList)
-        graphList.prune()
+        #graphList.prune()
         
         # Convert collections into a bundle
         #binBundle = BinBundle.create_from_multiple_graphs(graphList)
