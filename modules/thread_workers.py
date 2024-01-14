@@ -276,3 +276,21 @@ class GmapBinProcess(ReturningProcess):
                 thisBlockID, thisBlockData = dataDict["Name"], [dataDict]
         
         return binCollection
+
+class GraphPruneProcess(ReturningProcess):
+    '''
+    Allows for BinGraph.prune() to be run in parallel for multiple genomes.
+    
+    Parameters:
+        binGraph -- a BinGraph object to call .prune() on.
+        WEIGHT_CUTOFF -- (optional) a float indicating the minimum weight proportion
+                         required for an edge to be kept; default=0.5.
+        CUT_CUTOFF -- (optional) a float indicating the minimum weight proportion
+                       required for a sequence ID to not be eliminated if it shows
+                       up in cut edges; default=0.5.
+    Returns:
+        binGraph -- the same BinGraph object, but with its .prune() method called.
+    '''
+    def task(self, binGraph, WEIGHT_CUTOFF=0.5, CUT_CUTOFF=0.5):
+        binGraph.prune(WEIGHT_CUTOFF, CUT_CUTOFF)
+        return binGraph

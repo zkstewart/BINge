@@ -1,6 +1,6 @@
 import os
 
-from .thread_workers import CollectionSeedProcess, GmapBinProcess
+from .thread_workers import CollectionSeedProcess, GmapBinProcess, GraphPruneProcess
 
 def generate_bin_collections(workingDirectory, threads, isMicrobial):
     '''
@@ -142,3 +142,34 @@ def populate_bin_collections(workingDirectory, collectionList, gmapFiles,
             resultBinCollections.append(binCollection)
         
     return resultBinCollections
+
+def prune_graphs(binGraphList, threads):
+    '''
+    Receives a list of BinGraph objects and calls their .prune() method in parallel.
+    
+    Parameters:
+        binGraphList -- a list containing BinGraph objects.
+        threads -- an integer indicating how many threads to run.
+    Returns:
+        binGraphList -- a list containing the same BinGraph objects, just pruned.
+    '''
+    resultBinGraphs = []
+    for i in range(0, len(binGraphList), threads): # only process n (threads) at a time
+        processing = []
+        for x in range(threads): # begin processing n collections
+            if i+x < len(binGraphList): # parent loop may excess if n > the number of GMAP files
+                thisBinGraph = binGraphList[i+x]
+                
+                pruneWorkerThread = GraphPruneProcess(thisBinGraph)
+                pruneWorkerThread.start()
+                processing.append(pruneWorkerThread)
+        
+        # Wait on processes to end
+        for pruneWorkerThread in processing:
+            binGraph = pruneWorkerThread.get_result()
+            pruneWorkerThread.join()
+            pruneWorkerThread.check_errors()
+            
+            resultBinGraphs.append(binGraph)
+    
+    return resultBinGraphs

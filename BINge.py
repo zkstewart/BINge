@@ -16,7 +16,8 @@ from hashlib import sha256
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from modules.bins import BinBundle, BinGraph
-from modules.bin_handling import generate_bin_collections, populate_bin_collections
+from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
+    prune_graphs
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
 from modules.validation import validate_args, validate_fasta
@@ -628,11 +629,8 @@ def main():
                 print(f"# Collection #{index+1} now contains {len(_cl)} bins")
         
         # Convert BinCollections into pruned BinGraphs
-        graphList = []
-        for binCollection in collectionList:
-            binGraph = BinGraph(binCollection)
-            binGraph.prune()
-            graphList.append(binGraph)
+        graphList = [ BinGraph(binCollection) for binCollection in collectionList ]
+        graphList = prune_graphs(graphList, args.threads)
         
         # Convert collections into a bundle
         binBundle = BinBundle.create_from_multiple_graphs(graphList)
