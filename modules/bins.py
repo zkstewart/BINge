@@ -112,7 +112,7 @@ class Bin:
                 return True
             else:
                 return False
-        
+    
     def __repr__(self):
         return (f"<Bin object;contig='{self.contig}';start={self.start};" +
                 f"end={self.end};num_ids={len(self.ids)}"
@@ -196,6 +196,118 @@ class BinCollection:
             len(self)
         )
 
+class BinGraph:
+    '''
+    Represents a graph where nodes are Bin objects and edges are the sequence alignments
+    that join them.
+    '''
+    def __init__(self, binCollection):
+        self.graph = nx.Graph()
+        self.graph.add_nodes_from([ interval.data for interval in binCollection ])
+        self._link_bins_via_collection(binCollection)
+        self.eliminations = set()
+    
+    def _link_bins_via_collection(self, binCollection):
+        # Locate all bins that each sequence ID occurs in
+        idLinks = {}
+        for interval in binCollection:
+            bin = interval.data
+            for seqID in bin.ids:
+                idLinks.setdefault(seqID, [])
+                idLinks[seqID].append(bin)
+        
+        # Go through and link bins together
+        for seqID, binList in idLinks.items():
+            for i in range(0, len(binList)-1):
+                for j in range(i+1, len(binList)):
+                    # If these bins are not linked, link them
+                    if not self.graph.has_edge(binList[i], binList[j]):
+                        self.graph.add_edge(binList[i], binList[j], id={seqID})
+                    
+                    # Otherwise, modify the edge ID attribute
+                    else:
+                        self.graph[binList[i]][binList[j]]["id"].add(seqID)
+    
+    def prune(self, WEIGHT_CUTOFF=0.5, CUT_CUTOFF=0.5):
+        '''
+        Curates the graph by removing edges that are below a certain weight threshold,
+        removing sequence IDs that occur in many of the cut edges, and removes bins (nodes)
+        that are left isolated after the pruning.
+        
+        Parameters:
+            WEIGHT_CUTOFF -- a float greater than 0, and less than or equal to 1.0; this
+                             value controls the weight threshold for which edges are cut,
+                             wherein any edge with a weight less than (weightiest *
+                             WEIGHT_CUTOFF) will be cut.
+            CUT_CUTOFF -- a float greater than 0, and less than or equal to 1.0; this
+                          value controls the threshold for which sequence IDs are removed
+                          from edges, wherein any sequence ID that occurs in more than
+                          (numOccurrences * CUT_CUTOFF) edges will be removed from all
+                          edges it occurs in.
+        '''
+        binsToRemove = []
+        for connectedBins in self.connected_components():
+            connectedBins = list(connectedBins)
+            
+            # Skip over single bin components
+            if len(connectedBins) == 1:
+                continue
+            
+            # Obtain data for all edges in this component
+            edgeData = []
+            for edge in nx.edges(self.graph, connectedBins):
+                edgeIDs = self[edge[0]][edge[1]]["id"]
+                edgeData.append([
+                    edge,
+                    edgeIDs,
+                    len(edgeIDs)
+                ])
+            
+            # Cut any edges that are < (weightiest * WEIGHT_CUTOFF)
+            weightiest = max([ ed[2] for ed in edgeData ])
+            lowerBoundary = int(weightiest * WEIGHT_CUTOFF)
+            
+            cutEdges = {}
+            for edge, edgeIDs, edgeWeight in edgeData:
+                if edgeWeight < lowerBoundary:
+                    self.graph.remove_edge(*edge)
+                    for eID in edgeIDs:
+                        cutEdges.setdefault(eID, 0)
+                        cutEdges[eID] += 1
+            
+            # Remove the ID from all edges if relevant
+            for seqID, numCuts in cutEdges.items():
+                numOccurrences = sum([ 1 for _, ids, _ in edgeData if seqID in ids ])
+                if numCuts >= (numOccurrences * CUT_CUTOFF):
+                    self.eliminations.add(seqID) # permanently eliminate from BINge clustering
+                    
+                    for edge, edgeIDs, edgeWeight in edgeData:
+                        if seqID in edgeIDs and self.graph.has_edge(*edge):
+                            self[edge[0]][edge[1]]["id"].remove(seqID)
+            
+            # Flag bins for removal after iteration
+            for bin in connectedBins:
+                if nx.is_isolate(self.graph, bin):
+                    binsToRemove.append(bin)
+        
+        # Remove bins flagged for removal
+        for bin in binsToRemove:
+            self.graph.remove_node(bin)
+    
+    def connected_components(self):
+        return nx.connected_components(self.graph)
+    
+    def __getitem__(self, key):
+        return self.graph.__getitem__(key)
+    
+    def __len__(self):
+        return len(self.graph)
+    
+    def __repr__(self):
+        return "<BinGraph object;num_bins={0}>".format(
+            len(self.graph)
+        )
+
 class BinBundle:
     '''
     Encapsulates a simple list of Bin objects for storage and manipulation when the searching
@@ -205,6 +317,7 @@ class BinBundle:
     '''
     def __init__(self):
         self.bins = []
+        self.eliminations = None
     
     def add(self, bin):
         self.bins.append(bin)
@@ -299,6 +412,21 @@ class BinBundle:
         return newBundle
     
     @staticmethod
+    def create_from_graph(binGraph):
+        '''
+        Initializes a BinBundle object from a BinGraph object.
+        
+        Parameters:
+            binGraph -- a BinGraph object.
+        Returns:
+            binBundle -- a BinBundle object.
+        '''
+        newBundle = BinBundle()
+        for bin in binGraph.graph:
+            newBundle.add(bin)
+        return newBundle
+    
+    @staticmethod
     def create_from_multiple_collections(binCollectionList):
         '''
         Initializes a BinBundle object from one or more BinCollection objects.
@@ -319,8 +447,44 @@ class BinBundle:
             for bin in binCollection:
                 newBundle.add(bin.data)
         return newBundle
+    
+    @staticmethod
+    def create_from_multiple_graphs(binGraphList):
+        '''
+        Initializes a BinBundle object from one or more BinGraph objects.
+        The input value is expected to be a list of BinGraph objects.
+        The result is a single BinBundle object with all the bins squished
+        down into it.
         
+        Parameters:
+            binGraphList -- a list of BinGraph objects.
+        Returns:
+            binBundle -- a BinBundle object.
+        '''
+        assert isinstance(binGraphList, list), \
+            "binGraphList must be a list of BinGraph objects"
         
+        # Get all the eliminations sequence IDs
+        allEliminations = set()
+        for binGraph in binGraphList:
+            allEliminations = allEliminations.union(binGraph.eliminations)
+        
+        # Generate the new bundle, removing any eliminated sequences
+        newBundle = BinBundle()
+        for binGraph in binGraphList:
+            for bin in binGraph.graph:
+                # Remove eliminated sequences from any bins
+                toRemove = bin.ids.intersection(allEliminations)
+                if len(toRemove) > 0:
+                    bin.ids = bin.ids.difference(toRemove)
+                
+                # Add the bin to the bundle if it still contains IDs
+                if len(bin.ids) > 0:
+                    newBundle.add(bin)
+        
+        newBundle.eliminations = allEliminations
+        return newBundle
+    
     def __len__(self):
         return len(self.bins)
     

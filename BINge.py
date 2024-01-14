@@ -15,7 +15,7 @@ from hashlib import sha256
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from modules.bins import BinBundle
+from modules.bins import BinBundle, BinGraph
 from modules.bin_handling import generate_bin_collections, populate_bin_collections
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
@@ -278,7 +278,7 @@ def find_missing_sequence_id(binCollectionList, transcriptRecords):
                     return seqID
     return None
 
-def get_unbinned_sequence_ids(clusterDict, transcriptRecords):
+def get_unbinned_sequence_ids(clusterDict, eliminatedIDs, transcriptRecords):
     '''
     Compares one or more BinBundle objects against the transcript sequences
     to see if any sequences indicated in transcriptRecords do not exist in
@@ -291,6 +291,8 @@ def get_unbinned_sequence_ids(clusterDict, transcriptRecords):
                            1 : [ "seq4", "seq5", "seq6" ],
                            ...
                         }
+        eliminatedIDs -- a set containing strings of sequence IDs which are not to be
+                         considered for clustering.
         transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
                              sequences
     Returns:
@@ -301,6 +303,7 @@ def get_unbinned_sequence_ids(clusterDict, transcriptRecords):
     for seqIDs in clusterDict.values():
         binnedIDs.extend(seqIDs)
     binnedIDs = set(binnedIDs)
+    binnedIDs = binnedIDs.union(eliminatedIDs)
     
     unbinnedIDs = set()
     for record in transcriptRecords:
@@ -624,8 +627,15 @@ def main():
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} now contains {len(_cl)} bins")
         
+        # Convert BinCollections into pruned BinGraphs
+        graphList = []
+        for binCollection in collectionList:
+            binGraph = BinGraph(binCollection)
+            binGraph.prune()
+            graphList.append(binGraph)
+        
         # Convert collections into a bundle
-        binBundle = BinBundle.create_from_multiple_collections(collectionList)
+        binBundle = BinBundle.create_from_multiple_graphs(graphList)
         
         # Cluster bundles across and within genomes
         clusterDict = binBundle.cluster_by_cooccurrence(args.clusterVoteThreshold)
@@ -654,7 +664,8 @@ def main():
         for f in os.listdir(args.outputDirectory)
         if f.endswith(".nucl")
     ])
-    unbinnedIDs = get_unbinned_sequence_ids(clusterDict, transcriptRecords)
+    unbinnedIDs = get_unbinned_sequence_ids(clusterDict, binBundle.eliminations,
+                                            transcriptRecords)
     if args.debug:
         print(f"# There are {len(unbinnedIDs)} unbinned sequences for external clustering")
     
