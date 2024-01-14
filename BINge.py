@@ -629,14 +629,19 @@ def main():
                 print(f"# Collection #{index+1} now contains {len(_cl)} bins")
         
         # Convert BinCollections into pruned BinGraphs
-        graphList = [ BinGraph(binCollection) for binCollection in collectionList ]
+        graphList = [ BinGraph([binCollection]) for binCollection in collectionList ]
         graphList = prune_graphs(graphList, args.threads)
         
+        # Join BinGraphs together for a final combined prune
+        graphList = BinGraph(graphList)
+        graphList.prune()
+        
         # Convert collections into a bundle
-        binBundle = BinBundle.create_from_multiple_graphs(graphList)
+        #binBundle = BinBundle.create_from_multiple_graphs(graphList)
         
         # Cluster bundles across and within genomes
-        clusterDict = binBundle.cluster_by_cooccurrence(args.clusterVoteThreshold)
+        #clusterDict = binBundle.cluster_by_cooccurrence(args.clusterVoteThreshold)
+        clusterDict = graphList.cluster()
         if args.debug:
             print(f"# Clustered bundles (across and within genomes) based on ID occurrence")
             print(f"# Cluster dictionary contains {len(clusterDict)} clusters")

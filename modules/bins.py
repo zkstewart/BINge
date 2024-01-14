@@ -200,21 +200,74 @@ class BinGraph:
     '''
     Represents a graph where nodes are Bin objects and edges are the sequence alignments
     that join them.
-    '''
-    def __init__(self, binCollection):
-        self.graph = nx.Graph()
-        self.graph.add_nodes_from([ interval.data for interval in binCollection ])
-        self._link_bins_via_collection(binCollection)
-        self.eliminations = set()
     
-    def _link_bins_via_collection(self, binCollection):
-        # Locate all bins that each sequence ID occurs in
+    Parameters:
+        binCollectionList -- a list containing one or more BinCollection or BinGraph
+                             objects; all are expected to be the same type.
+    '''
+    def __init__(self, binCollectionList):
+        # Validate input value
+        assert isinstance(binCollectionList, list), \
+            "Input to BinGraph must be a list, not the BinCollection/BinGraph itself!"
+        assert len(binCollectionList) > 0, \
+            "Input to BinGraph must be a list containing at least one BinCollection object!"
+        
+        # Init graph based on input type
+        self.graph = nx.Graph()
+        if hasattr(binCollectionList[0], "bins"):
+            self.graph.add_nodes_from([
+                interval.data
+                for binCollection in binCollectionList
+                for interval in binCollection
+            ])
+        elif hasattr(binCollectionList[0], "graph"):
+            self.graph.add_nodes_from([
+                bin
+                for binGraph in binCollectionList
+                for bin in binGraph.graph
+            ])
+        else:
+            raise ValueError("Input to BinGraph must be a list of BinCollections or BinGraphs!")
+        
+        # Link bins via edges
+        self._link_bins(binCollectionList)
+        
+        # Set eliminations based on input type
+        if hasattr(binCollectionList[0], "bins"):
+            self.eliminations = set()
+        else:
+            self.eliminations = set.union(
+                *[ binGraph.eliminations for binGraph in binCollectionList ]
+            )
+    
+    @staticmethod
+    def _get_id_link_dict(binCollectionList):
+        '''
+        Helper function to get the idLinks dictionary regardless of BinCollection
+        or BinGraph input type.
+        '''
         idLinks = {}
-        for interval in binCollection:
-            bin = interval.data
-            for seqID in bin.ids:
-                idLinks.setdefault(seqID, [])
-                idLinks[seqID].append(bin)
+        if hasattr(binCollectionList[0], "bins"):
+            for binCollection in binCollectionList:
+                for interval in binCollection:
+                    bin = interval.data
+                    for seqID in bin.ids:
+                        idLinks.setdefault(seqID, [])
+                        idLinks[seqID].append(bin)
+        elif hasattr(binCollectionList[0], "graph"):
+            for binCollection in binCollectionList:
+                for bin in binCollection.graph:
+                    for seqID in bin.ids:
+                        idLinks.setdefault(seqID, [])
+                        idLinks[seqID].append(bin)
+        return idLinks
+    
+    def _link_bins(self, binCollectionList):
+        '''
+        Links bins together based on sequence ID co-occurrence.
+        '''
+        # Locate all bins that each sequence ID occurs in
+        idLinks = BinGraph._get_id_link_dict(binCollectionList)
         
         # Go through and link bins together
         for seqID, binList in idLinks.items():
@@ -287,6 +340,16 @@ class BinGraph:
         # Remove bins flagged for removal
         for bin in binsToRemove:
             self.graph.remove_node(bin)
+    
+    def cluster(self):
+        '''
+        Clusters sequences based on connected components of the bin-graph structure.
+        '''
+        clusterDict = {}
+        for clusterNum, connectedBins in enumerate(self.connected_components()):
+            clusterIDs = set.union(*[ bin.ids for bin in connectedBins ])
+            clusterDict[clusterNum] = clusterIDs
+        return clusterDict
     
     def connected_components(self):
         return nx.connected_components(self.graph)
