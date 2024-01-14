@@ -25,18 +25,19 @@ def add_bin_to_collection(binCollection, binOverlap, newBin):
     if len(binOverlap) == 0:
         binCollection.add(newBin)
     
-    # Otherwise...
-    else:
-        # ... merge any overlapping bins together
-        for overlappingBin in binOverlap:
-            newBin.merge(overlappingBin)
-        
-        # ... delete the overlapping bins
-        for overlappingBin in binOverlap:
-            binCollection.delete(overlappingBin)
-        
+    # If it overlaps only one exon, merge it in normally
+    elif len(binOverlap) == 1:
+        overlappingBin = binOverlap[0]
+
         # ... and add the new bin in its place
+        newBin.merge(overlappingBin)
+        binCollection.delete(overlappingBin)
         binCollection.add(newBin)
+    
+    # It it has multiple overlaps, add its ID in without a true merge
+    else:
+        for overlappingBin in binOverlap:
+            overlappingBin.union(newBin.ids)
 
 def find_overlapping_bins(binCollection, binQuery):
     '''
@@ -291,6 +292,6 @@ class GraphPruneProcess(ReturningProcess):
     Returns:
         binGraph -- the same BinGraph object, but with its .prune() method called.
     '''
-    def task(self, binGraph, WEIGHT_CUTOFF=0.5, CUT_CUTOFF=0.5):
-        binGraph.prune(WEIGHT_CUTOFF, CUT_CUTOFF)
+    def task(self, binGraph, WEIGHT_CUTOFF=0.5):
+        binGraph.prune(WEIGHT_CUTOFF)
         return binGraph

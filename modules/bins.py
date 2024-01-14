@@ -228,7 +228,7 @@ class BinGraph:
                     else:
                         self.graph[binList[i]][binList[j]]["id"].add(seqID)
     
-    def prune(self, WEIGHT_CUTOFF=0.5, CUT_CUTOFF=0.5):
+    def prune(self, WEIGHT_CUTOFF=0.5):
         '''
         Curates the graph by removing edges that are below a certain weight threshold,
         removing sequence IDs that occur in many of the cut edges, and removes bins (nodes)
@@ -239,11 +239,6 @@ class BinGraph:
                              value controls the weight threshold for which edges are cut,
                              wherein any edge with a weight less than (weightiest *
                              WEIGHT_CUTOFF) will be cut.
-            CUT_CUTOFF -- a float greater than 0, and less than or equal to 1.0; this
-                          value controls the threshold for which sequence IDs are removed
-                          from edges, wherein any sequence ID that occurs in more than
-                          (numOccurrences * CUT_CUTOFF) edges will be removed from all
-                          edges it occurs in.
         '''
         binsToRemove = []
         for connectedBins in self.connected_components():
@@ -277,8 +272,7 @@ class BinGraph:
             
             # Remove the ID from all edges if relevant
             for seqID, numCuts in cutEdges.items():
-                numOccurrences = sum([ 1 for _, ids, _ in edgeData if seqID in ids ])
-                if numCuts >= (numOccurrences * CUT_CUTOFF):
+                if numCuts >= lowerBoundary: # this cutoff should suffice as a scaling value
                     self.eliminations.add(seqID) # permanently eliminate from BINge clustering
                     
                     for edge, edgeIDs, edgeWeight in edgeData:
