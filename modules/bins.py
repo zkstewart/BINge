@@ -255,8 +255,8 @@ class BinBundle:
                 occurrenceDict[seqID].add(binIndex)
         
         # Initialise graph data structure to link sequences
-        binGraph = nx.Graph()
-        binGraph.add_nodes_from(occurrenceDict.keys())
+        graph = nx.Graph()
+        graph.add_nodes_from(occurrenceDict.keys())
         
         # Iterate through each sequence and link where appropriate
         fragmentDict = { k:[0,0] for k in occurrenceDict.keys() }
@@ -299,17 +299,17 @@ class BinBundle:
                 
                 # Form an edge if either wants it
                 if thisWouldLink or otherWouldLink:
-                    binGraph.add_edge(seqID, otherSeqID)
+                    graph.add_edge(seqID, otherSeqID)
         
         # Remove any nodes which are fragments
         for seqID, (numFragments, numOccurrences) in fragmentDict.items():
             if (numFragments / numOccurrences) >= FRAGMENT_CUTOFF:
-                binGraph.graph.remove_node(seqID)
+                graph.remove_node(seqID)
         
         # Create sequence bins based on the graph's connected components
         clusterDict = {}
         ongoingCount = 0
-        for connectedSeqIDs in nx.connected_components(binGraph):
+        for connectedSeqIDs in nx.connected_components(graph):
             clusterDict[ongoingCount] = set(connectedSeqIDs)
             ongoingCount += 1
         
