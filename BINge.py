@@ -666,7 +666,7 @@ def main():
         for f in os.listdir(args.outputDirectory)
         if f.endswith(".nucl")
     ])
-    unbinnedIDs = get_unbinned_sequence_ids(clusterDict, graphList.eliminations,
+    unbinnedIDs = get_unbinned_sequence_ids(clusterDict, chimers,
                                             transcriptRecords)
     if args.debug:
         print(f"# There are {len(unbinnedIDs)} unbinned sequences for external clustering")
