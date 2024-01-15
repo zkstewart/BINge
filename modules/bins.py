@@ -274,7 +274,7 @@ class BinBundle:
             
             # Count how many times this occurs in the same bin as the other sequences
             otherSeqLinkDict = {}
-            for otherSeqID in seqLinkDict.values():
+            for otherSeqID in seqLinkDict.keys():
                 otherSeqLinkDict.setdefault(otherSeqID, 0)
                 
                 otherBinIndices = occurrenceDict[otherSeqID]
