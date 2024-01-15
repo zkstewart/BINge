@@ -628,20 +628,19 @@ def main():
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} now contains {len(_cl)} bins")
         
-        # Convert BinCollections into pruned BinGraphs
+        # Convert BinCollections into BinGraphs
         graphList = [ BinGraph([binCollection]) for binCollection in collectionList ]
-        graphList = prune_graphs(graphList, args.threads)
         
-        # Join BinGraphs together for a final clustering
-        graphList = BinGraph(graphList)
-        #graphList.prune()
+        # Identify chimers
+        chimers = prune_graphs(graphList, args.threads)
+        if args.debug:
+            print(f"# Identified {len(chimers)} chimers for removal from clustering")
         
-        # Convert collections into a bundle
-        #binBundle = BinBundle.create_from_multiple_graphs(graphList)
+        # Convert graphs into a bundle
+        binBundle = BinBundle.create_from_multiple_graphs(graphList)
         
         # Cluster bundles across and within genomes
-        #clusterDict = binBundle.cluster_by_cooccurrence(args.clusterVoteThreshold)
-        clusterDict = graphList.cluster()
+        clusterDict = binBundle.cluster_by_cooccurrence(chimers, args.clusterVoteThreshold)
         if args.debug:
             print(f"# Clustered bundles (across and within genomes) based on ID occurrence")
             print(f"# Cluster dictionary contains {len(clusterDict)} clusters")

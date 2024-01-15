@@ -153,7 +153,7 @@ def prune_graphs(binGraphList, threads):
     Returns:
         binGraphList -- a list containing the same BinGraph objects, just pruned.
     '''
-    resultBinGraphs = []
+    outputChimers = set()
     for i in range(0, len(binGraphList), threads): # only process n (threads) at a time
         processing = []
         for x in range(threads): # begin processing n collections
@@ -166,10 +166,10 @@ def prune_graphs(binGraphList, threads):
         
         # Wait on processes to end
         for pruneWorkerThread in processing:
-            binGraph = pruneWorkerThread.get_result()
+            chimers = pruneWorkerThread.get_result()
             pruneWorkerThread.join()
             pruneWorkerThread.check_errors()
             
-            resultBinGraphs.append(binGraph)
+            outputChimers = outputChimers.union(chimers)
     
-    return resultBinGraphs
+    return outputChimers

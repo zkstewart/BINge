@@ -293,5 +293,5 @@ class GraphPruneProcess(ReturningProcess):
         binGraph -- the same BinGraph object, but with its .prune() method called.
     '''
     def task(self, binGraph, WEIGHT_CUTOFF=0.5):
-        binGraph.prune(WEIGHT_CUTOFF)
-        return binGraph
+        chimers = binGraph.find_chimers_by_pruning(WEIGHT_CUTOFF)
+        return chimers

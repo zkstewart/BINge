@@ -231,14 +231,6 @@ class BinGraph:
         
         # Link bins via edges
         self._link_bins(binCollectionList)
-        
-        # Set eliminations based on input type
-        if hasattr(binCollectionList[0], "bins"):
-            self.eliminations = set()
-        else:
-            self.eliminations = set.union(
-                *[ binGraph.eliminations for binGraph in binCollectionList ]
-            )
     
     @staticmethod
     def _get_id_link_dict(binCollectionList):
@@ -281,11 +273,10 @@ class BinGraph:
                     else:
                         self.graph[binList[i]][binList[j]]["id"].add(seqID)
     
-    def prune(self, WEIGHT_CUTOFF=0.5):
+    def find_chimers_by_pruning(self, WEIGHT_CUTOFF=0.5):
         '''
-        Curates the graph by removing edges that are below a certain weight threshold,
-        removing sequence IDs that occur in many of the cut edges, and removes bins (nodes)
-        that are left isolated after the pruning.
+        Curates the graph by cutting edges that are below a certain weight threshold.
+        IDs which occur in a significant fraction of cut edges are marked as chimers.
         
         Parameters:
             WEIGHT_CUTOFF -- a float greater than 0, and less than or equal to 1.0; this
@@ -293,7 +284,7 @@ class BinGraph:
                              wherein any edge with a weight less than (weightiest *
                              WEIGHT_CUTOFF) will be cut.
         '''
-        binsToRemove = []
+        chimers = set()
         for connectedBins in self.connected_components():
             connectedBins = list(connectedBins)
             
@@ -323,23 +314,12 @@ class BinGraph:
                         cutEdges.setdefault(eID, 0)
                         cutEdges[eID] += 1
             
-            # Remove the ID from all edges if relevant
+            # Mark the ID for elimination if it's (probably) a chimera
             for seqID, numCuts in cutEdges.items():
                 if numCuts >= lowerBoundary: # this cutoff should suffice as a scaling value
-                    self.eliminations.add(seqID) # permanently eliminate from BINge clustering
-                    
-                    for edge, edgeIDs, edgeWeight in edgeData:
-                        if seqID in edgeIDs and self.graph.has_edge(*edge):
-                            self[edge[0]][edge[1]]["id"].remove(seqID)
-            
-            # Flag bins for removal after iteration
-            for bin in connectedBins:
-                if nx.is_isolate(self.graph, bin):
-                    binsToRemove.append(bin)
+                    chimers.add(seqID)
         
-        # Remove bins flagged for removal
-        for bin in binsToRemove:
-            self.graph.remove_node(bin)
+        return chimers
     
     def cluster(self):
         '''
@@ -374,7 +354,6 @@ class BinBundle:
     '''
     def __init__(self):
         self.bins = []
-        self.eliminations = None
     
     def add(self, bin):
         self.bins.append(bin)
@@ -395,7 +374,7 @@ class BinBundle:
             for bin in otherBinCollection:
                 self.add(bin)
     
-    def cluster_by_cooccurrence(self, VOTE_THRESHOLD = 0.66):
+    def cluster_by_cooccurrence(self, idsToSkip, VOTE_THRESHOLD = 0.66):
         '''
         This algorithm clusters sequences based on their co-occurrence in exon bins.
         Sequences which co-occur in bins at a certain frequency of their total number
@@ -406,6 +385,7 @@ class BinBundle:
         and hence convergence is not a concern.
         
         Parameters:
+            idsToSkip -- a set of IDs to not consider during this process.
             VOTE_THRESHOLD -- a float greater than 0, and less than or equal to 1.0.
                               This represents a ratio for which sequences must co-occur.
         Returns:
@@ -415,10 +395,12 @@ class BinBundle:
         assert 0 < VOTE_THRESHOLD <= 1.0, \
             "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
         
-        # Figure out which bins each sequence occur in
+        # Figure out which bins each sequence occurs in
         occurrenceDict = {}
         for binIndex, bin in enumerate(self.bins):
             for seqID in bin.ids:
+                if seqID in idsToSkip:
+                    continue
                 occurrenceDict.setdefault(seqID, set())
                 occurrenceDict[seqID].add(binIndex)
         
@@ -433,7 +415,7 @@ class BinBundle:
             for binIndex in binIndices:
                 bin = self.bins[binIndex]
                 for otherSeqID in bin.ids:
-                    if otherSeqID == seqID:
+                    if otherSeqID == seqID or otherSeqID in idsToSkip:
                         continue
                     
                     seqLinkDict.setdefault(otherSeqID, 0)
@@ -521,25 +503,11 @@ class BinBundle:
         assert isinstance(binGraphList, list), \
             "binGraphList must be a list of BinGraph objects"
         
-        # Get all the eliminations sequence IDs
-        allEliminations = set()
-        for binGraph in binGraphList:
-            allEliminations = allEliminations.union(binGraph.eliminations)
-        
-        # Generate the new bundle, removing any eliminated sequences
         newBundle = BinBundle()
         for binGraph in binGraphList:
             for bin in binGraph.graph:
-                # Remove eliminated sequences from any bins
-                toRemove = bin.ids.intersection(allEliminations)
-                if len(toRemove) > 0:
-                    bin.ids = bin.ids.difference(toRemove)
-                
-                # Add the bin to the bundle if it still contains IDs
-                if len(bin.ids) > 0:
-                    newBundle.add(bin)
+                newBundle.add(bin)
         
-        newBundle.eliminations = allEliminations
         return newBundle
     
     def __len__(self):
