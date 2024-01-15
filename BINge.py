@@ -278,7 +278,7 @@ def find_missing_sequence_id(binCollectionList, transcriptRecords):
                     return seqID
     return None
 
-def get_unbinned_sequence_ids(clusterDict, transcriptRecords):
+def get_unbinned_sequence_ids(clusterDict, eliminatedIDs, transcriptRecords):
     '''
     Compares one or more BinBundle objects against the transcript sequences
     to see if any sequences indicated in transcriptRecords do not exist in
@@ -291,6 +291,8 @@ def get_unbinned_sequence_ids(clusterDict, transcriptRecords):
                            1 : [ "seq4", "seq5", "seq6" ],
                            ...
                         }
+        eliminatedIDs -- a set containing strings of sequence IDs which are not to be
+                         considered for clustering.
         transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
                              sequences
     Returns:
@@ -301,6 +303,7 @@ def get_unbinned_sequence_ids(clusterDict, transcriptRecords):
     for seqIDs in clusterDict.values():
         binnedIDs.extend(seqIDs)
     binnedIDs = set(binnedIDs)
+    binnedIDs = binnedIDs.union(eliminatedIDs)
     
     unbinnedIDs = set()
     for record in transcriptRecords:
@@ -628,7 +631,7 @@ def main():
         binBundle = BinBundle.create_from_multiple_collections(collectionList)
         
         # Cluster bundles across and within genomes
-        clusterDict = binBundle.cluster_by_cooccurrence(args.clusterVoteThreshold)
+        clusterDict, eliminations = binBundle.cluster_by_cooccurrence(args.clusterVoteThreshold)
         if args.debug:
             print(f"# Clustered bundles (across and within genomes) based on ID occurrence")
             print(f"# Cluster dictionary contains {len(clusterDict)} clusters")
@@ -654,7 +657,7 @@ def main():
         for f in os.listdir(args.outputDirectory)
         if f.endswith(".nucl")
     ])
-    unbinnedIDs = get_unbinned_sequence_ids(clusterDict, transcriptRecords)
+    unbinnedIDs = get_unbinned_sequence_ids(clusterDict, eliminations, transcriptRecords)
     if args.debug:
         print(f"# There are {len(unbinnedIDs)} unbinned sequences for external clustering")
     

@@ -242,12 +242,15 @@ class BinBundle:
         Returns:
             clusterDict -- a dictionary where keys are integers from 0 -> n, and values
                            are sets of sequence IDs.
+            eliminations -- a set of sequence IDs to NOT take through to further clustering.
         '''
         assert 0 < VOTE_THRESHOLD <= 1.0, \
             "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
         
         FRAGMENT_CUTOFF = 0.5
         CENTRALITY_CUTOFF = 0.33
+        
+        eliminations = []
         
         # Figure out which bins each sequence occur in
         occurrenceDict = {}
@@ -309,6 +312,7 @@ class BinBundle:
                 continue
             if (numFragments / numOccurrences) >= FRAGMENT_CUTOFF:
                 graph.remove_node(seqID)
+                eliminations.append(seqID)
         
         # Create sequence bins based on the graph's connected components
         clusterDict = {}
@@ -330,6 +334,7 @@ class BinBundle:
             for seqID, centrality in centralityDict.items():
                 if centrality < centralityBound:
                     subGraph.remove_node(seqID)
+                    eliminations.append(seqID)
             
             # Remove chimeras (articulation points)
             articulations = list(nx.articulation_points(subGraph))
@@ -337,6 +342,7 @@ class BinBundle:
                 # Handle single articulations
                 if len(articulations) == 1:
                     subGraph.remove_node(articulations[0])
+                    eliminations.append(articulations[0])
                 
                 # Handle multiple articulations
                 else:
@@ -350,10 +356,12 @@ class BinBundle:
                         # Always delete the first articulation
                         if index == 0:
                             subGraph.remove_node(articulation)
+                            eliminations.append(articulation)
                         # Delete any others with higher than usual centrality
                         else:
                             if centrality > centralityMedian:
                                 subGraph.remove_node(articulation)
+                                eliminations.append(articulation)
             
             # Cluster the sequences in any connected components
             for subConnectedSeqIDs in nx.connected_components(subGraph):
@@ -362,7 +370,7 @@ class BinBundle:
                     clusterDict[ongoingCount] = set(subConnectedSeqIDs)
                     ongoingCount += 1
         
-        return clusterDict
+        return clusterDict, set(eliminations)
     
     @staticmethod
     def create_from_collection(binCollection):
