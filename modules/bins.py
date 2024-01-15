@@ -245,6 +245,8 @@ class BinBundle:
         assert 0 < VOTE_THRESHOLD <= 1.0, \
             "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
         
+        FRAGMENT_CUTOFF = 0.5
+        
         # Figure out which bins each sequence occur in
         occurrenceDict = {}
         for binIndex, bin in enumerate(self.bins):
@@ -257,6 +259,7 @@ class BinBundle:
         binGraph.add_nodes_from(occurrenceDict.keys())
         
         # Iterate through each sequence and link where appropriate
+        fragmentDict = { k:[0,0] for k in occurrenceDict.keys() }
         for seqID, binIndices in occurrenceDict.items():
             # Count how many times other sequences occur in the same bin as this
             seqLinkDict = {}
@@ -269,10 +272,39 @@ class BinBundle:
                     seqLinkDict.setdefault(otherSeqID, 0)
                     seqLinkDict[otherSeqID] += 1
             
-            # See if any sequences meet the threshold for linking
+            # Count how many times this occurs in the same bin as the other sequences
+            otherSeqLinkDict = {}
+            for otherSeqID in seqLinkDict.values():
+                otherSeqLinkDict.setdefault(otherSeqID, 0)
+                
+                otherBinIndices = occurrenceDict[otherSeqID]
+                otherSeqLinkDict[otherSeqID] += len(otherBinIndices.intersection(binIndices))
+            
+            # Determine if we will link these sequences or not
             for otherSeqID, numOccurrence in seqLinkDict.items():
-                if (numOccurrence / len(binIndices)) >= VOTE_THRESHOLD:
+                # See how they would link
+                thisWouldLink = True if (numOccurrence / len(binIndices)) >= VOTE_THRESHOLD \
+                    else False
+                otherWouldLink = True if (otherSeqLinkDict[otherSeqID] / len(occurrenceDict[otherSeqID])) >= VOTE_THRESHOLD \
+                    else False
+                
+                # Store information on whether either might be a fragment
+                fragmentDict[seqID][1] += 1
+                fragmentDict[otherSeqID][1] += 1
+                
+                if thisWouldLink and not otherWouldLink:
+                    fragmentDict[seqID][0] += 1
+                if otherWouldLink and not thisWouldLink:
+                    fragmentDict[otherSeqID][0] += 1
+                
+                # Form an edge if either wants it
+                if thisWouldLink or otherWouldLink:
                     binGraph.add_edge(seqID, otherSeqID)
+        
+        # Remove any nodes which are fragments
+        for seqID, (numFragments, numOccurrences) in fragmentDict.items():
+            if (numFragments / numOccurrences) >= FRAGMENT_CUTOFF:
+                binGraph.graph.remove_node(seqID)
         
         # Create sequence bins based on the graph's connected components
         clusterDict = {}
