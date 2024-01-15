@@ -303,6 +303,8 @@ class BinBundle:
         
         # Remove any nodes which are fragments
         for seqID, (numFragments, numOccurrences) in fragmentDict.items():
+            if numOccurrences == 0:
+                continue
             if (numFragments / numOccurrences) >= FRAGMENT_CUTOFF:
                 graph.remove_node(seqID)
         
