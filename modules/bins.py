@@ -1,5 +1,6 @@
-from intervaltree import IntervalTree, Interval
 import networkx as nx
+from intervaltree import IntervalTree, Interval
+from statistics import median
 from hashlib import sha256
 
 class Bin:
@@ -246,6 +247,7 @@ class BinBundle:
             "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
         
         FRAGMENT_CUTOFF = 0.5
+        CENTRALITY_CUTOFF = 0.33
         
         # Figure out which bins each sequence occur in
         occurrenceDict = {}
@@ -312,8 +314,53 @@ class BinBundle:
         clusterDict = {}
         ongoingCount = 0
         for connectedSeqIDs in nx.connected_components(graph):
-            clusterDict[ongoingCount] = set(connectedSeqIDs)
-            ongoingCount += 1
+            # If there is only one sequence, just add it
+            if len(connectedSeqIDs) == 1:
+                clusterDict[ongoingCount] = connectedSeqIDs
+                ongoingCount += 1
+                continue
+            
+            # Otherwise, create a subgraph of this connected component
+            subGraph = graph.subgraph(connectedSeqIDs).copy()
+            
+            # Filter sequences with anomalous degree centrality
+            centralityDict = nx.degree_centrality(subGraph)
+            centralityMedian = median(centralityDict.values())
+            centralityBound = centralityMedian * CENTRALITY_CUTOFF
+            for seqID, centrality in centralityDict.items():
+                if centrality < centralityBound:
+                    subGraph.remove_node(seqID)
+            
+            # Remove chimeras (articulation points)
+            articulations = list(nx.articulation_points(subGraph))
+            if len(articulations) > 0:
+                # Handle single articulations
+                if len(articulations) == 1:
+                    subGraph.remove_node(articulations[0])
+                
+                # Handle multiple articulations
+                else:
+                    # Delete articulations with high centrality
+                    "Chimeras tend to have higher than usual centrality"
+                    articulations = sorted([ (x, centralityDict[x]) for x in articulations ],
+                                           key = lambda x: x[1], reverse=True)
+                    
+                    for index, articulationPair in enumerate(articulations):
+                        articulation, centrality = articulationPair
+                        # Always delete the first articulation
+                        if index == 0:
+                            subGraph.remove_node(articulation)
+                        # Delete any others with higher than usual centrality
+                        else:
+                            if centrality > centralityMedian:
+                                subGraph.remove_node(articulation)
+            
+            # Cluster the sequences in any connected components
+            for subConnectedSeqIDs in nx.connected_components(subGraph):
+                "If we created an isolate, we will ignore it here"
+                if len(subConnectedSeqIDs) != 1:
+                    clusterDict[ongoingCount] = set(subConnectedSeqIDs)
+                    ongoingCount += 1
         
         return clusterDict
     
