@@ -297,12 +297,17 @@ def main():
         for clustNum, idList in testDict.items()
         for seqID in idList
     }
+    priorSize = len(testDict)
     
     # Modify RefSeq IDs to be entrez gene IDs
     testDict = {
         idMappingDict[seqID] : clustNum
         for seqID, clustNum in testDict.items()
+        if seqID in idMappingDict # RefSeq CDS models have absences for some reason
     }
+    postSize = len(testDict)
+    print(f"Dropped {priorSize-postSize} sequences when getting entrez gene IDs")
+    print(f"Final number of sequences to test: {postSize}")
     
     # Drop any sequences in testDict that aren't in our trueDict
     "Must have the exact same sequences for comparison"
