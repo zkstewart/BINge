@@ -382,10 +382,11 @@ def main():
     # Write and print output
     with open(args.outputFileName, "w") as fileOut:
         # Write header
-        fileOut.write("#evaluate_clustering.py clustering comparison results\n")
+        fileOut.write("#evaluate_vertebrates_clustering.py clustering comparison results\n")
         
         # Write details
-        fileOut.write(f"Annotation file\t{args.gff3File}\n")
+        fileOut.write(f"Orthologs file\t{args.geneOrthologsFile}\n")
+        fileOut.write(f"FASTA file\t{args.fastaFile}\n")
         fileOut.write(f"Cluster file\t{args.clusterFile}\n")
         fileOut.write(f"Number of testable mRNAs in annotation\t{len(trueList)}\n")
         fileOut.write(f"Number of testable genes in annotation\t{numGeneClusters}\n")
