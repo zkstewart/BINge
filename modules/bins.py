@@ -113,7 +113,7 @@ class Bin:
                 return True
             else:
                 return False
-        
+    
     def __repr__(self):
         return (f"<Bin object;contig='{self.contig}';start={self.start};" +
                 f"end={self.end};num_ids={len(self.ids)}"
