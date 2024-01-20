@@ -261,14 +261,6 @@ def main():
                    to differences between the GFF3 and cluster file. You should only do this
                    if you find that the errors are not significant!""",
                    default=False)
-    p.add_argument("--noMRNA", dest="noMRNA",
-                   required=False,
-                   action="store_true",
-                   help="""Optionally, if your genome is bacterial or archaeal, then your GFF3
-                   likely does not have mRNA features; it lists CDS directly under the gene
-                   feature. Specify this flag to allow for that behaviour ONLY if you are
-                   looking at one of these organisms.""",
-                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -357,14 +349,6 @@ def main():
         print("Either the reference GFF3 is unusual, or your cluster file doesn't match?")
         print("Unable to continue from this point, so program will exit now.")
         quit()
-    else:
-        if args.noMRNA == True:
-            print("I see {0} gene features in the GFF3".format(len(gff3.types["gene"])))
-        else:
-            print("I see {0} mRNA features in the GFF3".format(len(gff3.types["mRNA"])))
-        print("From that, I've found {0} testable mRNA features".format(len(trueDict)))
-        print(f"And I see {len(testDict)} sequences in the cluster file (after pruning to match the GFF3)")
-        print("I will continue the evaluation, but if these numbers look odd then something may have gone wrong.")
     
     # Derive clustering labels for comparison
     trueList = []
