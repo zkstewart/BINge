@@ -214,7 +214,7 @@ def parse_fasta_geneids(refseqFastaFile):
         for line in fileIn:
             if line.startswith(">"):
                 seqID = line[1:].split(" ")[0]
-                dbxref = line.split("[dbxref=")[1].split("]")[0]
+                dbxref = line.split("[db_xref=")[1].split("]")[0]
                 
                 geneID = None
                 for xref in dbxref.split(","):
