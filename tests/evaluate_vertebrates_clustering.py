@@ -178,7 +178,7 @@ def parse_orthologs(orthologsFile):
             graph = nx.Graph()
             for line in fileIn:
                 sl = line.rstrip("\r\n ").split("\t")
-                geneID, otherGeneID = sl[0], sl[1]
+                geneID, otherGeneID = sl[1], sl[4]
                 
                 graph.add_node(geneID)
                 graph.add_node(otherGeneID)
