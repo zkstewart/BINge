@@ -1,19 +1,18 @@
 #! python3
-# evaluate_clustering.py
+# evaluate_vertebrates_clustering.py
 
-# Utility program to evaluate a clustering solution of
-# a reference genome against the selfsame reference genome.
-# It is intended to allow for the tuning of CD-HIT parameters
-# prior to clustering of unbinned sequences. However, it is
-# equally useful for merely assessing a clustering solution
-# from BINge as well, which makes it useful for program benchmarking.
+# This script is an adaptation of evaluate_clustering.py specifically for a
+# BINge paper analysis. It is intended to facilitate a clustering evaluation
+# where the true clusters are derived from the human-mouse-rat-zebrafish
+# homolog groups.
 
 import os, argparse, sys
+import networkx as nx
 from sklearn.metrics.cluster import adjusted_rand_score, rand_score, \
     normalized_mutual_info_score, adjusted_mutual_info_score
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_GFF3IO, ZS_ClustIO
+from Various_scripts.Function_packages import ZS_ClustIO
 
 from modules.validation import validate_cluster_file
 from modules.parsing import parse_binge_clusters
@@ -21,12 +20,16 @@ from modules.parsing import parse_binge_clusters
 # Define functions
 def validate_args(args):
     # Validate input file locations
-    if not os.path.isfile(args.gff3File):
-        print(f'I am unable to locate the GFF3 annotation file ({args.gff3File})')
+    if not os.path.isfile(args.geneOrthologsFile):
+        print(f'I am unable to locate the orthologs file ({args.geneOrthologsFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     if not os.path.isfile(args.clusterFile):
         print(f'I am unable to locate the cluster file ({args.clusterFile})')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
+    if not os.path.isfile(args.fastaFile):
+        print(f'I am unable to locate the FASTA file ({args.fastaFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     
@@ -135,40 +138,112 @@ def parse_mmseqs_clusters(fileName):
                 clusterDict[clusterNum].append(seqID)
     return clusterDict
 
+def parse_orthologs(orthologsFile):
+    '''
+    Parses a gene_orthologs file from NCBI to a dictionary structure.
+    
+    Parameters:
+        orthologsFile -- a string indicating the location of the gene_orthologs file.
+    Returns:
+        trueDict -- a dictionary with structure like:
+                    {
+                        'seqID1': 0, # number represents cluster ID
+                        'seqID2': 1,
+                        ...
+                    }
+        numGeneClusters -- an integer representing the number of clusters in the file.
+    '''
+    trueDict = {}
+    numGeneClusters = -1
+    
+    with open(orthologsFile, "r") as fileIn:
+        # Get first line to check file format
+        firstLine = next(fileIn).rstrip("\r\n ")
+        
+        # Handle HOM_AllOrganism.rpt file
+        if firstLine.startswith("DB Class Key"):
+            found = set()
+            for line in fileIn:
+                sl = line.rstrip("\r\n ").split("\t")
+                dbClassKey, geneID = sl[0], sl[4]
+                
+                if not dbClassKey in found:
+                    numGeneClusters += 1
+                    found.add(dbClassKey)
+                
+                trueDict[geneID] = numGeneClusters
+        
+        # Handle gene_orthologs file
+        elif firstLine.startswith("#tax_id\tGeneID"):
+            graph = nx.Graph()
+            for line in fileIn:
+                sl = line.rstrip("\r\n ").split("\t")
+                geneID, otherGeneID = sl[0], sl[1]
+                
+                graph.add_node(geneID)
+                graph.add_node(otherGeneID)
+                graph.add_edge(geneID, otherGeneID)
+            
+            for connectedSeqIDs in nx.connected_components(graph):
+                numGeneClusters += 1
+                for seqID in connectedSeqIDs:
+                    trueDict[seqID] = numGeneClusters
+        
+        # Raise error for unhandled file
+        else:
+            raise ValueError("The input file does not appear to be a gene_orthologs or HOM_AllOrganism.rpt file!")
+    
+    return trueDict, numGeneClusters
+
+def parse_fasta_geneids(refseqFastaFile):
+    '''
+    Parses a RefSeq annotations FASTA from NCBI to a dictionary structure.
+    
+    Parameters:
+        refseqFastaFile -- a string indicating the location of the FASTA file.
+    Returns:
+        idMappingDict -- a dictionary with structure like:
+                    {
+                        'seqID1': 'entrezID1'
+                        'seqID2': 'entrezID2',
+                        ...
+                    }
+    '''
+    idMappingDict = {}
+    with open(refseqFastaFile, "r") as fileIn:
+        for line in fileIn:
+            if line.startswith(">"):
+                seqID = line[1:].split(" ")[0]
+                dbxref = line.split("[dbxref=")[1].split("]")[0]
+                
+                geneID = None
+                for xref in dbxref.split(","):
+                    if xref.startswith("GeneID:"):
+                        geneID = xref.split(":")[1]
+                        break
+                assert geneID != None
+                
+                idMappingDict[seqID] = geneID
+    return idMappingDict
+
 ## Main
 def main():
     # User input
-    usage = """%(prog)s is a utility program intended for two primary purposes.
-    
-    Firstly, it can be used to test CD-HIT's, BINge's, or Corset's clustering on an existing 
-    genome annotation. Provide a GFF3 file for a species with a high-quality annotation inclusive
-    of alternatively spliced isoforms. Additionally, provide the .clstr of CD-HIT, the .tsv
-    output of BINge, or the Corset results-clusters.txt that you've run beforehand on the 
-    isoform transcripts for that same genome. This script will then assess how well the 
-    clusterer was able to re-discover the gene groupings.
-    
-    Secondly, it can be used to fine-tune CD-HIT's parameters prior to BINge's clustering.
-    Specifically, the final step of BINge clustering can use CD-HIT to cluster any
-    unbinned sequences de novo, without using the genome. Having CD-HIT correctly tuned
-    to render good results is important for the reliability of its results.
-    
-    Note that (for the second purpose) the identity value may be difficult to assess when
-    performing multi-subspecies clustering as that will necessitate a lower identity threshold
-    than what would provide optimal results when clustering same species genes. But the remaining
-    parameters should hold true.
-    
-    Note: you must specify which program generaed the clustering output file. The Corset file format
-    is a TSV without header with two columns; the first contains sequence IDs, and the second contains
-    the cluster labels. This can be hackily coopted if needed.
+    usage = """%(prog)s is a modified evaluate_clustering.py script designed to receive not a
+    reference annotation file, but a gene_orthologs file from https://ftp.ncbi.nih.gov/gene/DATA
+    or the HOM_AllOrganism.rpt file from https://www.informatics.jax.org.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
-    p.add_argument("-g", dest="gff3File",
+    p.add_argument("-g", dest="geneOrthologsFile",
                    required=True,
-                   help="Input the GFF3 annotation file")
+                   help="Input gene_orthologs or HOM_AllOrganism.rpt file")
     p.add_argument("-c", dest="clusterFile",
                    required=True,
                    help="Input the CD-HIT or BINge cluster file")
+    p.add_argument("-f", dest="fastaFile",
+                   required=True,
+                   help="Input the RefSeq FASTA file")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for text results")
@@ -177,14 +252,6 @@ def main():
                    choices=["binge", "cdhit", "corset", "mmseqs"],
                    help="Specify which clusterer's results you are providing.")
     # Optional
-    p.add_argument("--seq_prefix", dest="seqPrefix",
-                   required=False,
-                   help="""Optionally, if your GFF3 has a prefix before all its sequence
-                   IDs that is not seen in your FASTA file of transcripts, specify that here.
-                   For example, with NCBI GenBank genomes, it's not uncommon for the transcript
-                   FASTA file to have IDs like 'XM_009121514.3' but the GFF3 would index that
-                   as 'rna-XM_009121514.3'. So you would specify 'rna-' here to address that.""",
-                   default="")
     p.add_argument("--beTolerant", dest="beTolerant",
                    required=False,
                    action="store_true",
@@ -206,20 +273,8 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
-    # Parse the GFF3 file into memory
-    gff3 = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False)
-    
-    # Derive a cluster dict from the GFF3 to use as our true labels
-    numGeneClusters = 0
-    trueDict = {} # stores our 'true' cluster assignments based on the annotation itself
-    for geneFeature in gff3.types["gene"]:
-        if hasattr(geneFeature, "mRNA"):
-            for mrnaFeature in geneFeature.mRNA:
-                trueDict[mrnaFeature.ID] = numGeneClusters
-            numGeneClusters += 1
-        elif args.noMRNA == True:
-            trueDict[geneFeature.ID] = numGeneClusters
-            numGeneClusters += 1
+    # Parse the orthologs file
+    trueDict, numGeneClusters = parse_orthologs(args.geneOrthologsFile)
     
     # Parse the CD-HIT / BINge cluster file, changing cluster IDs to not overlap
     if args.clusterer == "binge":
@@ -233,11 +288,20 @@ def main():
     else:
         raise NotImplementedError()
     
+    # Parse the RefSeq file
+    idMappingDict = parse_fasta_geneids(args.fastaFile)
+    
     # Flip the dict around and +numGeneClusters to prevent cluster number overlap
     testDict = {
-        f"{args.seqPrefix}{seqID}" : clustNum+numGeneClusters
+        seqID : clustNum+numGeneClusters
         for clustNum, idList in testDict.items()
         for seqID in idList
+    }
+    
+    # Modify RefSeq IDs to be entrez gene IDs
+    testDict = {
+        idMappingDict[seqID] : clustNum
+        for seqID, clustNum in testDict.items()
     }
     
     # Drop any sequences in testDict that aren't in our trueDict

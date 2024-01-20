@@ -8,11 +8,17 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
 from modules.bins import BinCollection, Bin, BinBundle
 from modules.gff3_handling import iterate_gmap_gff3
-from modules.bin_handling import iterative_bin_self_linking, queued_bin_splitter
 from modules.thread_workers import GmapBinProcess, CollectionSeedProcess, \
-    QueuedBinSplitterProcess
+    find_overlapping_bins, add_bin_to_collection
+
+# Specify data locations
+dataDir = os.path.join(os.getcwd(), "data")
 
 ###
+
+## Unit tests to be done:
+## cluster_by_occurrence
+## 
 
 def _generate_bin_collections_via_seeder(gff3Files, threads):
     # Start up threads
@@ -37,7 +43,7 @@ def _generate_bin_collections_via_seeder(gff3Files, threads):
     
     return collectionList
 
-def _generate_bin_collections(gff3Files):
+def _generate_bin_collections(gff3Files, isMicrobial=False):
     '''
     A re-implement with the same logic just minus some of the setup.
     '''
@@ -52,35 +58,31 @@ def _generate_bin_collections(gff3Files):
             gff3Obj = GFF3(gff3File, strict_parse=False)
             for geneFeature in gff3Obj.types["gene"]:
                 
-                # Create a bin for this feature
-                featureBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
-                try:
-                    for mrnaFeature in geneFeature.mRNA:
-                        featureBin.add(mrnaFeature.ID, Bin.format_exons_from_gff3_feature(mrnaFeature))
-                    #featureBin.add(geneFeature.ID, Bin.format_exons_from_gff3_feature(geneFeature))
-                except:
-                    "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
-                    continue
-                
-                # See if this overlaps an existing bin
-                binOverlap = binCollection.find(geneFeature.contig, geneFeature.start, geneFeature.end)
-                
-                # If not, add the new bin
-                if len(binOverlap) == 0:
-                    binCollection.add(featureBin)
-                
-                # Otherwise...
+                # Create a bin for each exon feature
+                exonBins = []
+                if not isMicrobial:
+                    try:
+                        for mrnaFeature in geneFeature.mRNA:
+                            for exonFeature in mrnaFeature.exon:
+                                exonBin = Bin(exonFeature.contig, exonFeature.start, exonFeature.end)
+                                exonBin.add(mrnaFeature.ID)
+                                exonBins.append(exonBin)
+                    except:
+                        "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
+                        continue
                 else:
-                    # ... merge the bins together
-                    for overlappingBin in binOverlap:
-                        featureBin.merge(overlappingBin)
-                    
-                    # ... delete the overlapping bins
-                    for overlappingBin in binOverlap:
-                        binCollection.delete(overlappingBin)
-                    
-                    # ... and add the new bin
-                    binCollection.add(featureBin)
+                    try:
+                        exonBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
+                        exonBin.add(geneFeature.ID)
+                        exonBins.append(exonBin)
+                    except:
+                        "This exception occurs if a gene feature has unusual children types e.g., rRNA"
+                        continue
+                
+                # Iteratively handle exon bins
+                for exonBin in exonBins:
+                    binOverlap = find_overlapping_bins(binCollection, exonBin)
+                    add_bin_to_collection(binCollection, binOverlap, exonBin)
         
         # Store the bin collection in our list for multi-threading later
         collectionList.append(binCollection)
@@ -110,9 +112,10 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
         for x in range(threads): # begin processing n collections
             if i+x < len(threadData): # parent loop may excess if n > the number of GMAP files
                 thisGmapFiles, thisBinCollection = threadData[i+x]
+                indexFile = os.path.join(dataDir, "length_index.pkl")
                 
                 populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
-                                                     gmapIdentity)
+                                                     indexFile, gmapIdentity)
                 
                 processing.append(populateWorkerThread)
                 populateWorkerThread.start()
@@ -127,9 +130,6 @@ def _populate_bin_collections(collectionList, gmapFiles, threads=1, gmapIdentity
     return resultBinCollection
 
 ###
-
-# Specify data locations
-dataDir = os.path.join(os.getcwd(), "data")
 
 # Define unit tests
 class TestBinCollection(unittest.TestCase):
@@ -164,10 +164,6 @@ class TestBinCollection(unittest.TestCase):
         
         self.assertEqual(len(binOverlap[0].ids), 1, "Should contain 1")
         self.assertIn("contig1.1.mrna", binOverlap[0].ids, "Should contain contig1.1.mrna")
-        
-        self.assertEqual(len(binOverlap[0].exons), 1, "Should contain 1")
-        self.assertIn("contig1.1.mrna", binOverlap[0].exons, "Should contain contig1.1.mrna")
-        self.assertEqual(binOverlap[0].exons["contig1.1.mrna"], [[1, 50]], "Should be [[1, 50]]")
         
         self.assertEqual(len(binOverlap2), 2, "Should be 2")
     
@@ -399,58 +395,6 @@ class TestNetworkX(unittest.TestCase):
             connectedBins = list(connectedBins)
             self.assertEqual(len(connectedBins), 3, "Should have 3 connected components")
 
-class TestBinLinking(unittest.TestCase):
-    def test_bin_selfmerger(self):
-        '''
-        This test should result in the bins (from separate genomes) being merged together.
-        '''
-        # Arrange
-        gmapFiles = [
-            os.path.join(dataDir, "gmap_cmj.gff3"),
-            os.path.join(dataDir, "gmap_cmj_cross.gff3"),
-            os.path.join(dataDir, "gmap_fh.gff3"),
-            os.path.join(dataDir, "gmap_fh_cross.gff3")
-        ]
-        binCollectionList = [ BinCollection() for _ in range(len(gmapFiles)) ]
-        # collectionList = binCollectionList
-        binCollectionList = _populate_bin_collections(binCollectionList, gmapFiles,
-                                                                     threads=1,
-                                                                     gmapIdentity=0.95)
-        convergenceIters = 5
-        
-        # Act
-        origNumBins = [ len(bc) for bc in binCollectionList ]
-        origNumIDs = [ len(bin.data.ids) for bc in binCollectionList for bin in bc ]
-        origIDs = [ bin.data.ids for bc in binCollectionList for bin in bc ]
-        origExons = [ bin.data.exons for bc in binCollectionList for bin in bc ]
-        origContigs = [ bin.data.contig for bc in binCollectionList for bin in bc ]
-        
-        binCollection = binCollectionList[0]
-        for i in range(1, len(binCollectionList)):
-            binCollection.merge(binCollectionList[i])
-        
-        mergedNumBins = len(binCollection)
-        mergedNumIDs = [ len(bin.data.ids) for bin in binCollection ]
-        mergedIDs = [ bin.data.ids for bin in binCollection ]
-        mergedExons = [ bin.data.exons for bin in binCollection ]
-        mergedContigs = [ bin.data.contig for bin in binCollection ]
-        
-        binBundle = BinBundle()
-        binBundle.merge(binCollection, otherType="BinCollection")
-        
-        binBundle = iterative_bin_self_linking(binBundle, convergenceIters)
-        
-        newNumBins = len(binBundle)
-        newNumIDs = [ len(bin.ids) for bin in binBundle ]
-        newIDs = [ bin.ids for bin in binBundle ]
-        newExons = [ bin.exons for bin in binBundle ]
-        newContigs = [ bin.contig for bin in binBundle ]
-        
-        # Assert
-        self.assertEqual(origNumBins, [1, 1, 1, 1], "Should contain 4 binCollections with 1 bin each")
-        self.assertEqual(newNumBins, 2, "Should contain 2 bins")
-        self.assertEqual(newNumIDs, [1, 1], "Should contain 2 bins with 1 ID each")
-
 class TestMultiProcessing(unittest.TestCase):
     def test_multiprocessing_equality(self):
         '''
@@ -574,10 +518,11 @@ class TestGmapBinProcess(unittest.TestCase):
         # Arrange
         threads=4
         gff3Files = [os.path.join(dataDir, "gmap_normal.gff3")]
+        indexFile = os.path.join(dataDir, "length_index.pkl")
         binCollection = BinCollection()
         
         # Act
-        processor = GmapBinProcess(gff3Files, binCollection, 0.95)
+        processor = GmapBinProcess(gff3Files, binCollection, indexFile, 0.95)
         processor.start()
         resultCollection = processor.get_result()
         processor.join()
@@ -585,71 +530,6 @@ class TestGmapBinProcess(unittest.TestCase):
         
         # Assert
         self.assertEqual(len(resultCollection), 2, "Should have two bins")
-
-class TestQueuedBinSplitterProcess(unittest.TestCase):
-    def test_queued_splitter_process(self):
-        # Arrange
-        threads=4
-        gff3Files = [os.path.join(dataDir, "gmap_fragments.gff3")]
-        binCollectionList = _generate_bin_collections(gff3Files)
-        workerQueue = Queue(maxsize=0)
-        
-        # Start up threads
-        workers = []
-        for _ in range(threads):
-            worker = QueuedBinSplitterProcess(workerQueue, shorterCovPct=0.90, longerCovPct=0.90)
-            worker.start()
-            workers.append(worker)
-        
-        # Put bins in queue for worker threads
-        for binCollection in binCollectionList:
-            for interval in binCollection:
-                bin = interval.data
-                workerQueue.put(bin)
-        
-        # Exit out of the worker processes
-        for _ in range(threads):
-            workerQueue.put(None) # this is a marker for the worker processes to stop
-        
-        resultBinCollections = []
-        for worker in workers:
-            binCollection = worker.get_result()
-            worker.join()
-            worker.check_errors()
-            
-            resultBinCollections.append(binCollection)
-        
-        # Merge all the bin collections together
-        binCollection = resultBinCollections[0]
-        for otherBinCollection in resultBinCollections[1:]:
-            binCollection.merge(otherBinCollection, "BinBundle")
-            
-        # Assert
-        self.assertEqual(len(binCollection), 3, "Should have three bins")
-    
-    def test_queued_splitter_function_splits(self):
-        # Arrange
-        threads=4
-        gff3Files = [os.path.join(dataDir, "gmap_fragments.gff3")]
-        binCollectionList = _generate_bin_collections(gff3Files)
-        
-        # Act
-        binCollection = queued_bin_splitter(binCollectionList, threads, 0.90, 0.90)
-        
-        # Assert
-        self.assertEqual(len(binCollection), 3, "Should have three bins")
-
-    def test_queued_splitter_function_doesnt_split(self):
-        # Arrange
-        threads=4
-        gff3Files = [os.path.join(dataDir, "gmap_fragments.gff3")]
-        binCollectionList = _generate_bin_collections(gff3Files)
-        
-        # Act
-        binCollection = queued_bin_splitter(binCollectionList, threads, 0.10, 0.10)
-        
-        # Assert
-        self.assertEqual(len(binCollection), 1, "Should have 1 bin")
 
 class TestGFF3IterationSpeed(unittest.TestCase):
     def test_iterators_for_speed(self):

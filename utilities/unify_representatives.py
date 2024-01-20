@@ -60,6 +60,11 @@ def main():
     p.add_argument("-o", dest="outputPrefix",
                    required=True,
                    help="Output prefix for filtered file(s)")
+    # Optional
+    p.add_argument("--relaxed", dest="beRelaxed",
+                   required=False,
+                   action="store_true",
+                   help="Optionally allow IDs to be missing from one of the input files")
     
     args = p.parse_args()
     validate_args(args)
@@ -93,17 +98,22 @@ def main():
             records = files2Records
         
         # Get sequences for each cluster, writing in order
+        skippedIDs = []
         with open(outputFileName, "w") as fileOut:
             for clusterID, representativeID in representativesDict.items():
                 try:
                     seq = str(records[representativeID])
                 except:
-                    print(f"'{representativeID}' could not be found in your -f{i+1} files.")
-                    print("You will need to fix this problem or make sure you're specifying " +
-                          "the right files, then try again.")
-                    cleanAndExit = True
-                    exitedOn = i
-                    break
+                    if not args.beRelaxed:
+                        print(f"'{representativeID}' could not be found in your -f{i+1} files.")
+                        print("You will need to fix this problem or make sure you're specifying " +
+                            "the right files, then try again.")
+                        cleanAndExit = True
+                        exitedOn = i
+                        break
+                    else:
+                        skippedIDs.append(representativeID)
+                        continue
                 
                 fileOut.write(f">{clusterID} representative={representativeID}\n{seq}\n")
     
@@ -116,7 +126,14 @@ def main():
         
         print("Program exited after cleaning up truncated output file(s)!")
     
-    # Or let user know that everything worked well
+    # Print IDs if some were skipped
+    elif len(skippedIDs) > 0:
+        print(f"{len(skippedIDs)} IDs were not found in your input files. These include:")
+        for ID in skippedIDs:
+            print(ID)
+        print("Program otherwise completed successfully!")
+    
+    # Or just let user know that everything worked well
     else:
         print("Program completed successfully!")
 

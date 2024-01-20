@@ -15,17 +15,17 @@ from hashlib import sha256
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from modules.bin_handling import generate_bin_collections, populate_bin_collections, \
-    queued_bin_splitter, iterative_bin_self_linking
-from modules.fasta_handling import AnnotationExtractor, FastaCollection
+from modules.bins import BinBundle
+from modules.bin_handling import generate_bin_collections, populate_bin_collections
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
 from modules.validation import validate_args, validate_fasta
 from Various_scripts.Function_packages.ZS_Utility import convert_windows_to_wsl_path
-
-HASHING_PARAMS = ["inputFiles", "genomeFiles", # These hashes are the only ones which behaviourally
-                  "convergenceIters", "gmapIdentity"] # influence the pre-external clustering
-
+from modules.fasta_handling import AnnotationExtractor, FastaCollection, \
+    generate_sequence_length_index
+HASHING_PARAMS = ["inputFiles", "genomeFiles",            # These hashes are the only ones 
+                  "gmapIdentity", "clusterVoteThreshold"] # which behaviourally influence the 
+                                                          # pre-external clustering
 # Define functions
 def symlinker(src, dst):
     '''
@@ -151,10 +151,27 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
                 symlinker(gff3, linkedGFF3)
             if not check_file_exists(linkedFASTA):
                 symlinker(fasta, linkedFASTA)
+            
+            # Index the genome's contig lengths if not already done
+            generate_sequence_length_index(linkedFASTA)
         
         # Handle plain genome files
         else:
-            raise Exception("This version of BINge does not support plain FASTA files as input.")
+            # Check that FASTA is a FASTA
+            isFASTA = validate_fasta(file)
+            if not isFASTA:
+                print(f"-g value '{file}' is not a FASTA file")
+                print("Make sure you specify the right file and/or location then try again.")
+                quit()
+            
+            # Symlink to main working directory if not already existing
+            linkedFASTA = os.path.join(genomesDir, f"genome{numGenomes}.fasta")
+            
+            if not check_file_exists(linkedFASTA):
+                symlinker(file, linkedFASTA)
+            
+            # Index the genome's contig lengths if not already done
+            generate_sequence_length_index(linkedFASTA)
 
 def setup_param_cache(args, paramHash):
     '''
@@ -220,12 +237,12 @@ def setup_sequences(workingDirectory, isMicrobial=False):
                 f"GFF3 file in '{gff3Dir}' does not have a number suffix?"
             
             # Check that the corresponding genome file exists
-            genomeFile = f"genome{suffixNum}.fasta"
-            assert check_file_exists(os.path.join(gff3Dir, genomeFile)), \
-                f"Expected to find file '{genomeFile}' in directory '{gff3Dir}' but couldn't?"
+            genomeFile = os.path.join(gff3Dir, f"genome{suffixNum}.fasta")
+            assert check_file_exists(genomeFile), \
+                f"Expected to find file 'genome{suffixNum}.fasta' at '{gff3Dir}' but couldn't?"
             
             # Store the pairing
-            filePairs.append([os.path.join(gff3Dir, file), os.path.join(gff3Dir, genomeFile), suffixNum])
+            filePairs.append([os.path.join(gff3Dir, file), genomeFile, suffixNum])
     
     # Parse out mRNA sequences from each GFF3/genome pair
     for gff3File, fastaFile, suffixNum in filePairs:
@@ -236,7 +253,7 @@ def setup_sequences(workingDirectory, isMicrobial=False):
             with open(sequenceFileName, "w") as fileOut:
                 seqGenerator = AnnotationExtractor(gff3File, fastaFile, isMicrobial)
                 for mrnaID, exonSeq, cdsSeq in seqGenerator.iter_sequences():
-                    fileOut.write(f">{mrnaID}\n{exonSeq}\n")
+                    fileOut.write(f">{mrnaID}\n{cdsSeq}\n")
 
 def find_missing_sequence_id(binCollectionList, transcriptRecords):
     '''
@@ -261,14 +278,21 @@ def find_missing_sequence_id(binCollectionList, transcriptRecords):
                     return seqID
     return None
 
-def get_unbinned_sequence_ids(binBundleList, transcriptRecords):
+def get_unbinned_sequence_ids(clusterDict, eliminatedIDs, transcriptRecords):
     '''
     Compares one or more BinBundle objects against the transcript sequences
     to see if any sequences indicated in transcriptRecords do not exist in
     any Bins.
     
     Parameters:
-        binBundleList -- a list containing BinBundle's
+        clusterDict -- a dictionary with structure like:
+                       {
+                           0 : [ "seq1", "seq2", "seq3" ],
+                           1 : [ "seq4", "seq5", "seq6" ],
+                           ...
+                        }
+        eliminatedIDs -- a set containing strings of sequence IDs which are not to be
+                         considered for clustering.
         transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
                              sequences
     Returns:
@@ -276,10 +300,10 @@ def get_unbinned_sequence_ids(binBundleList, transcriptRecords):
                        binned by BINge's main clustering process.
     '''
     binnedIDs = []
-    for binBundle in binBundleList:
-        for bin in binBundle:
-            binnedIDs.extend(bin.ids)
+    for seqIDs in clusterDict.values():
+        binnedIDs.extend(seqIDs)
     binnedIDs = set(binnedIDs)
+    binnedIDs = binnedIDs.union(eliminatedIDs)
     
     unbinnedIDs = set()
     for record in transcriptRecords:
@@ -307,16 +331,6 @@ def get_parameters_hash(args):
     
     return paramHash
 
-def _debug_pickler(objectToPickle, outputFileName):
-    if not os.path.exists(outputFileName):
-        with open(outputFileName, "wb") as pickleOut:
-            pickle.dump(objectToPickle, pickleOut)
-
-def _debug_loader(pickleFileName):
-    with open(pickleFileName, "rb") as pickleIn:
-        results = pickle.load(pickleIn)
-    return results
-
 ## Main
 def main():
     showHiddenArgs = '--help-long' in sys.argv
@@ -331,9 +345,9 @@ def main():
     annotations (if available and high quality) in the same style e.g., 
     'annotation.gff3,genome.fasta'
     4) Unbinned sequences will be cascade clustered using MMseqs2 by default which is
-    recommended; you can choose Linclust or CD-HIT if desired. 4) Many parameters are hidden
-    in this short help format since their defaults are adequate; specify --help-long to see
-    information for those options.
+    recommended; you can choose Linclust or CD-HIT if desired.
+    5) Many parameters are hidden in this short help format since their defaults are adequate;
+    specify --help-long to see information for those options.
     """
     
     usageLong = """%(prog)s (BIN Genes for Expression analyses) is a program which clusters
@@ -368,14 +382,25 @@ def main():
     genome it will pre-seed the bins along this genome based on the annotation. If the annotation
     is of a reasonable standard this is expected to make BINge perform better.
     ###
-    Note 3: Sequences which do not align against the genome are considered to be "unbinned".
+    Note 4: Sequences which do not align against the genome are considered to be "unbinned".
     These will be clustered with MMseqs2 cascaded clustering by default, which is the recommended
     choice. You can use Linclust (also okay, trades some accuracy for some speed) or CD-HIT
     (potentially very slow and possibly least accurate) if wanted.
     ###
-    Note 4: The --gmapIdentity parameter should be set in the range of ... TBD.
+    Note 5: The --gmapIdentity parameter should be set in the range of 0.90 to 0.99 depending
+    on the evolutionary distance between your input files and the genomes you're aligning
+    against. For same species, use 0.98 or 0.99. If you're aligning against a different species
+    in the same genus, use 0.95. If you're aligning against a different genus, consider 0.90.
     ###
-    Note 5: You're seeing the --help-long format of this message, which means you may want to
+    Note 6: The --clusterVoteThreshold, based on objective evidence, should be set to 0.5 or
+    0.66. Using a lower value will give a tighter clustering (fewer clusters) and a higher
+    value will give looser clustering (more clusters). A value of 0.66 is likely to be more
+    biologically correct based on objective evaluation, but the difference is very marginal
+    in terms of biological correctness and number of clusters (e.g., you may find up to 3%
+    more clusters in 0.66 relative to 0.5). Generally, just stick to the default and you'll
+    be alright.
+    ###
+    Note 7: You're seeing the --help-long format of this message, which means you may want to
     configure the way clustering of unbinned sequences works. Behavioural parameters of several
     features can be tuned here, but the defaults are expected to work most of the time.
     The main exception is CD-HIT's memory utilisation, which probably should be set depending
@@ -399,26 +424,28 @@ def main():
                    required=True,
                    help="Output directory for intermediate and final results")
     # Optional - BINge
-    p.add_argument("--gmapDir", dest="gmapDir",
-                   required=False,
-                   help="""If GMAP is not discoverable in your PATH, specify the directory
-                   containing the mmseqs executable""")
     p.add_argument("--threads", dest="threads",
                    required=False,
                    type=int,
                    help="""Optionally, specify how many threads to run when multithreading
                    is available (default==1)""",
                    default=1)
-    p.add_argument("--convergence_iters", dest="convergenceIters",
+    p.add_argument("--clusterVoteThreshold", dest="clusterVoteThreshold",
                    required=False,
-                   type=int,
-                   help="""Optionally, specify a maximum number of iterations allowed for
-                   bin convergence to be achieved (default==5); in most cases results will
-                   converge in fewer than 5 iterations, so setting a maximum acts merely as
-                   a safeguard against edge cases I have no reason to believe will ever
-                   happen"""
+                   type=float,
+                   help="""Optionally, specify the clustering vote threshold used when
+                   clustering bins based on sequence ID co-occurrence (default == 0.66).
+                   A higher value gives more clusters and a lower value gives fewer
+                   clusters; if you want to be more biologically correct, use 0.66, but
+                   if you want fewer gene clusters, use 0.5.
+                   """
                    if showHiddenArgs else argparse.SUPPRESS,
-                   default=5)
+                   default=0.66)
+    # Optional - GMAP
+    p.add_argument("--gmapDir", dest="gmapDir",
+                   required=False,
+                   help="""If GMAP is not discoverable in your PATH, specify the directory
+                   containing the mmseqs executable""")
     p.add_argument("--gmapIdentity", dest="gmapIdentity",
                    required=False,
                    type=float,
@@ -438,13 +465,6 @@ def main():
                    file from a bacteria, archaea, or just any organism in which the GFF3
                    does not contain mRNA and exon features; in this case, I expect the GFF3
                    feature to have 'gene' and 'CDS' features."""
-                   if showHiddenArgs else argparse.SUPPRESS,
-                   default=False)
-    p.add_argument("--debug", dest="debug",
-                   required=False,
-                   action="store_true",
-                   help="""Optionally provide this argument if you want to generate detailed
-                   logging information along the way to help with debugging."""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=False)
     p.add_argument("--clusterer", dest="unbinnedClusterer",
@@ -529,7 +549,14 @@ def main():
                    provide CD-HIT (default==6000)"""
                    if showHiddenArgs else argparse.SUPPRESS,
                    default=6000)
-    # Help controller
+    # Help controller and meta arguments
+    p.add_argument("--debug", dest="debug",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally provide this argument if you want to generate detailed
+                   logging information along the way to help with debugging."""
+                   if showHiddenArgs else argparse.SUPPRESS,
+                   default=False)
     p.add_argument("--help-long", dest="help-long",
                    action="help",
                    help="""Show all options, including those that are not
@@ -562,8 +589,6 @@ def main():
     
     # Perform GMAP mapping
     gmapFiles = auto_gmapping(args.outputDirectory, args.gmapDir, args.threads)
-    _debug_pickler(gmapFiles, os.path.join(args.outputDirectory, f"{paramHash}.gmapFiles.pkl"))
-    #gmapFiles = _debug_loader(os.path.join(args.outputDirectory, f"{paramHash}.gmapFiles.pkl"))
     
     # Figure out what our pickle file is called
     pickleFile = os.path.join(args.outputDirectory, f"{paramHash}.binge.pkl")
@@ -592,40 +617,28 @@ def main():
             print(f"# Generated a list with {len(collectionList)} collections")
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} contains {len(_cl)} bins")
-        _debug_pickler(collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.setup.pkl"))
-        #collectionList = _debug_loader(os.path.join(args.outputDirectory, f"{paramHash}.collectionList.setup.pkl"))
         
         # Parse GMAP alignments into our bin collection with multiple threads
-        collectionList = populate_bin_collections(collectionList, gmapFiles,
+        collectionList = populate_bin_collections(args.outputDirectory,
+                                                  collectionList, gmapFiles,
                                                   args.threads, args.gmapIdentity)
         if args.debug:
             print(f"# Populated collections based on GMAP alignments")
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} now contains {len(_cl)} bins")
-        _debug_pickler(collectionList, os.path.join(args.outputDirectory, f"{paramHash}.collectionList.populated.pkl"))
-        #_debug_loader()
         
-        # Split bins to separate non-overlapping gene models
-        binBundle = queued_bin_splitter(collectionList, args.threads)
+        # Convert collections into a bundle
+        binBundle = BinBundle.create_from_multiple_collections(collectionList)
+        
+        # Cluster bundles across and within genomes
+        clusterDict, eliminations = binBundle.cluster_by_cooccurrence(args.clusterVoteThreshold)
         if args.debug:
-            print(f"# Split bins based on lack of overlap")
-            print(f"# The combined bundle now contains {len(binBundle)} bins")
-        _debug_pickler(binBundle, os.path.join(args.outputDirectory, f"{paramHash}.binBundle.split.pkl"))
-        #_debug_loader()
-        
-        # Merge bin bundles across genomes / across gene copies
-        """Usually linking will unify multiple genomes together, but it may detect
-        bins of identical gene copies and link them together which is reasonable
-        since these would confound DGE to keep separate anyway."""
-        
-        binBundle = iterative_bin_self_linking(binBundle, args.convergenceIters)
-        if args.debug:
-            print(f"# Iteratively self linked bins based on ID sharing")
-            print(f"# The combined bundle now contains {len(binBundle)} bins")
+            print(f"# Clustered bundles (across and within genomes) based on ID occurrence")
+            print(f"# Cluster dictionary contains {len(clusterDict)} clusters")
         
         # Write pickle file for potential resuming of program
         with open(pickleFile, "wb") as pickleOut:
-            pickle.dump(binBundle, pickleOut)
+            pickle.dump(clusterDict, pickleOut)
     
     # Write binned clusters to file
     with open(outputFileName, "w") as fileOut:
@@ -634,11 +647,9 @@ def main():
         fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
         
         # Write content lines
-        numClusters = 0
-        for bin in binBundle:
-            for seqID in bin.ids:
-                fileOut.write(f"{numClusters+1}\t{seqID}\tbinned\n")
-            numClusters += 1
+        for clusterNum, seqIDs in clusterDict.items():
+            for seqID in seqIDs:
+                fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
     
     # Cluster remaining unbinned sequences
     transcriptRecords = FastaCollection([
@@ -646,7 +657,7 @@ def main():
         for f in os.listdir(args.outputDirectory)
         if f.endswith(".nucl")
     ])
-    unbinnedIDs = get_unbinned_sequence_ids([binBundle], transcriptRecords)
+    unbinnedIDs = get_unbinned_sequence_ids(clusterDict, eliminations, transcriptRecords)
     if args.debug:
         print(f"# There are {len(unbinnedIDs)} unbinned sequences for external clustering")
     
@@ -658,10 +669,11 @@ def main():
         unbinnedClusterDict = {} # blank to append nothing to output file
     
     # Write output of clustering to file
+    numClusters = len(clusterDict)
     with open(outputFileName, "a") as fileOut:
         for clusterNum, clusterIDs in unbinnedClusterDict.items():
             for seqID in clusterIDs:
-                fileOut.write(f"{clusterNum+numClusters+1}\t{seqID}\tunbinned\n") # clusterType = "unbinned"
+                fileOut.write(f"{clusterNum+numClusters+1}\t{seqID}\tunbinned\n")
     
     print("Program completed successfully!")
 

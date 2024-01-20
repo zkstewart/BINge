@@ -55,19 +55,18 @@ def validate_args(args):
         print("--threads should be given a value >= 1")
         print("Fix this and try again.")
         quit()
-    if args.convergenceIters < 1:
-        print("--convergence_iters should be given a value >= 1")
-        print("Fix this and try again.")
-        quit()
     if not 0.0 < args.identity <= 1.0:
         print("--identity should be given a value greater than zero, and equal to " + 
               "or less than 1")
         print("Fix this and try again.")
         quit()
-    
-    # Specifically handle gmapIdentity
     if not 0.0 < args.gmapIdentity <= 1.0:
         print("--gmapIdentity should be given a value greater than zero, and equal to " + 
+            "or less than 1")
+        print("Fix this and try again.")
+        quit()
+    if not 0.0 < args.clusterVoteThreshold <= 1.0:
+        print("--clusterVoteThreshold should be given a value greater than zero, and equal to " + 
             "or less than 1")
         print("Fix this and try again.")
         quit()

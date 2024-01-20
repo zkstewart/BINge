@@ -16,8 +16,10 @@ def _build_data_to_yield(thisFeature):
     # Get the GMAP alignment quality attributes
     for attribute in attributes.split(";"):
         key, value = attribute.split("=")
-        if key in ["identity", "coverage", "indels"]:
-            dataDict[key] = value
+        if key in ["identity", "coverage"]:
+            dataDict[key] = float(value)
+        elif key == "indels":
+            dataDict[key] = int(value)
         elif key == "Name":
             dataDict["Name"] = value
     

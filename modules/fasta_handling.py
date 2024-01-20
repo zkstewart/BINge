@@ -1,9 +1,42 @@
-import os, sys, re
+import os, sys, re, pickle
 from Bio import SeqIO
 from pyfaidx import Fasta
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages import ZS_SeqIO # expose this to any callers
+
+def generate_sequence_length_index(fastaFile):
+    '''
+    Helper function to take a FASTA file and generate a dictionary of
+    sequence lengths which is to be pickled at the same location as the FASTA.
+    
+    Parameters:
+        fastaFile -- a string indicating the location of the FASTA file to index.
+    '''
+    indexFile = f"{fastaFile}.lengths.pkl"
+    if not os.path.exists(indexFile):
+        seqLenDict = {}
+        with open(fastaFile, "r") as fileIn:
+            records = SeqIO.parse(fileIn, "fasta")
+            for record in records:
+                seqLenDict[record.id] = len(record)
+        with open(indexFile, "wb") as fileOut:
+            pickle.dump(seqLenDict, fileOut)
+
+def load_sequence_length_index(indexFile):
+    '''
+    Load in the pickled result of generate_sequence_length_index().
+    
+    Parameters:
+        indexFile -- a string indicating the location of index generated from a FASTA file.
+    '''
+    if os.path.exists(indexFile):
+        with open(indexFile, "rb") as fileIn:
+            seqLenDict = pickle.load(fileIn)
+        return seqLenDict
+    else:
+        raise FileNotFoundError(("load_sequence_length_index() failed because " + 
+                                 f"'{indexFile}' doesn't exist!"))
 
 class AnnotationExtractor:
     '''
