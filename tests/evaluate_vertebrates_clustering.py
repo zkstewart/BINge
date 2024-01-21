@@ -6,7 +6,7 @@
 # where the true clusters are derived from the human-mouse-rat-zebrafish
 # homolog groups.
 
-import os, argparse, sys
+import os, argparse, sys, re
 import networkx as nx
 from sklearn.metrics.cluster import adjusted_rand_score, rand_score, \
     normalized_mutual_info_score, adjusted_mutual_info_score
@@ -28,10 +28,22 @@ def validate_args(args):
         print(f'I am unable to locate the cluster file ({args.clusterFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.fastaFile):
-        print(f'I am unable to locate the FASTA file ({args.fastaFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+    
+    # Make sure FASTA or GFF3 file exists
+    if args.fastaFile == None:
+        assert args.annotationGFF3 != None, \
+            "You must provide either a FASTA or GFF3 file for this script to work!"
+        if not os.path.isfile(args.annotationGFF3):
+            print(f'I am unable to locate the GFF3 file ({args.annotationGFF3})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+    elif args.annotationGFF3 == None:
+        assert args.fastaFile != None, \
+            "You must provide either a FASTA or GFF3 file for this script to work!"
+        if not os.path.isfile(args.fastaFile):
+            print(f'I am unable to locate the FASTA file ({args.fastaFile})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
     
     # Validate input file format
     if args.clusterer == "binge":
@@ -226,6 +238,35 @@ def parse_fasta_geneids(refseqFastaFile):
                 idMappingDict[seqID] = geneID
     return idMappingDict
 
+def parse_gff3_geneids(refseqGFF3File):
+    '''
+    Parses a RefSeq annotations GFF3 from NCBI to a dictionary structure.
+    
+    Parameters:
+        refseqGFF3File -- a string indicating the location of the GFF3 file.
+    Returns:
+        idMappingDict -- a dictionary with structure like:
+                    {
+                        'seqID1': 'entrezID1'
+                        'seqID2': 'entrezID2',
+                        ...
+                    }
+    '''
+    geneIDRegex = re.compile(r"GeneID:(\d+)")
+    
+    idMappingDict = {}
+    with open(refseqGFF3File, "r") as fileIn:
+        for line in fileIn:
+            if not line.startswith("#"):
+                sl = line.rstrip("\r\n ").split("\t")
+                annotType, attributes = sl[2], sl[8]
+                if annotType == "mRNA":
+                    seqID = attributes.split("ID=")[1].split(";")[0]
+                    geneID = geneIDRegex.search(attributes).group(1)
+                    
+                    idMappingDict[seqID] = geneID
+    return idMappingDict
+
 ## Main
 def main():
     # User input
@@ -242,8 +283,11 @@ def main():
                    required=True,
                    help="Input the CD-HIT or BINge cluster file")
     p.add_argument("-f", dest="fastaFile",
-                   required=True,
+                   required=False,
                    help="Input the RefSeq FASTA file")
+    p.add_argument("-a", dest="annotationGFF3",
+                   required=False,
+                   help="Input the RefSeq GFF3 file")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for text results")
@@ -281,7 +325,10 @@ def main():
         raise NotImplementedError()
     
     # Parse the RefSeq file
-    idMappingDict = parse_fasta_geneids(args.fastaFile)
+    if args.fastaFile != None:
+        idMappingDict = parse_fasta_geneids(args.fastaFile)
+    else:
+        idMappingDict = parse_gff3_geneids(args.annotationGFF3)
     
     # Flip the dict around and +numGeneClusters to prevent cluster number overlap
     testDict = {
@@ -299,7 +346,7 @@ def main():
     }
     postSize = len(testDict)
     print(f"Dropped {priorSize-postSize} sequences when getting entrez gene IDs")
-    print(f"Final number of sequences to test: {postSize}")
+    print(f"Initial number of sequences to test: {postSize}")
     
     # Drop any sequences in testDict that aren't in our trueDict
     "Must have the exact same sequences for comparison"
@@ -370,7 +417,10 @@ def main():
         
         # Write details
         fileOut.write(f"Orthologs file\t{args.geneOrthologsFile}\n")
-        fileOut.write(f"FASTA file\t{args.fastaFile}\n")
+        if args.fastaFile != None:
+            fileOut.write(f"FASTA file\t{args.fastaFile}\n")
+        else:
+            fileOut.write(f"GFF3 file\t{args.annotationGFF3}\n")
         fileOut.write(f"Cluster file\t{args.clusterFile}\n")
         fileOut.write(f"Number of testable mRNAs in annotation\t{len(trueList)}\n")
         fileOut.write(f"Number of testable genes in annotation\t{numGeneClusters}\n")
