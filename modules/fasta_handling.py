@@ -66,6 +66,7 @@ class AnnotationExtractor:
         details = [None, None, None] # mrnaID, contig, strand
         exon = []
         cds = []
+        foundSomething = False
         
         # Configuration for microbial or normal GFF3
         if self.isMicrobial:
@@ -88,15 +89,23 @@ class AnnotationExtractor:
                     score, strand, frame, attributes \
                     = sl
                 isMRNA = featureType == subfeature
+                isBreakpoint = featureType == "gene"
                 
                 # Check if we should yield a feature
-                if isMRNA and details[0] != None:
+                if (isMRNA or isBreakpoint) and details[0] != None:
                     if not self.isMicrobial:
                         if len(exon) > 0 and len(cds) > 0: # if this fails it might be a pseudogene
+                            foundSomething = True
                             yield details, exon, cds
                     else:
                         if len(cds) > 0: # if this fails it might be a pseudogene
+                            foundSomething = True
                             yield details, cds, cds # CDS and exon are equivalent in microbe GFF3s
+                    
+                    # Zero the details again as a safeguard for if we hit a breakpoint and not isMRNA
+                    details = [None, None, None]
+                    exon = []
+                    cds = []
                 
                 # Check if we should build a new feature
                 if isMRNA:
@@ -111,13 +120,13 @@ class AnnotationExtractor:
                     cds.append([int(start), int(end), int(frame)])
         
         # Yield the last feature in the GFF3
-        if details != [None, None, None]:
+        if foundSomething == False:
+            raise Exception(f"AnnotationExtractor error: '{self.gff3File}' does not appear to be a valid GFF3 file!")
+        if details[0] != None:
             if not self.isMicrobial:
                 yield details, exon, cds
             else:
                 yield details, cds, cds
-        else:
-            raise Exception(f"AnnotationExtractor error: '{self.gff3File}' does not appear to be a valid GFF3 file!")
     
     @staticmethod
     def assemble_sequence(coordsList, strand, contigSequence):
