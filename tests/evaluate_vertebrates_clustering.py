@@ -204,6 +204,17 @@ def main():
     # Parse the RefSeq GFF3 files
     idMappingDict = parse_gff3_geneids(args.annotationGFF3)
     
+    # Drop any sequences from testDict that aren't in our idMappingDict
+    """This can enable us to perform pairwise comparison of species by
+    choosing which files to include with annotationGFF3"""
+    keysToDelete = []
+    for clustNum, seqIDs in testDict.items():
+        testDict[clustNum] = [seqID for seqID in seqIDs if seqID in idMappingDict]
+        if testDict[clustNum] == []:
+            keysToDelete.append(clustNum)
+    for key in keysToDelete:
+        del testDict[key]
+    
     # Replace test dict IDs with Entrez IDs, handling duplicates
     testDict, fixedIDs = replace_test_with_entrez(testDict, idMappingDict)
     
