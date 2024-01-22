@@ -59,15 +59,11 @@ def parse_gff3_geneids(refseqGFF3Files):
                         'seqID2': 'entrezID2',
                         ...
                     }
-        fileIDs -- a list containing sets in order of the GFF3 files
-                   to associate the sequence IDs with the file they came from.
     '''
     geneIDRegex = re.compile(r"GeneID:(\d+)")
     
     idMappingDict = {}
-    #fileIDs = []
     for refseqGFF3File in refseqGFF3Files:
-        #fileIDs.append(set())
         with open(refseqGFF3File, "r") as fileIn:
             for line in fileIn:
                 if not line.startswith("#"):
@@ -78,8 +74,7 @@ def parse_gff3_geneids(refseqGFF3Files):
                         geneID = geneIDRegex.search(attributes).group(1)
                         
                         idMappingDict[seqID] = geneID
-                        #fileIDs[-1].add(seqID)
-    return idMappingDict#, fileIDs
+    return idMappingDict
 
 def replace_test_with_entrez(testDict, idMappingDict):
     # Count how many occurrences there are of each Entrez ID
@@ -207,7 +202,6 @@ def main():
     testDict = parse_binge_clusters(args.clusterFile)
     
     # Parse the RefSeq GFF3 files
-    #idMappingDict, fileIDs = parse_gff3_geneids(args.annotationGFF3)
     idMappingDict = parse_gff3_geneids(args.annotationGFF3)
     
     # Replace test dict IDs with Entrez IDs, handling duplicates
@@ -227,7 +221,6 @@ def main():
     "Must have the exact same sequences for comparison"
     for seqID in list(testDict.keys()):
         if not seqID in trueDict:
-            #print(f"Dropped {seqID} from test labels as it has no match in true labels")
             del testDict[seqID]
     
     # Ensure that things are okay, erroring out if they are not
@@ -240,7 +233,6 @@ def main():
             # Drop any sequences in trueDict that aren't in our testDict
             for seqID in list(trueDict.keys()):
                 if not seqID in testDict:
-                    #print(f"Dropped {seqID} from TRUE labels as it has no match in test labels")
                     del trueDict[seqID]
             
             print("--beTolerant was specified, which means I've tried to make these numbers match.")
