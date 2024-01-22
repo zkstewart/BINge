@@ -12,8 +12,6 @@ from sklearn.metrics.cluster import adjusted_rand_score, rand_score, \
     normalized_mutual_info_score, adjusted_mutual_info_score
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_ClustIO
-
 from modules.validation import validate_cluster_file
 from modules.parsing import parse_binge_clusters
 
@@ -30,34 +28,16 @@ def validate_args(args):
         quit()
     
     # Make sure FASTA or GFF3 file exists
-    if args.fastaFile == None:
-        assert args.annotationGFF3 != None, \
-            "You must provide either a FASTA or GFF3 file for this script to work!"
-        if not os.path.isfile(args.annotationGFF3):
-            print(f'I am unable to locate the GFF3 file ({args.annotationGFF3})')
-            print('Make sure you\'ve typed the file name or location correctly and try again.')
-            quit()
-    elif args.annotationGFF3 == None:
-        assert args.fastaFile != None, \
-            "You must provide either a FASTA or GFF3 file for this script to work!"
-        if not os.path.isfile(args.fastaFile):
-            print(f'I am unable to locate the FASTA file ({args.fastaFile})')
+    for gff3File in args.annotationGFF3:
+        if not os.path.isfile(gff3File):
+            print(f'I am unable to locate the GFF3 file ({gff3File})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
     
     # Validate input file format
-    if args.clusterer == "binge":
-        isBinge = validate_cluster_file(args.clusterFile)
-        if not isBinge:
-            raise ValueError("The input file was not validated as a BINge file!")
-    elif args.clusterer == "cdhit":
-        isBinge = validate_cluster_file(args.clusterFile)
-        if isBinge:
-            raise ValueError("The input file was not validated as a CD-HIT file!")
-    elif args.clusterer == "corset" or args.clusterer == "mmseqs":
-        isTSV = validate_cluster_tsv_file(args.clusterFile)
-    else:
-        raise NotImplementedError()
+    isBinge = validate_cluster_file(args.clusterFile)
+    if not isBinge:
+        raise ValueError("The input file was not validated as a BINge file!")
     
     # Validate output file location
     if os.path.isfile(args.outputFileName):
@@ -65,97 +45,81 @@ def validate_args(args):
         print('Make sure you specify a unique file name and try again.')
         quit()
 
-def validate_cluster_tsv_file(fileName):
+def parse_gff3_geneids(refseqGFF3Files):
     '''
-    Validation function specifically for handling Corset-like or MMseqs2 cluster results.
-    The file is expected to strictly conform to there being only two columns.
+    Parses a RefSeq annotations GFF3 from NCBI to a dictionary structure.
     
     Parameters:
-        fileName -- a string indicating the location of the TSV file for validation.
+        refseqGFF3Files -- a list containing strings that indicate the
+                           location of  GFF3 files(s).
     Returns:
-        isValid -- a boolean that will be True; the alternative is quit() being called.
+        idMappingDict -- a dictionary with structure like:
+                    {
+                        'seqID1': 'entrezID1'
+                        'seqID2': 'entrezID2',
+                        ...
+                    }
+        fileIDs -- a list containing sets in order of the GFF3 files
+                   to associate the sequence IDs with the file they came from.
     '''
-    with open(fileName, "r") as fileIn:
-        for line in fileIn:
-            l = line.rstrip("\r\n ")
-            if l != "":
-                sl = l.split("\t")
-                if len(sl) != 2:
-                    errorMsg = (f"The input file '{fileName}' does not appear to be a TSV (e.g., Corset) " +
-                        "cluster file.\nYou should check your inputs and try again.")
-                    raise ValueError(errorMsg)
-    return True
+    geneIDRegex = re.compile(r"GeneID:(\d+)")
+    
+    idMappingDict = {}
+    #fileIDs = []
+    for refseqGFF3File in refseqGFF3Files:
+        #fileIDs.append(set())
+        with open(refseqGFF3File, "r") as fileIn:
+            for line in fileIn:
+                if not line.startswith("#"):
+                    sl = line.rstrip("\r\n ").split("\t")
+                    annotType, attributes = sl[2], sl[8]
+                    if annotType == "mRNA":
+                        seqID = attributes.split("ID=")[1].split(";")[0]
+                        geneID = geneIDRegex.search(attributes).group(1)
+                        
+                        idMappingDict[seqID] = geneID
+                        #fileIDs[-1].add(seqID)
+    return idMappingDict#, fileIDs
 
-def parse_corset_clusters(fileName):
-    '''
-    After a corset TSV has been validated, this function will parse it to a dictionary
-    structure. The left column of the TSV must be the sequence ID, with the right
-    column being the cluster ID.
+def replace_test_with_entrez(testDict, idMappingDict):
+    # Count how many occurrences there are of each Entrez ID
+    countDict = {}
+    for seqIDs in testDict.values():
+        for seqID in seqIDs:
+            entrezID = idMappingDict[seqID]
+            countDict.setdefault(entrezID, 0)
+            countDict[entrezID] += 1
     
-    Parameters:
-        fileName -- a string indicating the location of the Corset TSV file for parsing.
-    Returns:
-        clusterDict -- a dictionary with structure like:
-                       {
-                           0: ['seqID1', 'seqID2'],
-                           1: ['seqID3'],
-                           ...
-                       }
-    '''
-    clusterDict = {}
-    clusterNum = -1
-    lastCluster = None
-    with open(fileName, "r") as fileIn:
-        for line in fileIn:
-            l = line.rstrip("\r\n ")
-            if l != "":
-                seqID, clustID = l.split("\t")
-                if clustID != lastCluster:
-                    clusterNum += 1
-                lastCluster = clustID
+    # Update any entrez IDs that are duplicated
+    fixedIDs = {}
+    for clustNum, seqIDs in testDict.items():
+        newClust = []
+        for seqID in seqIDs:
+            # Get the entrez ID for this sequence
+            entrezID = idMappingDict[seqID]
+            
+            # Fix the ID if it is duplicated
+            if countDict[entrezID] > 1:
+                fixedIDs.setdefault(entrezID, 0)
+                fixedIDs[entrezID] += 1
                 
-                clusterDict.setdefault(clusterNum, [])
-                clusterDict[clusterNum].append(seqID)
-    return clusterDict
-
-def parse_mmseqs_clusters(fileName):
-    '''
-    After a MMseqs2 TSV has been validated, this function will parse it to a dictionary
-    structure. The left column of the TSV must be the cluster representative ID, with the
-    right column being the member sequence ID.
+                newClust.append(f"{entrezID}_{fixedIDs[entrezID]}")
+            else:
+                newClust.append(entrezID)
+        
+        # Store the fixed clusters
+        testDict[clustNum] = newClust
     
-    Parameters:
-        fileName -- a string indicating the location of the Corset TSV file for parsing.
-    Returns:
-        clusterDict -- a dictionary with structure like:
-                       {
-                           0: ['seqID1', 'seqID2'],
-                           1: ['seqID3'],
-                           ...
-                       }
-    '''
-    clusterDict = {}
-    clusterNum = -1
-    lastCluster = None
-    with open(fileName, "r") as fileIn:
-        for line in fileIn:
-            l = line.rstrip("\r\n ")
-            if l != "":
-                clustID, seqID = l.split("\t")
-                if clustID != lastCluster:
-                    clusterNum += 1
-                lastCluster = clustID
-                
-                clusterDict.setdefault(clusterNum, [])
-                clusterDict[clusterNum].append(seqID)
-    return clusterDict
+    return testDict, fixedIDs
 
-def parse_orthologs(orthologsFile):
+def parse_orthologs(orthologsFile, fixedIDs):
     '''
     Parses a gene_orthologs file from NCBI to a dictionary structure.
     
     Parameters:
         orthologsFile -- a string indicating the location of the gene_orthologs file.
+        fixedIDs -- a dictionary containing entrez IDs which need to be substituted with
+                    the amount of _${num} as in the value pairing.
     Returns:
         trueDict -- a dictionary with structure like:
                     {
@@ -172,29 +136,26 @@ def parse_orthologs(orthologsFile):
         # Get first line to check file format
         firstLine = next(fileIn).rstrip("\r\n ")
         
-        # Handle HOM_AllOrganism.rpt file
-        if firstLine.startswith("DB Class Key"):
-            found = set()
-            for line in fileIn:
-                sl = line.rstrip("\r\n ").split("\t")
-                dbClassKey, geneID = sl[0], sl[4]
-                
-                if not dbClassKey in found:
-                    numGeneClusters += 1
-                    found.add(dbClassKey)
-                
-                trueDict[geneID] = numGeneClusters
-        
         # Handle gene_orthologs file
-        elif firstLine.startswith("#tax_id\tGeneID"):
+        if firstLine.startswith("#tax_id\tGeneID"):
             graph = nx.Graph()
             for line in fileIn:
                 sl = line.rstrip("\r\n ").split("\t")
                 geneID, otherGeneID = sl[1], sl[4]
                 
-                graph.add_node(geneID)
-                graph.add_node(otherGeneID)
-                graph.add_edge(geneID, otherGeneID)
+                geneIDs = [geneID] if not geneID in fixedIDs \
+                    else [ f"{geneID}_{i+1}" for i in range(fixedIDs[geneID]) ]
+                otherGeneIDs = [otherGeneID] if not otherGeneID in fixedIDs \
+                    else [ f"{otherGeneID}_{i+1}" for i in range(fixedIDs[otherGeneID]) ]
+                
+                for gID in geneIDs:
+                    graph.add_node(gID)
+                for ogID in otherGeneIDs:
+                    graph.add_node(ogID)
+                
+                for gID in geneIDs:
+                    for ogID in otherGeneIDs:
+                        graph.add_edge(gID, ogID)
             
             for connectedSeqIDs in nx.connected_components(graph):
                 numGeneClusters += 1
@@ -203,98 +164,31 @@ def parse_orthologs(orthologsFile):
         
         # Raise error for unhandled file
         else:
-            raise ValueError("The input file does not appear to be a gene_orthologs or HOM_AllOrganism.rpt file!")
+            raise ValueError("The input file does not appear to be a gene_orthologs file!")
     
     return trueDict, numGeneClusters
-
-def parse_fasta_geneids(refseqFastaFile):
-    '''
-    Parses a RefSeq annotations FASTA from NCBI to a dictionary structure.
-    
-    Parameters:
-        refseqFastaFile -- a string indicating the location of the FASTA file.
-    Returns:
-        idMappingDict -- a dictionary with structure like:
-                    {
-                        'seqID1': 'entrezID1'
-                        'seqID2': 'entrezID2',
-                        ...
-                    }
-    '''
-    idMappingDict = {}
-    with open(refseqFastaFile, "r") as fileIn:
-        for line in fileIn:
-            if line.startswith(">"):
-                seqID = line[1:].split(" ")[0]
-                dbxref = line.split("[db_xref=")[1].split("]")[0]
-                
-                geneID = None
-                for xref in dbxref.split(","):
-                    if xref.startswith("GeneID:"):
-                        geneID = xref.split(":")[1]
-                        break
-                assert geneID != None
-                
-                idMappingDict[seqID] = geneID
-    return idMappingDict
-
-def parse_gff3_geneids(refseqGFF3File):
-    '''
-    Parses a RefSeq annotations GFF3 from NCBI to a dictionary structure.
-    
-    Parameters:
-        refseqGFF3File -- a string indicating the location of the GFF3 file.
-    Returns:
-        idMappingDict -- a dictionary with structure like:
-                    {
-                        'seqID1': 'entrezID1'
-                        'seqID2': 'entrezID2',
-                        ...
-                    }
-    '''
-    geneIDRegex = re.compile(r"GeneID:(\d+)")
-    
-    idMappingDict = {}
-    with open(refseqGFF3File, "r") as fileIn:
-        for line in fileIn:
-            if not line.startswith("#"):
-                sl = line.rstrip("\r\n ").split("\t")
-                annotType, attributes = sl[2], sl[8]
-                if annotType == "mRNA":
-                    seqID = attributes.split("ID=")[1].split(";")[0]
-                    geneID = geneIDRegex.search(attributes).group(1)
-                    
-                    idMappingDict[seqID] = geneID
-    return idMappingDict
 
 ## Main
 def main():
     # User input
     usage = """%(prog)s is a modified evaluate_clustering.py script designed to receive not a
-    reference annotation file, but a gene_orthologs file from https://ftp.ncbi.nih.gov/gene/DATA
-    or the HOM_AllOrganism.rpt file from https://www.informatics.jax.org.
+    reference annotation file, but the gene_orthologs file from https://ftp.ncbi.nih.gov/gene/DATA.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
     p.add_argument("-g", dest="geneOrthologsFile",
                    required=True,
-                   help="Input gene_orthologs or HOM_AllOrganism.rpt file")
+                   help="Input gene_orthologs file")
     p.add_argument("-c", dest="clusterFile",
                    required=True,
                    help="Input the CD-HIT or BINge cluster file")
-    p.add_argument("-f", dest="fastaFile",
-                   required=False,
-                   help="Input the RefSeq FASTA file")
     p.add_argument("-a", dest="annotationGFF3",
-                   required=False,
-                   help="Input the RefSeq GFF3 file")
+                   required=True,
+                   nargs="+",
+                   help="Input the RefSeq GFF3 file(s)")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for text results")
-    p.add_argument("-p", dest="clusterer",
-                   required=True,
-                   choices=["binge", "cdhit", "corset", "mmseqs"],
-                   help="Specify which clusterer's results you are providing.")
     # Optional
     p.add_argument("--beTolerant", dest="beTolerant",
                    required=False,
@@ -309,50 +203,31 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
+    # Parse the BINge cluster file
+    testDict = parse_binge_clusters(args.clusterFile)
+    
+    # Parse the RefSeq GFF3 files
+    #idMappingDict, fileIDs = parse_gff3_geneids(args.annotationGFF3)
+    idMappingDict = parse_gff3_geneids(args.annotationGFF3)
+    
+    # Replace test dict IDs with Entrez IDs, handling duplicates
+    testDict, fixedIDs = replace_test_with_entrez(testDict, idMappingDict)
+    
     # Parse the orthologs file
-    trueDict, numGeneClusters = parse_orthologs(args.geneOrthologsFile)
-    
-    # Parse the CD-HIT / BINge cluster file, changing cluster IDs to not overlap
-    if args.clusterer == "binge":
-        testDict = parse_binge_clusters(args.clusterFile) # we will 'test' this against our ground truth
-    elif args.clusterer == "cdhit":
-        testDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.clusterFile) 
-    elif args.clusterer == "corset":
-        testDict = parse_corset_clusters(args.clusterFile)
-    elif args.clusterer == "mmseqs":
-        testDict = parse_mmseqs_clusters(args.clusterFile)
-    else:
-        raise NotImplementedError()
-    
-    # Parse the RefSeq file
-    if args.fastaFile != None:
-        idMappingDict = parse_fasta_geneids(args.fastaFile)
-    else:
-        idMappingDict = parse_gff3_geneids(args.annotationGFF3)
+    trueDict, numGeneClusters = parse_orthologs(args.geneOrthologsFile, fixedIDs)
     
     # Flip the dict around and +numGeneClusters to prevent cluster number overlap
     testDict = {
-        seqID : clustNum+numGeneClusters
+        seqID : clustNum+numGeneClusters+1
         for clustNum, idList in testDict.items()
         for seqID in idList
     }
-    priorSize = len(testDict)
-    
-    # Modify RefSeq IDs to be entrez gene IDs
-    testDict = {
-        idMappingDict[seqID] : clustNum
-        for seqID, clustNum in testDict.items()
-        if seqID in idMappingDict # RefSeq CDS models have absences for some reason
-    }
-    postSize = len(testDict)
-    print(f"Dropped {priorSize-postSize} sequences when getting entrez gene IDs")
-    print(f"Initial number of sequences to test: {postSize}")
     
     # Drop any sequences in testDict that aren't in our trueDict
     "Must have the exact same sequences for comparison"
     for seqID in list(testDict.keys()):
         if not seqID in trueDict:
-            print(f"Dropped {seqID} from test labels as it has no match in true labels")
+            #print(f"Dropped {seqID} from test labels as it has no match in true labels")
             del testDict[seqID]
     
     # Ensure that things are okay, erroring out if they are not
@@ -365,7 +240,7 @@ def main():
             # Drop any sequences in trueDict that aren't in our testDict
             for seqID in list(trueDict.keys()):
                 if not seqID in testDict:
-                    print(f"Dropped {seqID} from TRUE labels as it has no match in test labels")
+                    #print(f"Dropped {seqID} from TRUE labels as it has no match in test labels")
                     del trueDict[seqID]
             
             print("--beTolerant was specified, which means I've tried to make these numbers match.")
@@ -416,11 +291,10 @@ def main():
         fileOut.write("#evaluate_vertebrates_clustering.py clustering comparison results\n")
         
         # Write details
+        gff3Files = ",".join(args.annotationGFF3)
+        
         fileOut.write(f"Orthologs file\t{args.geneOrthologsFile}\n")
-        if args.fastaFile != None:
-            fileOut.write(f"FASTA file\t{args.fastaFile}\n")
-        else:
-            fileOut.write(f"GFF3 file\t{args.annotationGFF3}\n")
+        fileOut.write(f"GFF3 file(s)\t{gff3Files}\n")
         fileOut.write(f"Cluster file\t{args.clusterFile}\n")
         fileOut.write(f"Number of testable mRNAs in annotation\t{len(trueList)}\n")
         fileOut.write(f"Number of testable genes in annotation\t{numGeneClusters}\n")
