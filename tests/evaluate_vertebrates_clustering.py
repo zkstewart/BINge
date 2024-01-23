@@ -35,23 +35,23 @@ def validate_args(args):
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
     
-    # Validate input file format
-    try:
-        isBinge = validate_cluster_file(args.clusterFile)
-        if not isBinge:
-            raise ValueError("The input file was not validated as a BINge or MMSeqs2 file!")
-    except:
-        isTSV = validate_cluster_tsv_file(args.clusterFile)
-        if not isTSV:
-            raise ValueError("The input file was not validated as a BINge or MMSeqs2 file!")
-    
     # Validate output file location
     if os.path.isfile(args.outputFileName):
         print(f'File already exists at output location ({args.outputFileName})')
         print('Make sure you specify a unique file name and try again.')
         quit()
     
-    return isBinge
+    # Validate input file format
+    try:
+        isBinge = validate_cluster_file(args.clusterFile)
+        if not isBinge:
+            raise ValueError("The input file was not validated as a BINge or MMSeqs2 file!")
+        return isBinge
+    except:
+        isTSV = validate_cluster_tsv_file(args.clusterFile)
+        if not isTSV:
+            raise ValueError("The input file was not validated as a BINge or MMSeqs2 file!")
+        return False # it's not a BINge file so return False to indicate that
 
 def parse_gff3_geneids(refseqGFF3Files):
     '''
