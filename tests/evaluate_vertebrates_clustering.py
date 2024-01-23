@@ -14,6 +14,7 @@ from sklearn.metrics.cluster import adjusted_rand_score, rand_score, \
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.validation import validate_cluster_file
 from modules.parsing import parse_binge_clusters
+from utilities.evaluate_clustering import validate_cluster_tsv_file, parse_mmseqs_clusters
 
 # Define functions
 def validate_args(args):
@@ -37,13 +38,17 @@ def validate_args(args):
     # Validate input file format
     isBinge = validate_cluster_file(args.clusterFile)
     if not isBinge:
-        raise ValueError("The input file was not validated as a BINge file!")
+        isTSV = validate_cluster_tsv_file(args.clusterFile)
+        if not isTSV:
+            raise ValueError("The input file was not validated as a BINge or MMSeqs2 file!")
     
     # Validate output file location
     if os.path.isfile(args.outputFileName):
         print(f'File already exists at output location ({args.outputFileName})')
         print('Make sure you specify a unique file name and try again.')
         quit()
+    
+    return isBinge
 
 def parse_gff3_geneids(refseqGFF3Files):
     '''
@@ -196,10 +201,13 @@ def main():
                    default=False)
     
     args = p.parse_args()
-    validate_args(args)
+    isBinge = validate_args(args)
     
-    # Parse the BINge cluster file
-    testDict = parse_binge_clusters(args.clusterFile)
+    # Parse the cluster file
+    if isBinge:
+        testDict = parse_binge_clusters(args.clusterFile)
+    else:
+        testDict = parse_mmseqs_clusters(args.clusterFile)
     
     # Parse the RefSeq GFF3 files
     idMappingDict = parse_gff3_geneids(args.annotationGFF3)
