@@ -22,7 +22,7 @@ def validate_args(args):
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     if not any([ True if f.startswith(stderrPrefix) else False for f in os.listdir(stderrDir) ]):
-        print(f'I am unable to locate any files with "{stderrPrefix}" prefix at ({args.stderrDir})')
+        print(f'I am unable to locate any files with "{stderrPrefix}" prefix at ({stderrDir})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     
