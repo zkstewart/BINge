@@ -18,7 +18,7 @@ def validate_args(args):
     stderrDir = os.path.dirname(os.path.abspath(args.salmonStderrPrefix))
     stderrPrefix = os.path.basename(args.salmonStderrPrefix)
     if not os.path.isdir(stderrDir):
-        print(f'I am unable to locate the parent directory where Salmon stderr files should be ({args.stderrDir})')
+        print(f'I am unable to locate the parent directory where Salmon stderr files should be ({stderrDir})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     if not any([ True if f.startswith(stderrPrefix) else False for f in os.listdir(stderrDir) ]):
