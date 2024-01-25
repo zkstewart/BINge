@@ -1,8 +1,8 @@
 # BINge
-Clusters de novo transcripts and gene models using a reference genome to provide gene-level counts
+Clusters _de novo_ transcripts and gene models using a reference genome to provide gene-level counts
 
 ## Overview
-BINge (BIN Genes for Expression analyses) is a sequence clustering program which aims to group alternative isoforms, orthologs, or paralogs into sequence clusters.
+BINge (**Bin** **G**enes for **E**xpression analyses) is a sequence clustering program which aims to group alternative isoforms, orthologs, and paralogs into sequence clusters.
 Its algorithm is capable of doing this accurately while receiving multiple species' sequences as input, a feat that currently existing clustering programs cannot achieve.
 In doing so, BINge enables differential gene expression analyses to take place that compare one or many species in a way that minimises biases associated with:
 - Data mappability (e.g., reads from species A not aligning optimally to sequence models derived from species B), and
@@ -55,14 +55,14 @@ On the command line, you can always ask BINge to provide help information by doi
 `python /location/of/BINge.py -h`
 
 This provides a short form of the help information showing only the parameters that you should specify or may want to configure. Many other parameters
-are hidden since their defaults values are what most people should use. If you want to see those, try:
+are hidden since their default values are what most people should use. If you want to see those, try:
 
 `python /location/of/BINge.py --help-long`
 
 Otherwise, BINge tries to keep the clustering process simple, and minimally requires you to ...
 
 ### Input sequences to cluster
-The sequences you want to cluster can be in the form of FASTA sequence files or as pairs of genome FASTA and GFF3 annotation files (from which coding DNA sequences will be extracted)
+The sequences you want to cluster can be in the form of FASTA sequence files or as pairs of genome FASTA and GFF3 annotation files (from which coding DNA sequences will be extracted).
 
 On the command line, providing one or more FASTA files might look something like:
 
@@ -81,7 +81,7 @@ The genomes you want to use while clustering must be provided as FASTA files wit
 
 On the command line this would be similar to how we provided input sequences, with a mixed input looking like:
 
-`python /location/of/BINge.py -i <...> -g genome1.fasta genome2.fasta,genome3.gff3 <...>`
+`python /location/of/BINge.py -i <...> -g genome1.fasta genome2.fasta,genome2.gff3 <...>`
 
 ### Configurable parameters
 Most of BINge's parameters are tuned via objective evaluation to be set at appropriate values for your use.
@@ -91,7 +91,7 @@ to GMAP alignment and external clustering.
 
 For the external clustering of any sequences that do not align against your reference genomes, you need to tell BINge where to find either MMseqs2 or CD-HIT. You do that through
 the `--clusterer` argument (to tell it whether you're using MMseqs2 or CD-HIT) and either the `--mmseqs` argument (to point it to folder storing the `mmseqs` executable file) or
-the `--cdhit` argument (to point it to the `cd-hit-est` executable file).
+the `--cdhit` argument (to point it to the folder storing the `cd-hit-est` executable file).
 
 In terms of clustering behaviour, there are only three parameters that are of particular note and that you might want to modify. These are:
 
@@ -135,7 +135,7 @@ clusters which do not have much read alignments, or those which do not receive s
 ## Picking representative sequences
 Sequence clusters can contain many members, but for interpretation of results you probably want to have one sequence you can use as the representative of that cluster; in essence,
 we can say that all the sequences in a cluster are isoforms, orthologs, paralogs, or even just fragments of that chosen representative. You can hence functionally annotate the sequence
-chosen as representative for further interpretation and analysis.
+chosen as representative and just consider that (and not the other cluster members) for further interpretation and analysis.
 
 `BINge_representatives.py` will handle this process for you. It will receive the same files used for filtering but uses that information to instead pick out the best representative from
 each cluster. In this context, _best_ refers to the sequence which has the best score without ties for any of the metrics in the following order of priority:
