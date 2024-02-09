@@ -38,6 +38,50 @@ def load_sequence_length_index(indexFile):
         raise FileNotFoundError(("load_sequence_length_index() failed because " + 
                                  f"'{indexFile}' doesn't exist!"))
 
+def remove_sequence_from_fasta(fastaFile, sequenceIDs, outputFile, force=False):
+    '''
+    Helper function to take a FASTA file and remove one or more sequences in the
+    sequenceIDs list. The result is written to outputFile.
+    
+    Parameters:
+        fastaFile -- a string indicating the location of the FASTA file to remove IDs from.
+        sequenceIDs -- a list of strings indicating the sequence IDs to remove.
+        outputFile -- a string indicating the location to write the modified FASTA to.
+    '''
+    # Check if output file exists
+    if os.path.exists(outputFile):
+        if force:
+            os.unlink(outputFile)
+        else:
+            raise FileExistsError(f"remove_sequence_from_fasta() failed because '{outputFile}' exists!")
+    
+    # Iterate through the FASTA and drop any IDs encountered
+    sequenceIDs = set(sequenceIDs)
+    foundIDs = []
+    wroteASequence = False
+    with open(fastaFile, "r") as fileIn, open(outputFile, "w") as fileOut:
+        records = SeqIO.parse(fileIn, "fasta")
+        for record in records:
+            seqID = record.id
+            if seqID not in sequenceIDs:
+                fileOut.write(record.format("fasta"))
+                wroteASequence = True
+            else:
+                foundIDs.append(seqID)
+    
+    # Check if all IDs were found
+    if len(sequenceIDs) != len(foundIDs):
+        os.unlink(outputFile) # clean up flawed file
+        missing = sequenceIDs - set(foundIDs)
+        raise KeyError(("remove_sequence_from_fasta() failed because " +
+                        f"the following IDs weren't found in '{fastaFile}': {missing}"))
+
+    # Check if any sequences were written at all
+    if not wroteASequence:
+        os.unlink(outputFile)
+        raise Exception(("remove_sequence_from_fasta() failed because no sequences " +
+                         "remained after removing the provided sequence IDs!"))
+
 class AnnotationExtractor:
     '''
     Class to encapsulate the logic of taking a GFF3, its associated FASTA, and generating

@@ -1,6 +1,7 @@
-import os, sys
+import os, sys, re
 
 from .thread_workers import GmapIndexProcess
+from .fasta_handling import remove_sequence_from_fasta
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_MapIO import GMAP_DB, GMAP
@@ -64,6 +65,8 @@ def auto_gmapping(workingDirectory, gmapDir, threads):
         gmapDir -- a string indicating the location where 'gmap' and 'gmap_build' are found.
         threads -- an integer indicating how many threads to run GMAP with.
     '''
+    PROBLEM_REGEX = re.compile(r"Problem sequence: (.+?) \(.+?\)\n")
+    
     # Create subdirectory for output files (if not already existing)
     mappingDir = os.path.join(workingDirectory, "mapping")
     os.makedirs(mappingDir, exist_ok=True)
@@ -97,11 +100,40 @@ def auto_gmapping(workingDirectory, gmapDir, threads):
         for genomeFile, genomePrefix in genomeFiles:
             outputFileName = os.path.join(mappingDir, f"{queryPrefix}_to_{genomePrefix}_gmap.gff3")
             if not os.path.exists(outputFileName):
-                gmapper = GMAP(queryFile, genomeFile, gmapDir, threads)
-                assert gmapper.index_exists(), \
-                    f"auto_gmapping failed because '{genomeFile}' doesn't have an index?"
+                # Run GMAP with exception handling
+                problemIDs = []
+                originalQuery = queryFile
                 
-                gmapper.gmap(outputFileName)
+                while True:
+                    try:
+                        gmapper = GMAP(queryFile, genomeFile, gmapDir, threads)
+                        assert gmapper.index_exists(), \
+                            f"auto_gmapping failed because '{genomeFile}' doesn't have an index?"
+                        
+                        gmapper.gmap(outputFileName)
+                        
+                        # Clean up temporary file (if it exists)
+                        if os.path.exists(f"{originalQuery}.tmp"):
+                            os.unlink(f"{originalQuery}.tmp")
+                    
+                    except Exception as e:
+                        # See if this error is because of a problem sequence
+                        if "Problem sequence" in e.args[0]:
+                            # Identify the sequence ID
+                            problemIDs.append(PROBLEM_REGEX.search(e.args[0]).groups()[0])
+                            
+                            # Remove the sequence from the file
+                            queryFile = f"{originalQuery}.tmp" # sets the new file to be the query file for next iter
+                            remove_sequence_from_fasta(originalQuery, problemIDs, queryFile, force=True)
+                            
+                            # Try again
+                            continue
+                        else:
+                            raise e
+                    
+                    # If no errors, then exit out of the while loop
+                    break
+            
             gmapFiles.append(outputFileName)
     
     return gmapFiles
