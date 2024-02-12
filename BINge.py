@@ -87,6 +87,7 @@ def check_file_hash(inputFile, linkedFile, errorIfNone=True):
         f
         for f in os.listdir(os.path.dirname(linkedFile))
         if f.startswith(os.path.basename(linkedFile))
+        and not f.endswith(os.path.basename(linkedFile))
     ]
     hashSuffixes = [
         f.split(".")[-1]
@@ -100,14 +101,14 @@ def check_file_hash(inputFile, linkedFile, errorIfNone=True):
     # Check if one, non-matching file exists
     elif len(hashFiles) == 1:
         print(f"Expected to find file '{hashFileName}' but instead found '{hashFiles[0]}'...?")
-        print(f"To fix this error, you should delete '{inputFile}' and this hash file.")
+        print(f"To fix this error, you should delete '{linkedFile}' and this hash file.")
         quit()
     
     # Check if more than one hash file exists
     elif len(hashFiles) > 1:
         print(f"Expected to find one hash file '{hashFileName}' but instead " + 
               f"found {len(hashFiles)} hash files...?")
-        print(f"To fix this error, you should delete '{inputFile}' and all of its hash files " +
+        print(f"To fix this error, you should delete '{linkedFile}' and all of its hash files " +
               f"e.g., the files ending with values including {hashSuffixes}")
         quit()
     
@@ -115,7 +116,7 @@ def check_file_hash(inputFile, linkedFile, errorIfNone=True):
     else:
         if errorIfNone:
             print(f"Expected to find file '{hashFileName}' but it doesn't exist...")
-            print(f"To fix this error, you should delete '{inputFile}' and rerun the program.")
+            print(f"To fix this error, you should delete '{linkedFile}' and rerun the program.")
             quit()
         else:
             write_file_hash(inputFile, linkedFile)
