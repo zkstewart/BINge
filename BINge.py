@@ -250,10 +250,15 @@ def setup_sequences(workingDirectory, isMicrobial=False):
         
         # Generate file if it doesn't exist
         if not check_file_exists(sequenceFileName):
-            with open(sequenceFileName, "w") as fileOut:
-                seqGenerator = AnnotationExtractor(gff3File, fastaFile, isMicrobial)
-                for mrnaID, exonSeq, cdsSeq in seqGenerator.iter_sequences():
-                    fileOut.write(f">{mrnaID}\n{cdsSeq}\n")
+            try:
+                with open(sequenceFileName, "w") as fileOut:
+                    seqGenerator = AnnotationExtractor(gff3File, fastaFile, isMicrobial)
+                    for mrnaID, exonSeq, cdsSeq in seqGenerator.iter_sequences():
+                        fileOut.write(f">{mrnaID}\n{cdsSeq}\n")
+            except Exception as e:
+                if check_file_exists(sequenceFileName):
+                    os.unlink(sequenceFileName)
+                raise e
 
 def find_missing_sequence_id(binCollectionList, transcriptRecords):
     '''

@@ -104,9 +104,12 @@ class AnnotationExtractor:
         frequently poorly formatted. But if a GFF3 is _so poorly_ formatted that it isn't even
         ordered as expected (gene -> mRNA -> CDS/exon, then the next gene -> ...) this function
         will fail.
+        
+        These failures will be detected and the program will end to prevent erroneous behaviour.
         '''
         # Setup data structures
         idRegex = re.compile(r"ID=(.+?)($|;|\n)")
+        parentRegex = re.compile(r"Parent=(.+?)($|;|\n)")
         details = [None, None, None] # mrnaID, contig, strand
         exon = []
         cds = []
@@ -159,8 +162,12 @@ class AnnotationExtractor:
                 
                 # Build an ongoing feature
                 if featureType == "exon":
+                    assert parentRegex.search(sl[8]).groups()[0] == details[0], \
+                        "AnnotationExtractor error: exon parent doesn't match mRNA ID; file is not ordered!!"
                     exon.append([int(start), int(end)])
                 elif featureType == "CDS":
+                    assert parentRegex.search(sl[8]).groups()[0] == details[0], \
+                        "AnnotationExtractor error: CDS parent doesn't match mRNA ID; file is not ordered!!"
                     cds.append([int(start), int(end), int(frame)])
         
         # Yield the last feature in the GFF3
