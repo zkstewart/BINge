@@ -33,17 +33,92 @@ def symlinker(src, dst):
     needs to occur. For Windows, developer mode is required. This function just acts as
     an exception handler.
     '''
-    if platform.system() != 'Windows':
+    try:
         os.symlink(src, dst)
-    else:
-        try:
-            os.symlink(src, dst)
-        except:
+    except:
+        if platform.system() == 'Windows':
             print("os.symlink is not working on your Windows computer.")
             print("This means developer mode is probably not activated.")
             print("Google 'enable windows developer mode' to see how to do this.")
             print("Until then, this program will exit since symlinks are required.")
+        else:
+            print(f"os.symlink failed for an unknown reason when linking '{src}' to '{dst}'.")
+            print("This is unexpected and the program will exit.")
+        quit()
+
+def get_file_hash(originalFile):
+    '''
+    Creates a simple hash of the file name.
+    
+    Parameters:
+        originalFile -- a string indicating the file name to hash.
+    Returns:
+        fileHash -- a string of the hash for the file name.
+    '''
+    return sha256(bytes(originalFile, 'utf-8')).hexdigest()
+
+def write_file_hash(inputFile, linkedFile):
+    '''
+    Helper function to write a file with the hash of the input file. This is used
+    to check if a file has changed across runs, and can help to unexpected results
+    if that has occurred.
+    
+    Parameters:
+        inputFile -- a string indicating the file name to hash.
+        linkedFile -- a string indicating the file prefix to write the hash to.
+    '''
+    fileHash = get_file_hash(inputFile)
+    open(f"{linkedFile}.{fileHash}", "w").close()
+
+def check_file_hash(inputFile, linkedFile, errorIfNone=True):
+    '''
+    Helper function to check the hash of a file against the currently input file.
+    If the hash is different, the program will exit.
+    
+    Parameters:
+        inputFile -- a string indicating the file name to hash.
+        linkedFile -- a string indicating the file prefix to write the hash to.
+    '''
+    fileHash = get_file_hash(inputFile)
+    hashFileName = f"{linkedFile}.{fileHash}"
+    
+    # Find what hash files exist here
+    hashFiles = [
+        f
+        for f in os.listdir(os.path.dirname(linkedFile))
+        if f.startswith(os.path.basename(linkedFile))
+    ]
+    hashSuffixes = [
+        f.split(".")[-1]
+        for f in hashFiles
+    ]
+    
+    # Check if one, matching hash file exists
+    if len(hashFiles) == 1 and os.path.exists(hashFileName):
+        return # The file exists and the hash is the same; everything is okay
+    
+    # Check if one, non-matching file exists
+    elif len(hashFiles) == 1:
+        print(f"Expected to find file '{hashFileName}' but instead found '{hashFiles[0]}'...?")
+        print(f"To fix this error, you should delete '{inputFile}' and this hash file.")
+        quit()
+    
+    # Check if more than one hash file exists
+    elif len(hashFiles) > 1:
+        print(f"Expected to find one hash file '{hashFileName}' but instead " + 
+              f"found {len(hashFiles)} hash files...?")
+        print(f"To fix this error, you should delete '{inputFile}' and all of its hash files " +
+              f"e.g., the files ending with values including {hashSuffixes}")
+        quit()
+    
+    # Check if no hash files exist
+    else:
+        if errorIfNone:
+            print(f"Expected to find file '{hashFileName}' but it doesn't exist...")
+            print(f"To fix this error, you should delete '{inputFile}' and rerun the program.")
             quit()
+        else:
+            write_file_hash(inputFile, linkedFile)
 
 def check_file_exists(fileLocation):
     '''
@@ -68,6 +143,17 @@ def check_file_exists(fileLocation):
                              "at the stdout '" + existsout.decode("utf-8") + "' and stderr '" + 
                              existserr.decode("utf-8") + "' to make sense of this."))
 
+def _setup_error_helper(fileDir, filesInDir, numFiles, fileType):
+    '''
+    Simple function to be called by setup_working_directory to raise an informative
+    error message if we detect that an analysis is being re-run inappropriately.
+    '''
+    if len(filesInDir) != numFiles:
+        print(f"Expected to find {numFiles} {fileType} files at '{fileDir}' but instead found {len(filesInDir)}...")
+    print("Are you trying to run an analysis in an existing dir but removing files from your input arguments?")
+    print("This isn't supported; please use a fresh directory for each analysis.")
+    quit()
+
 def setup_working_directory(fileNames, genomeFiles, workingDirectory):
     '''
     Given a mix of FASTA and/or GFF3 files, this function will symlink FASTA files
@@ -79,10 +165,6 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
         workingDirectory -- a string indicating an existing directory to symlink and/or
                             write FASTAs to.
     '''
-    numGFF3s = 0
-    numFASTAs = 0
-    numGenomes = 0
-    
     # Create subdirectory for files (if not already existing)
     gff3Dir = os.path.join(workingDirectory, "gff3s")
     genomesDir = os.path.join(workingDirectory, "genomes")
@@ -90,6 +172,8 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
     os.makedirs(genomesDir, exist_ok=True)
     
     # Link to the -i fileNames values
+    numGFF3s = 0
+    numFASTAs = 0
     for file in fileNames:
         # Handle GFF3:FASTA pairs
         if "," in file:
@@ -109,8 +193,15 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
             
             if not check_file_exists(linkedGFF3):
                 symlinker(gff3, linkedGFF3)
+                write_file_hash(gff3, linkedGFF3)
+            else:
+                check_file_hash(gff3, linkedGFF3)
+            
             if not check_file_exists(linkedFASTA):
                 symlinker(fasta, linkedFASTA)
+                write_file_hash(fasta, linkedFASTA)
+            else:
+                check_file_hash(fasta, linkedFASTA)
         
         # Handle plain FASTA files
         else:
@@ -128,12 +219,24 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
             
             if not check_file_exists(linkedTranscriptome):
                 symlinker(file, linkedTranscriptome)
+                write_file_hash(file, linkedTranscriptome)
+            else:
+                check_file_hash(file, linkedTranscriptome)
+    
+    # Check that GFF3 and FASTAs do not have excess
+    gff3sInDir = [ f for f in os.listdir(gff3Dir) if f.endswith(".gff3") ]
+    fastasInDir = [ f for f in os.listdir(gff3Dir) if f.endswith(".fasta") ]
+    _setup_error_helper(gff3Dir, gff3sInDir, numGFF3s, "GFF3")
+    _setup_error_helper(gff3Dir, fastasInDir, numFASTAs, "FASTA")
     
     # Link to the -g genomeFiles values
+    numGFF3s = 0
+    numGenomes = 0
     for file in genomeFiles:
         numGenomes += 1
         # Handle GFF3:FASTA pairs
         if "," in file:
+            numGFF3s += 1
             gff3, fasta = file.split(",")
             
             # Check that FASTA is a FASTA
@@ -149,8 +252,15 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
             
             if not check_file_exists(linkedGFF3):
                 symlinker(gff3, linkedGFF3)
+                write_file_hash(gff3, linkedGFF3)
+            else:
+                check_file_hash(gff3, linkedGFF3)
+            
             if not check_file_exists(linkedFASTA):
                 symlinker(fasta, linkedFASTA)
+                write_file_hash(fasta, linkedFASTA)
+            else:
+                check_file_hash(fasta, linkedFASTA)
             
             # Index the genome's contig lengths if not already done
             generate_sequence_length_index(linkedFASTA)
@@ -169,21 +279,30 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
             
             if not check_file_exists(linkedFASTA):
                 symlinker(file, linkedFASTA)
+                write_file_hash(file, linkedFASTA)
+            else:
+                check_file_hash(file, linkedFASTA)
             
             # Index the genome's contig lengths if not already done
             generate_sequence_length_index(linkedFASTA)
+    
+    # Check that genomes do not have excess
+    gff3sInDir = [ f for f in os.listdir(genomesDir) if f.endswith(".gff3") ]
+    genomesInDir = [ f for f in os.listdir(genomesDir) if f.endswith(".fasta") ]
+    _setup_error_helper(genomesDir, gff3sInDir, numGFF3s, "GFF3")
+    _setup_error_helper(genomesDir, genomesInDir, numGenomes, "FASTA")
 
-def setup_param_cache(args, paramHash):
+def load_param_cache(workingDirectory):
     '''
-    Given a mix of FASTA and/or GFF3 files, this function will symlink FASTA files
-    and generate FASTAs from the GFF3 files at the indicated working directory location.
+    Loads the parameter cache file from the working directory, if it exists,
+    as a dictionary with JSON parsing.
     
     Parameters:
-        args -- the argparse object of BINge called through the main function.
-        paramHash -- a string of the hash for these parameters to store in the param cache.
+        workingDirectory -- a string indicating the parent dir where the analysis is being
+                            run.
     '''
     # Parse any existing param cache file
-    paramCacheFile = os.path.join(args.outputDirectory, "param_cache.json")
+    paramCacheFile = os.path.join(workingDirectory, "param_cache.json")
     if os.path.exists(paramCacheFile):
         try:
             with open(paramCacheFile, "r") as fileIn:
@@ -194,6 +313,20 @@ def setup_param_cache(args, paramHash):
     else:
         paramsDict = {}
     
+    return paramsDict
+
+def setup_param_cache(args, paramHash):
+    '''
+    Writes the parameter hash to the param cache file in the working directory, appending
+    the parameters to the cache if one already exists.
+    
+    Parameters:
+        args -- the argparse object of BINge called through the main function.
+        paramHash -- a string of the hash for these parameters to store in the param cache.
+    '''
+    # Parse any existing param cache file
+    paramsDict = load_param_cache(args.outputDirectory)
+    
     # Add this program run to the paramsDict cache (if needed)
     paramsDict[paramHash] = {
         param : args.__dict__[param]
@@ -201,7 +334,7 @@ def setup_param_cache(args, paramHash):
     }
     
     # Write updated param cache to file
-    with open(paramCacheFile, "w") as fileOut:
+    with open(os.path.join(args.outputDirectory, "param_cache.json"), "w") as fileOut:
         json.dump(paramsDict, fileOut)
 
 def setup_sequences(workingDirectory, isMicrobial=False):
