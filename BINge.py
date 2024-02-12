@@ -152,7 +152,7 @@ def _setup_error_helper(fileDir, filesInDir, numFiles, fileType):
     Simple function to be called by setup_working_directory to raise an informative
     error message if we detect that an analysis is being re-run inappropriately.
     '''
-    if len(filesInDir) != numFiles:
+    if len(filesInDir) > numFiles:
         print(f"Expected to find {numFiles} {fileType} files at '{fileDir}' but instead found {len(filesInDir)}...")
     print("Are you trying to run an analysis in an existing dir but removing files from your input arguments?")
     print("This isn't supported; please use a fresh directory for each analysis.")
