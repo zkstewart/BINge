@@ -179,6 +179,7 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
     numGFF3s = 0
     numFASTAs = 0
     for file in fileNames:
+        numFASTAs += 1
         # Handle GFF3:FASTA pairs
         if "," in file:
             gff3, fasta = file.split(",")
@@ -209,8 +210,6 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
         
         # Handle plain FASTA files
         else:
-            numFASTAs += 1
-            
             # Check that FASTA is a FASTA
             isFASTA = validate_fasta(file)
             if not isFASTA:
