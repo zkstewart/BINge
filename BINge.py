@@ -154,9 +154,9 @@ def _setup_error_helper(fileDir, filesInDir, numFiles, fileType):
     '''
     if len(filesInDir) > numFiles:
         print(f"Expected to find {numFiles} {fileType} files at '{fileDir}' but instead found {len(filesInDir)}...")
-    print("Are you trying to run an analysis in an existing dir but removing files from your input arguments?")
-    print("This isn't supported; please use a fresh directory for each analysis.")
-    quit()
+        print("Are you trying to run an analysis in an existing dir but removing files from your input arguments?")
+        print("This isn't supported; please use a fresh directory for each analysis.")
+        quit()
 
 def setup_working_directory(fileNames, genomeFiles, workingDirectory):
     '''
