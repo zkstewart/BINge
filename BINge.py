@@ -90,6 +90,7 @@ def check_file_hash(inputFile, linkedFile, errorIfNone=True):
         for f in os.listdir(os.path.dirname(linkedFile))
         if f.startswith(os.path.basename(linkedFile))
         and not f == os.path.basename(linkedFile)
+        and not any([ f.endswith(s) for s in SKIP_SUFFIXES ])
     ]
     hashSuffixes = [
         f.split(".")[-1]
