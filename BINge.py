@@ -79,6 +79,8 @@ def check_file_hash(inputFile, linkedFile, errorIfNone=True):
         inputFile -- a string indicating the file name to hash.
         linkedFile -- a string indicating the file prefix to write the hash to.
     '''
+    SKIP_SUFFIXES = [ ".pkl", ".gmap", ".fai" ]
+    
     fileHash = get_file_hash(inputFile)
     hashFileName = f"{linkedFile}.{fileHash}"
     
@@ -87,7 +89,7 @@ def check_file_hash(inputFile, linkedFile, errorIfNone=True):
         f
         for f in os.listdir(os.path.dirname(linkedFile))
         if f.startswith(os.path.basename(linkedFile))
-        and not f.endswith(os.path.basename(linkedFile))
+        and not f == os.path.basename(linkedFile)
     ]
     hashSuffixes = [
         f.split(".")[-1]
