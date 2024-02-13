@@ -390,7 +390,13 @@ def main():
                    choices=["transcript", "cds", "protein"],
                    help="""Indicate whether your file contains transcripts (i.e., inclusive
                    of UTR; as nucleotide), CDS (as nucleotide), or protein sequences.""")
-    # Optional
+    # Optional - major behavioural switches
+    p.add_argument("--justDropUnbinned", dest="justDropUnbinned",
+                   required=False,
+                   action="store_true",
+                   help="""If you just want to drop unbinned clusters, set this flag and you
+                   don't need to provide any other optional files.""",
+                   default=False)
     p.add_argument("--fastas_filter", dest="filterFiles",
                    nargs="+",
                    required=False,
@@ -398,6 +404,7 @@ def main():
                    ONLY if they contain any of the sequences in these file(s); this filter 
                    supercedes all others and DOES apply to binned clusters.""",
                    default=[])
+    # Optional - parameters
     p.add_argument("--annot", dest="annotationFile",
                    required=False,
                    help="""Optionally, specify a GFF3 or text file containing the representative
@@ -455,6 +462,20 @@ def main():
     # Parse the BINge cluster file
     binnedDict = parse_binge_clusters(args.bingeFile, "binned")
     unbinnedDict = parse_binge_clusters(args.bingeFile, "unbinned")
+    
+    # If we're just dropping unbinned clusters, we can do that now
+    if args.justDropUnbinned:
+        with open(args.outputFileName, "w") as fileOut:
+            # Write header
+            fileOut.write("#BINge clustering information file\n")
+            fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
+            
+            # Write content lines
+            for clusterNum, seqIDs in binnedDict.items():
+                for seqID in seqIDs:
+                    fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
+        print("Program completed successfully!")
+        quit()
     
     # Load transcripts into memory for quick access
     transcriptRecords = FastaCollection(args.fastaFiles)
