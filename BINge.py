@@ -178,13 +178,15 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
     # Link to the -i fileNames values
     numGFF3s = 0
     numFASTAs = 0
+    numTranscriptomes = 0
     for file in fileNames:
         # Handle GFF3:FASTA pairs
         if "," in file:
-            gff3, fasta = file.split(",")
+            numFASTAs += 1
             numGFF3s += 1
             
             # Check that FASTA is a FASTA
+            gff3, fasta = file.split(",")
             isFASTA = validate_fasta(fasta)
             if not isFASTA:
                 print(f"-i value '{file}' value after the ',' is not a FASTA file")
@@ -209,7 +211,8 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
         
         # Handle plain FASTA files
         else:
-            numFASTAs += 1
+            numTranscriptomes += 1
+            
             # Check that FASTA is a FASTA
             isFASTA = validate_fasta(file)
             if not isFASTA:
@@ -229,8 +232,10 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
     # Check that GFF3 and FASTAs do not have excess
     gff3sInDir = [ f for f in os.listdir(gff3Dir) if f.endswith(".gff3") ]
     fastasInDir = [ f for f in os.listdir(gff3Dir) if f.endswith(".fasta") ]
+    transcriptomesInDir = [ f for f in os.listdir(workingDirectory) if f.endswith(".fasta") ]
     _setup_error_helper(gff3Dir, gff3sInDir, numGFF3s, "GFF3")
     _setup_error_helper(gff3Dir, fastasInDir, numFASTAs, "FASTA")
+    _setup_error_helper(workingDirectory, transcriptomesInDir, numTranscriptomes, "FASTA")
     
     # Link to the -g genomeFiles values
     numGFF3s = 0
