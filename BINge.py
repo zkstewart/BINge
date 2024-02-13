@@ -221,7 +221,7 @@ def setup_working_directory(fileNames, genomeFiles, workingDirectory):
                 quit()
             
             # Symlink to main working directory if not already existing
-            linkedTranscriptome = os.path.join(workingDirectory, f"transcriptome{numFASTAs}.nucl")
+            linkedTranscriptome = os.path.join(workingDirectory, f"transcriptome{numTranscriptomes}.nucl")
             
             if not check_file_exists(linkedTranscriptome):
                 symlinker(file, linkedTranscriptome)
