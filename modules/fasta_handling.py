@@ -117,9 +117,9 @@ class AnnotationExtractor:
         
         # Configuration for microbial or normal GFF3
         if self.isMicrobial:
-            subfeature = "gene"
+            subfeature = ["gene"]
         else:
-            subfeature = "mRNA"
+            subfeature = ["mRNA", "transcript"]
         
         # Iterate through file now
         with open(self.gff3File, "r") as fileIn:
@@ -135,7 +135,7 @@ class AnnotationExtractor:
                 contig, source, featureType, start, end, \
                     score, strand, frame, attributes \
                     = sl
-                isMRNA = featureType == subfeature
+                isMRNA = featureType in subfeature
                 isBreakpoint = featureType == "gene"
                 
                 # Check if we should yield a feature
