@@ -162,12 +162,14 @@ class AnnotationExtractor:
                 
                 # Build an ongoing feature
                 if featureType == "exon":
-                    assert parentRegex.search(sl[8]).groups()[0] == details[0], \
-                        "AnnotationExtractor error: exon parent doesn't match mRNA ID; file is not ordered!!"
+                    if details[0] != None:
+                        assert parentRegex.search(sl[8]).groups()[0] == details[0], \
+                            "AnnotationExtractor error: exon parent doesn't match mRNA ID; file is not ordered!!"
                     exon.append([int(start), int(end)])
                 elif featureType == "CDS":
-                    assert parentRegex.search(sl[8]).groups()[0] == details[0], \
-                        "AnnotationExtractor error: CDS parent doesn't match mRNA ID; file is not ordered!!"
+                    if details[0] != None:
+                        assert parentRegex.search(sl[8]).groups()[0] == details[0], \
+                            "AnnotationExtractor error: CDS parent doesn't match mRNA ID; file is not ordered!!"
                     cds.append([int(start), int(end), int(frame)])
         
         # Yield the last feature in the GFF3
