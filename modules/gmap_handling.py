@@ -117,6 +117,10 @@ def auto_gmapping(workingDirectory, gmapDir, threads):
                             os.unlink(f"{originalQuery}.tmp")
                     
                     except Exception as e:
+                        # Delete the failed file
+                        if os.path.exists(outputFileName):
+                            os.unlink(outputFileName)
+                        
                         # See if this error is because of a problem sequence
                         if "Problem sequence" in e.args[0]:
                             # Identify the sequence ID
