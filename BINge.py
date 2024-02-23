@@ -79,7 +79,7 @@ def check_file_hash(inputFile, linkedFile, errorIfNone=True):
         inputFile -- a string indicating the file name to hash.
         linkedFile -- a string indicating the file prefix to write the hash to.
     '''
-    SKIP_SUFFIXES = [ ".pkl", ".gmap", ".fai" ]
+    SKIP_SUFFIXES = [ ".pkl", ".gmap", ".fai", ".tmp" ]
     
     fileHash = get_file_hash(inputFile)
     hashFileName = f"{linkedFile}.{fileHash}"

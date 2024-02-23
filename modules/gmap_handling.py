@@ -97,22 +97,29 @@ def auto_gmapping(workingDirectory, gmapDir, threads):
     # Iteratively perform GMAP search for all combinations
     gmapFiles = []
     for queryFile, queryPrefix in queryFiles:
+        originalQuery = queryFile # remember what the original query file was if we end up using tmp files
+        tmpQueryFile = f"{originalQuery}.tmp" # temporary file for problem sequences
+        
         for genomeFile, genomePrefix in genomeFiles:
             outputFileName = os.path.join(mappingDir, f"{queryPrefix}_to_{genomePrefix}_gmap.gff3")
             if not os.path.exists(outputFileName):
-                # Run GMAP with exception handling
                 problemIDs = []
-                originalQuery = queryFile
-                
                 while True:
                     try:
+                        # Use a temporary file if we have problem sequences
+                        if os.path.exists(tmpQueryFile):
+                            queryFile = tmpQueryFile
+                        else:
+                            queryFile = originalQuery
+                        
+                        # Run GMAP
                         gmapper = GMAP(queryFile, genomeFile, gmapDir, threads)
                         assert gmapper.index_exists(), \
                             f"auto_gmapping failed because '{genomeFile}' doesn't have an index?"
                         
                         gmapper.gmap(outputFileName)
                         
-                        # Clean up temporary file (if it exists)
+                        # Clean up temporary file (if it exists) on successful run
                         if os.path.exists(f"{originalQuery}.tmp"):
                             os.unlink(f"{originalQuery}.tmp")
                     
@@ -127,8 +134,7 @@ def auto_gmapping(workingDirectory, gmapDir, threads):
                             problemIDs.append(PROBLEM_REGEX.search(e.args[0]).groups()[0])
                             
                             # Remove the sequence from the file
-                            queryFile = f"{originalQuery}.tmp" # sets the new file to be the query file for next iter
-                            remove_sequence_from_fasta(originalQuery, problemIDs, queryFile, force=True)
+                            remove_sequence_from_fasta(originalQuery, problemIDs, tmpQueryFile, force=True)
                             
                             # Try again
                             continue
