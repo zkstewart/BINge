@@ -1,13 +1,14 @@
 # Table of Contents
-- [Overview](#overview)
-- [Data required to run](#data-required-to-run)
-- [How does BINge work?](#how-does-binge-work)
+- [Getting started](#getting-started)
+- [Introduction](#introduction)
+  - [Reason for BINge existing](#reason-for-binge-existing)
+  - [What does BINge actually do?](#what-does-binge-actually-do)
 - [Installation](#installation)
 - [How to use](#how-to-use)
   - [Input sequences to cluster](#input-sequences-to-cluster)
   - [Input genomes to use as targets](#input-genomes-to-use-as-targets)
   - [Configurable parameters](#configurable-parameters)
-- [Interpreting results](#interpreting-results)
+  - [Interpreting results](#interpreting-results)
 - [Filtering results](#filtering-results)
 - [Picking representative sequences](#picking-representative-sequences)
 - [Using results for differential gene expression](#using-results-for-differential-gene-expression)
@@ -16,7 +17,29 @@
 - [A typical analysis pipeline](#a-typical-analysis-pipeline)
 - [How to cite](#how-to-cite)
 
-## Overview
+# Getting started
+```
+# Download this repository [no installation required]
+git clone https://github.com/zkstewart/BINge.git
+
+# Cluster transcriptome sequences against a reference genome
+python BINge/BINge.py -i /location/of/transcriptome1.fasta -g /location/of/genome1.fasta -o /location/to/write/outputs
+# Cluster an assortment of input sequences against a reference genome
+python BINge/BINge.py -i /location/of/transcriptome1.fasta /location/of/transcriptome2.fasta /location/of/genome1.fasta,/location/of/genome1.gff3 /location/of/genemodels.fasta \
+    -g /location/of/genome1.fasta \
+    -o /location/to/write/outputs
+# Cluster sequences against multiple reference genomes with or without annotations
+python BINge/BINge.py -i /location/of/transcriptome1.fasta \
+    -g /location/of/genome1.fasta /location/of/genome2.fasta,/location/of/genome2.gff3 \
+    -o /location/to/write/outputs
+
+# Other parameters to include during clustering [for MMseqs2 OR CD-HIT clustering of unbinned sequences]
+python BINge/BINge.py -i <...> -g <...> -o <...> --threads 8 --clusterer mmseqs-cascade --mmseqs /location/of/mmseqs/bin
+python BINge/BINge.py -i <...> -g <...> -o <...> --threads 8 --clusterer cd-hit --cdhit /location/of/cd-hit/bin
+```
+
+# Introduction
+## Reason for BINge existing
 BINge (**Bin** **G**enes for **E**xpression analyses) is a sequence clustering program which aims to group alternative isoforms, orthologs, and paralogs into sequence clusters.
 Its algorithm is capable of doing this accurately while receiving multiple species' sequences as input, a feat that currently existing clustering programs cannot achieve.
 In doing so, BINge enables differential gene expression analyses to take place that compare one or many species in a way that minimises biases associated with:
@@ -27,22 +50,17 @@ more reads to be sequenced from species A's ortholog)
 The solution to these biases is to not just map to a single species' reference models - we should map to all species' sequences. This way, we allow the reads from species A to align
 optimally to its own sequences, and so on. Then we can tally the amount of alignments made to all the sequences in a cluster after they've been quantified taking sequence length bias into account. 
 
-## Data required to run
-Inputs can be categorised as being:
-1. The input sequences to be clustered, which can consist of reference gene models with the possible addition of _de novo_ assembled transcripts.
-2. One or more genome sequences to use while clustering, which can be provided with their GFF3 annotations (to assist the clustering process) or just as plain FASTA files which will be aligned against.
-
-## How does BINge work?
-BINge automates the alignment of the input sequences against the genome sequences. A **_bin_** will be positioned along the genome where these sequences align, or where a gene has been annotated onto the
+## What does BINge actually do?
+BINge automates the alignment of the input sequences against the genome sequences using GMAP. A **_bin_** will be positioned along the genome where these sequences align, or where a gene has been annotated onto the
 genome in a GFF3 file. This **_bin_** loosely corresponds to an exon, and BINge will remember any sequences which align over that _binned_ position.
 
 After this, BINge will look at each input sequence to see how many times other sequences were placed into the same bin with it. Fundamentally, this is measuring how many exons the input sequence shares in
 common with any other sequence. When two sequences share many exon alignments in common with each other, they will be clustered together; this is the 'clustering by co-occurrence' algorithm that BINge employs.
 
 Because BINge aligns each input sequence against many positions in each genome, but only looks at the best and near-best alignments, we can expect isoforms, orthologs, and paralog sequences to co-occur with each other
-in bins. Hence, these sequences get clustered together!
+in bins. Hence, these sequences get clustered together.
 
-## Installation
+# Installation
 BINge is written in Python and requires a modern version 3 [note: development occured using >= 3.9, and I'm not sure how far backwards its compatibility goes].
 
 BINge and its associated utility scripts makes use of several other Python packages which include:
@@ -64,7 +82,7 @@ And one of either:
 It has been developed on Linux and within Windows Subsystem for Linux (WSL). If you want to run BINge in WSL, you must ensure that developer mode is enabled so that symbolic links are functional in Windows.
 You can do that by going to Settings > For developers > Toggle 'Developer Mode' On.
 
-## How to use
+# How to use
 On the command line, you can always ask BINge to provide help information by doing:
 
 `python /location/of/BINge.py -h`
@@ -76,10 +94,10 @@ are hidden since their default values are what most people should use. If you wa
 
 Otherwise, BINge tries to keep the clustering process simple, and minimally requires you to ...
 
-### Input sequences to cluster
-The sequences you want to cluster can be in the form of FASTA sequence files or as pairs of genome FASTA and GFF3 annotation files (from which coding DNA sequences will be extracted).
+## Input sequences to cluster
+The sequences you want to cluster can be in the form of FASTA sequence files such as *de novo* assembled transcriptome(s) or as reference genome CDS models. Alternatively, you may use pairs of genome FASTA and GFF3 annotation files from which CDS' will be extracted).
 
-On the command line, providing one or more FASTA files might look something like:
+On the command line, providing one or more inputs might look something like:
 
 `python /location/of/BINge.py -i input1.fasta input2.fasta <...>`
 
@@ -91,16 +109,14 @@ And you can mix these inputs too, like:
 
 `python /location/of/BINge.py -i input1.fasta input2.fasta,input2.gff3 <...>`
 
-### Input genomes to use as targets
+## Input genomes to use as targets
 The genomes you want to use while clustering must be provided as FASTA files with or without a reference GFF3 annotation to use when positioning bins along the genome.
 
 On the command line this would be similar to how we provided input sequences, with a mixed input looking like:
 
 `python /location/of/BINge.py -i <...> -g genome1.fasta genome2.fasta,genome2.gff3 <...>`
 
-### Configurable parameters
-Most of BINge's parameters are tuned via objective evaluation to be set at appropriate values for your use.
-
+## Configurable parameters
 Many of BINge's operations can be run in parallel, and you can use the `--threads` argument to indicate how many CPUs you want to run any parallelisable steps with. This extends
 to GMAP alignment and external clustering.
 
@@ -108,18 +124,19 @@ For the external clustering of any sequences that do not align against your refe
 the `--clusterer` argument (to tell it whether you're using MMseqs2 or CD-HIT) and either the `--mmseqs` argument (to point it to folder storing the `mmseqs` executable file) or
 the `--cdhit` argument (to point it to the folder storing the `cd-hit-est` executable file).
 
-In terms of clustering behaviour, there are only three parameters that are of particular note and that you might want to modify. These are:
+In terms of clustering behaviour, most parameters are tuned via objective evaluation to be set at appropriate values for your use. But, there are three parameters of particular note
+that you *might* want to modify. These are:
 
 - `--gmapIdentity` which sets a minimum value for the best GMAP alignment of any sequence to be considered.
   - In practice, changing this value actually has very little impact since most recognised orthologs maintain high sequence similarity. The default of 0.95 works in most
 instances, but you could lower this to 0.90 if you're clustering very distantly related organisms.
 - `--clusterVoteThreshold` which sets the proportion of bins two sequences must co-occur within to cluster together. Based on objective evaluation, you should leave this at
-0.66 or, if you want marginally tighter clustering (e.g., fewer clusters) you can lower this to 0.5. You probably shouldn't deviate from these recommendations.
+0.66 or, if you want marginally tighter clustering (e.g., fewer clusters) you can lower this to 0.5. **You probably shouldn't deviate from these recommendations.**
 - `--microbial` can be specified if you're clustering a microbial organism since it changes how any of your input GFF3s will be interpreted. If you're not using any
 GFF3 files for your microbial organism, this parameter is not needed.
 
 ## Interpreting results
-BINge will run everything within the specified output directory, and produce a file that will look something like `BINge_clustering_result.<hash>.tsv`. The hash uniquely identifies
+BINge will run everything within the specified `-o` output directory, and produce a result file that looks like `BINge_clustering_result.<hash>.tsv`. The hash uniquely identifies
 your run parameters, and you can consult the `param_cache.json` file if you want to see what files you used as inputs and the GMAP identity and vote threshold parameters.
 
 The output file is tab separated into three columns with a format like:
@@ -142,12 +159,42 @@ Hence, it contains one comment line at the start, followed by a header row, then
 cluster group, with the sequence's ID shown followed by whether the cluster was binned or unbinned. In many cases you might want to excluded unbinned clusters since they did not
 align well against any of the input genomes.
 
-## Filtering results
-If you want to analyse your unbinned sequences, you may first want to filter them for quality. `BINge_filter.py` helps to do this by receiving your BINge cluster file, the sequences
-you used as input for clustering, as well as a BLAST (or MMseqs2) outfmt6 results file and/or salmon alignment files. The filtering then can be used to remove short sequences, unbinned
-clusters which do not have much read alignments, or those which do not receive significant E-value scores from alignment against a database of your choice.
+# Filtering results
+The raw results of BINge clustering contain both *binned* and *unbinned* cluster sequences. `BINge_filter.py` facilitates the filtering of these results to either:
 
-## Picking representative sequences
+1. Remove *unbinned* clusters to focus analysis only on gene sequences present in a genome assembly; this intrinsically removes contaminant or spurious transcript assemblies
+that might be present in your *de novo* transcriptome.
+2. Filter *unbinned* clusters to retain *de novo* transcripts not present in a genome assembly, but only those *unbinned* clusters that appear to be real based on BLAST and
+read alignment evidence; this could be desirable if you know the genome assembly is incomplete or not assembled at a chromosome level.
+
+See example code below.
+
+```
+# Obtain a sequence FASTA file for use prior to cluster filtering and representative picking
+## Note that this is a convenience script which merely concatenates the input sequence files together
+python BINge/utilities/extract_clustered_sequences.py -i /location/to/write/outputs/BINge_clustering_result.<hash>.tsv \
+    -d /location/to/write/outputs -o BINge_raw_sequences.nucl
+
+# BLAST/MMseqs2 query against sequence database [e.g., RefSeq or UniRef90]
+<refer to BLAST or MMsesqs2 manuals to produce outfmt6 results, making use of the BINge_raw_sequences.nucl file as input>
+
+# Salmon align reads to sequences
+<likewise, refer to Salmon manual, mapping each sample's reads to the BINge_raw_sequences.nucl file>
+
+# Filter cluster file to drop unbinned clusters
+python BINge/BINge_filter.py -i /location/to/write/outputs/BINge_clustering_result.<hash>.tsv \
+    -f /location/to/write/outputs -o BINge_clustering_result.filtered.tsv -s cds \
+    --justDropUnbinned
+# Or, filter cluster file to only drop low-quality unbinned clusters
+python BINge/BINge_filter.py -i /location/to/write/outputs/BINge_clustering_result.<hash>.tsv \
+    -f /location/to/write/outputs -o BINge_clustering_result.filtered.tsv -s cds \
+    --annot /location/of/genome1.gff3 --length <minimum protein size> \
+    --blast /location/of/blast_or_mmseqs2/results.outfmt6 --evalue <E-value threshold> \
+    --salmon /location/of/salmon/results/sample1/quant.sf /location/of/salmon/results/sample2/quant.sf <...> \
+    --require1x --readLength <length in bp of your reads>
+```
+
+# Picking representative sequences
 Sequence clusters can contain many members, but for interpretation of results you probably want to have one sequence you can use as the representative of that cluster; in essence,
 we can say that all the sequences in a cluster are isoforms, orthologs, paralogs, or even just fragments of that chosen representative. You can hence functionally annotate the sequence
 chosen as representative and just consider that (and not the other cluster members) for further interpretation and analysis.
@@ -162,14 +209,37 @@ each cluster. In this context, _best_ refers to the sequence which has the best 
 
 The resulting FASTA file will have sequence identifiers with a format like `>cluster-N representative=sequenceID`.
 
-## Using results for differential gene expression
-The `BINge_counter.py` script will allow you to take BINge's clustering results, alongside salmon read alignments to the sequences you used as input for clustering, and produce files
-which will enable DGE analysis. It generates three outputs (`.abundance`, `.counts`, and `.length`) and provides instructions for how to load the outputs into R as a DESeq2 dataset for analysis.
+See example code below.
 
-## Other utilities provided with BINge
+```
+python BINge/BINge_representatives.py -i BINge_clustering_result.filtered.tsv -f /location/to/write/outputs -o BINge_filtered_sequences.nucl \
+  --annot /location/of/genome1.gff3 \
+  --blast /location/of/blast_or_mmseqs2/results.outfmt6 --evalue <E-value threshold> \
+  --salmon /location/of/salmon/results/sample1/quant.sf /location/of/salmon/results/sample2/quant.sf <...>
+```
+
+# Using results for differential gene expression
+The `utilities/tx2gene.py` script will reformat a BINge cluster file for use when loading Salmon read alignments into R, as exampled below.
+
+`python BINge/utilities/tx2gene.py -i BINge_clustering_result.filtered.tsv -o BINge_clustering_result.filtered.tx2gene.tsv`
+
+Then in R, you can follow the instructions of [the tximport vignette](https://bioconductor.org/packages/devel/bioc/vignettes/tximport/inst/doc/tximport.html) and do something like seen in the example code below.
+
+```
+# Locate all salmon quant files
+files <- file.path(dir, "salmon", samples$run, "quant.sf")
+# Load in tx2gene file
+tx2gene <- read_delim(Tx2GENE_FILE, delim="\t")
+# Obtain read counts
+txi.salmon <- tximport(files, type = "salmon", tx2gene = tx2gene)
+# Produce a DESeq2 dataset for analysis
+dds = DESeqDataSetFromTximport(txi = txi.salmon, colData = <...>, design = ~ <...>)
+```
+
+# Other utilities provided with BINge
 There are several additional scripts to enable common use cases with BINge's clustering results. The most useful ones are...
 
-### generate_annotation_table.py
+## generate_annotation_table.py
 This script will receive inputs including:
 
 - The BINge representatives FASTA file
@@ -181,29 +251,32 @@ This script will receive inputs including:
 You can specify the E-value cut-off to employ and how many results you want to tabulate for each sequence. Otherwise, it will use the input files to indicate the best hits for each sequence
 alongside their GO annotations which can be useful for GOseq analysis as an example.
 
-### tabulate_salmon_qc.py
+## tabulate_salmon_qc.py
 This script will receive the stderr output files from salmon and produce quality control statistics to indicate:
 
 1. What percentage of your reads mapped against the entire set of clustered sequences, and
 2. What percentage of your read mappings remain after filtering of your clustering results
 
-## A typical analysis pipeline
+# A typical analysis pipeline
 This section will give a brief runthrough of how BINge might be used for a DGE experiment. Step-by-step, you might:
 
 1. *De novo* assemble your RNAseq data using your pipeline of choice; I would perform a multiple assembly using Trinity, SOAPdenovo-Trans and others combined using EvidentialGene.
 2. Obtain any reference genome FASTA files for the species you are investigating with or without their GFF3 annotations. If you did not have any reference genome for your species being investigated, find closely related species' genomes instead.
-3. Provide your _de novo_ transcriptome assembly alongside any reference gene models you obtained as the sequences to be clustered (`-i`). Indicate any reference genomes you obtained as targets to be clustered against (`-g`).
-4. Run `BINge.py` and note the file name of your output cluster file (found wherever you specified `-o`).
-5. BLAST (/ MMseqs2) query all the sequences provided through `-i` against a database containing relevant sequences. If you provided `genome.fasta,genome.gff3` style input, you can use the `annotations1.nucl` (and so on) files in your BINge folder.
-6. Salmon align your RNAseq reads these sequences.
-7. Decide if you want to include unbinned clusters in your analysis. If your genome assemblies are high-quality and complete, you *probably* should **drop** unbinned clusters (especially if you've used *de novo* transcript assemblies). If you do not have a genome for your studied species or the genome assemblies are not high-quality, you *probably* should **not drop** unbinned clusters since they may contain relevant genes.
-8. If you decided to **drop** unbinned clusters, remove them from the output clustering file using `BINge_filter.py --justDropUnbinned`.
-9. If you decided to **not drop** unbinned clusters, you should still filter your clustering result using `BINge_filter.py` with your BLAST and Salmon output files as inputs to remove low-quality sequence clusters.
-10. Pick out representatives for each cluster using `BINge_representatives.py` using the same BLAST and Salmon output files; the **filtered** cluster file should be provided as input here!
-11. Run the utility script `generate_annotation_table.py` to generate functional annotations and obtain putative gene names for each of your sequence clusters.
-12. Use the utility script `tx2gene.py` to convert your **filtered** cluster file into something that `tximport` can use to tally your Salmon read alignments to the loci level.
-13. Load the salmon `quant.sf` files into R as described here (https://bioconductor.org/packages/devel/bioc/vignettes/tximport/inst/doc/tximport.html). Specifically, you should load the result of `tx2gene.py` in using a function like `tx2gene <- read_delim(TX2GENE_FILE, delim="\t")` followed by `txi.salmon <- tximport(files, type = "salmon", tx2gene = tx2gene)`.
-14. If you've run Salmon with stderr redirected to individual files per sample, you can run `tabulate_salmon_qc.py` using these stderr outputs to obtain a table indicating what percentage of reads aligned against your sequences. It will tabulate the percentage of reads that mapped against your sequences, as well as what percentage of reads remain mapped after the filtration (or dropping) of unbinned clusters.
+3. Provide your *de novo* transcriptome assembly alongside any reference gene models you obtained as the sequences to be clustered (`-i`). Indicate any reference genomes you obtained as targets to be clustered against (`-g`).
+4. Run `BINge.py` and note the file name of your output cluster file (i.e., the `BINge_clustering_result.<hash>.tsv` file found within the folder specified by `-o`).
+5. Follow the example code in [Filtering results](#filtering-results) where `utilities/extract_clustered_sequences.py` is used to generate a single FASTA file for your gene sequences, then BLAST/MMseqs2 query these sequences against a database containing relevant sequences.
+6. Salmon align your RNAseq reads to these sequences.
+7. Decide if you want to include unbinned clusters in your analysis.
+    - If your genome assemblies are high-quality and complete, you *probably* should **drop** unbinned clusters (especially if you've used *de novo* transcript assemblies as input).
+    - If you do not have a genome for your studied species or the genome assemblies are not high-quality, you *probably* should **not drop** unbinned clusters since they may contain relevant genes.
+8. Filter results (see [Filtering results](#filtering-results)) to either drop unbinned clusters, or just filter to remove low-quality sequence clusters.
+9. Pick representatives (see [Picking representative sequences](#picking-representative-sequences)) from the **filtered** cluster file using `BINge_representatives.py` with the BLAST and Salmon output files as evidence.
+10. Load read counts into R (see [Using results for differential gene expression](#using-results-for-differential-gene-expression)) by use of `utilities/tx2gene.py` and the `tximport` package.
 
-## How to cite
+Some extra steps that may be relevant to you include:
+
+1. If you've run Salmon with stderr redirected to individual files per sample, you can use  `utilities/tabulate_salmon_qc.py` to obtain a table indicating what percentage of reads aligned against your sequences. It will tabulate the percentage of reads that mapped against your sequences, as well as what percentage of reads remain mapped after the filtration (or dropping) of unbinned clusters, and should likely be reported in any manuscripts.
+2. Run `utilities/generate_annotation_table.py` to generate functional annotations and obtain putative gene names for each of your sequence clusters. The gene ontologies generated in this file can be obtained for use with GOseq analysis.
+
+# How to cite
 A publication is hopefully forthcoming which can be referred to when using this program.
