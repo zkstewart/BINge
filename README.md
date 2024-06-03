@@ -95,7 +95,7 @@ are hidden since their default values are what most people should use. If you wa
 Otherwise, BINge tries to keep the clustering process simple, and minimally requires you to ...
 
 ## Input sequences to cluster
-The sequences you want to cluster can be in the form of FASTA sequence files such as *de novo* assembled transcriptome(s) or as reference genome CDS models. Alternatively, you may use pairs of genome FASTA and GFF3 annotation files from which CDS' will be extracted).
+The sequences you want to cluster can be in the form of FASTA sequence files such as *de novo* assembled transcriptome(s) or as reference genome CDS models. Alternatively, you may use pairs of genome FASTA and GFF3 annotation files from which CDS' will be extracted.
 
 On the command line, providing one or more inputs might look something like:
 
@@ -163,9 +163,9 @@ align well against any of the input genomes.
 The raw results of BINge clustering contain both *binned* and *unbinned* cluster sequences. `BINge_filter.py` facilitates the filtering of these results to either:
 
 1. Remove *unbinned* clusters to focus analysis only on gene sequences present in a genome assembly; this intrinsically removes contaminant or spurious transcript assemblies
-that might be present in your *de novo* transcriptome.
-2. Filter *unbinned* clusters to retain *de novo* transcripts not present in a genome assembly, but only those *unbinned* clusters that appear to be real based on BLAST and
-read alignment evidence; this could be desirable if you know the genome assembly is incomplete or not assembled at a chromosome level.
+that might be present in your *de novo* transcriptomes.
+2. Or, you can retain only the *unbinned* transcripts that appear to be real based on BLAST and/or read alignment evidence; this could be desirable if you know the genome
+assembly is incomplete or not assembled at a chromosome level.
 
 See example code below.
 
@@ -183,11 +183,11 @@ python BINge/utilities/extract_clustered_sequences.py -i /location/to/write/outp
 
 # Filter cluster file to drop unbinned clusters
 python BINge/BINge_filter.py -i /location/to/write/outputs/BINge_clustering_result.<hash>.tsv \
-    -f /location/to/write/outputs -o BINge_clustering_result.filtered.tsv -s cds \
+    -f /location/to/write/outputs -o BINge_clustering_result.filtered.tsv -s cds --be_tolerant \
     --justDropUnbinned
 # Or, filter cluster file to only drop low-quality unbinned clusters
 python BINge/BINge_filter.py -i /location/to/write/outputs/BINge_clustering_result.<hash>.tsv \
-    -f /location/to/write/outputs -o BINge_clustering_result.filtered.tsv -s cds \
+    -f /location/to/write/outputs -o BINge_clustering_result.filtered.tsv -s cds --be_tolerant \
     --annot /location/of/genome1.gff3 --length <minimum protein size> \
     --blast /location/of/blast_or_mmseqs2/results.outfmt6 --evalue <E-value threshold> \
     --salmon /location/of/salmon/results/sample1/quant.sf /location/of/salmon/results/sample2/quant.sf <...> \
@@ -248,23 +248,28 @@ This script will receive inputs including:
 - The `idmapping_selected.tab` file available from the UniProt FTP (https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping_selected.tab.gz)
 - A `go.obo` file available from the Gene Ontology website (https://geneontology.org/docs/download-ontology/ and https://purl.obolibrary.org/obo/go.obo)
 
-You can specify the E-value cut-off to employ and how many results you want to tabulate for each sequence. Otherwise, it will use the input files to indicate the best hits for each sequence
-alongside their GO annotations which can be useful for GOseq analysis as an example.
+You can specify the E-value cut-off to employ and how many results you want to tabulate for each sequence. The result will be a tab-separated values (TSV) file listing the best hits
+for each sequence, including the taxon of the hit, its E-value and bit score, as well as their GO annotations if any exist.
+
+The `Best_mapped_GOs_+_parents` column indicates the GO annotations most suitable for GOseq analysis (for example). As the column header indicates, this contains not just the GO
+annotations associated with the sequence as found in the `idmapping_selected.tab` file, it will also present all parents(/ancestors) of those terms as obtained from the `go.obo` file.
 
 ## tabulate_salmon_qc.py
-This script will receive the stderr output files from salmon and produce quality control statistics to indicate:
+If you've run Salmon with stderr redirected to individual files per sample, this script will receive those stderr output files to produce a table of quality control statistics which indicate:
 
 1. What percentage of your reads mapped against the entire set of clustered sequences, and
 2. What percentage of your read mappings remain after filtering of your clustering results
+
+This information should likely be reported as a supplement in any manuscript making use of BINge to show what percentage of reads were filtered out as a result of running `BINge_filter.py`.
 
 # A typical analysis pipeline
 This section will give a brief runthrough of how BINge might be used for a DGE experiment. Step-by-step, you might:
 
 1. *De novo* assemble your RNAseq data using your pipeline of choice; I would perform a multiple assembly using Trinity, SOAPdenovo-Trans and others combined using EvidentialGene.
-2. Obtain any reference genome FASTA files for the species you are investigating with or without their GFF3 annotations. If you did not have any reference genome for your species being investigated, find closely related species' genomes instead.
+2. Obtain any reference genome FASTA files for the species you are investigating with or without their GFF3 annotations. If you do not have any reference genome for your species being investigated, find closely related species' genomes instead.
 3. Provide your *de novo* transcriptome assembly alongside any reference gene models you obtained as the sequences to be clustered (`-i`). Indicate any reference genomes you obtained as targets to be clustered against (`-g`).
 4. Run `BINge.py` and note the file name of your output cluster file (i.e., the `BINge_clustering_result.<hash>.tsv` file found within the folder specified by `-o`).
-5. Follow the example code in [Filtering results](#filtering-results) where `utilities/extract_clustered_sequences.py` is used to generate a single FASTA file for your gene sequences, then BLAST/MMseqs2 query these sequences against a database containing relevant sequences.
+5. Follow the example code in [Filtering results](#filtering-results) where `utilities/extract_clustered_sequences.py` is used to generate a single FASTA file for your gene sequences, then BLAST/MMseqs2 query these sequences against a database such as RefSeq or UniRef90.
 6. Salmon align your RNAseq reads to these sequences.
 7. Decide if you want to include unbinned clusters in your analysis.
     - If your genome assemblies are high-quality and complete, you *probably* should **drop** unbinned clusters (especially if you've used *de novo* transcript assemblies as input).
@@ -275,8 +280,8 @@ This section will give a brief runthrough of how BINge might be used for a DGE e
 
 Some extra steps that may be relevant to you include:
 
-1. If you've run Salmon with stderr redirected to individual files per sample, you can use  `utilities/tabulate_salmon_qc.py` to obtain a table indicating what percentage of reads aligned against your sequences. It will tabulate the percentage of reads that mapped against your sequences, as well as what percentage of reads remain mapped after the filtration (or dropping) of unbinned clusters, and should likely be reported in any manuscripts.
+1. Use `utilities/tabulate_salmon_qc.py` if you've run Salmon with per-sample stderr output to obtain a table indicating what percentage of reads aligned against your sequences.
 2. Run `utilities/generate_annotation_table.py` to generate functional annotations and obtain putative gene names for each of your sequence clusters. The gene ontologies generated in this file can be obtained for use with GOseq analysis.
 
 # How to cite
-A publication is hopefully forthcoming which can be referred to when using this program.
+A publication is hopefully forthcoming which can be referred to when using this program. Until then, you can link to this repository.
