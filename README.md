@@ -1,5 +1,20 @@
-# BINge
-Clusters _de novo_ transcripts and gene models using a reference genome to provide gene-level counts
+# Table of Contents
+- [Overview](#overview)
+- [Data required to run](#data-required-to-run)
+- [How does BINge work?](#how-does-binge-work)
+- [Installation](#installation)
+- [How to use](#how-to-use)
+  - [Input sequences to cluster](#input-sequences-to-cluster)
+  - [Input genomes to use as targets](#input-genomes-to-use-as-targets)
+  - [Configurable parameters](#configurable-parameters)
+- [Interpreting results](#interpreting-results)
+- [Filtering results](#filtering-results)
+- [Picking representative sequences](#picking-representative-sequences)
+- [Using results for differential gene expression](#using-results-for-differential-gene-expression)
+  - [generate_annotation_table.py](#generate_annotation_tablepy)
+  - [tabulate_salmon_qc.py](#tabulate_salmon_qcpy)
+- [A typical analysis pipeline](#a-typical-analysis-pipeline)
+- [How to cite](#how-to-cite)
 
 ## Overview
 BINge (**Bin** **G**enes for **E**xpression analyses) is a sequence clustering program which aims to group alternative isoforms, orthologs, and paralogs into sequence clusters.
@@ -175,19 +190,20 @@ This script will receive the stderr output files from salmon and produce quality
 ## A typical analysis pipeline
 This section will give a brief runthrough of how BINge might be used for a DGE experiment. Step-by-step, you might:
 
-1. _De novo_ assemble your RNAseq data using your pipeline of choice; I would perform a multiple assembly using Trinity, SOAPdenovo-Trans and others combined using EvidentialGene.
+1. *De novo* assemble your RNAseq data using your pipeline of choice; I would perform a multiple assembly using Trinity, SOAPdenovo-Trans and others combined using EvidentialGene.
 2. Obtain any reference genome FASTA files for the species you are investigating with or without their GFF3 annotations. If you did not have any reference genome for your species being investigated, find closely related species' genomes instead.
 3. Provide your _de novo_ transcriptome assembly alongside any reference gene models you obtained as the sequences to be clustered (`-i`). Indicate any reference genomes you obtained as targets to be clustered against (`-g`).
 4. Run `BINge.py` and note the file name of your output cluster file (found wherever you specified `-o`).
-5. Decide if you want to include unbinned clusters in your analysis. If you do not, remove them from the output clustering file using the utility program `<to_be_coded.py>`.
-6. BLAST (/ MMseqs2) query your sequences that were clustered against a database containing relevant sequences.
-7. Salmon align your RNAseq reads to the sequences that were clustered.
-8. If you chose to analyse unbinned clusters, you should filter your clustering result using `BINge_filter.py` using your BLAST and Salmon output files; otherwise, this step can be omitted.
-9. Pick out representatives for each cluster using `BINge_representatives.py` using the same BLAST and Salmon output files.
-10. Run the utility script `generate_annotation_table.py` to generate functional annotations and obtain putative gene names for each of your sequence clusters.
-11. Generate a counts table for DGE analysis using `BINge_counter.py` using the Salmon output files you've already generated.
-12. Run `tabulate_salmon_qc.py` using the stderr outputs from Salmon alignment to obtain a table indicating what percentage of reads aligned against your sequences. If you removed unbinned clusters, that's all you'll find of
-interest. If you did not remove unbinned clusters, a second statistic will show what percentage of sequence alignments were removed during filtration.
+5. BLAST (/ MMseqs2) query all the sequences provided through `-i` against a database containing relevant sequences. If you provided `genome.fasta,genome.gff3` style input, you can use the `annotations1.nucl` (and so on) files in your BINge folder.
+6. Salmon align your RNAseq reads these sequences.
+7. Decide if you want to include unbinned clusters in your analysis. If your genome assemblies are high-quality and complete, you *probably* should **drop** unbinned clusters (especially if you've used *de novo* transcript assemblies). If you do not have a genome for your studied species or the genome assemblies are not high-quality, you *probably* should **not drop** unbinned clusters since they may contain relevant genes.
+8. If you decided to **drop** unbinned clusters, remove them from the output clustering file using `BINge_filter.py --justDropUnbinned`.
+9. If you decided to **not drop** unbinned clusters, you should still filter your clustering result using `BINge_filter.py` with your BLAST and Salmon output files as inputs to remove low-quality sequence clusters.
+10. Pick out representatives for each cluster using `BINge_representatives.py` using the same BLAST and Salmon output files; the **filtered** cluster file should be provided as input here!
+11. Run the utility script `generate_annotation_table.py` to generate functional annotations and obtain putative gene names for each of your sequence clusters.
+12. Use the utility script `tx2gene.py` to convert your **filtered** cluster file into something that `tximport` can use to tally your Salmon read alignments to the loci level.
+13. Load the salmon `quant.sf` files into R as described here (https://bioconductor.org/packages/devel/bioc/vignettes/tximport/inst/doc/tximport.html). Specifically, you should load the result of `tx2gene.py` in using a function like `tx2gene <- read_delim(TX2GENE_FILE, delim="\t")` followed by `txi.salmon <- tximport(files, type = "salmon", tx2gene = tx2gene)`.
+14. If you've run Salmon with stderr redirected to individual files per sample, you can run `tabulate_salmon_qc.py` using these stderr outputs to obtain a table indicating what percentage of reads aligned against your sequences. It will tabulate the percentage of reads that mapped against your sequences, as well as what percentage of reads remain mapped after the filtration (or dropping) of unbinned clusters.
 
 ## How to cite
 A publication is hopefully forthcoming which can be referred to when using this program.
