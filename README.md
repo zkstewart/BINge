@@ -12,6 +12,7 @@
 - [Filtering results](#filtering-results)
 - [Picking representative sequences](#picking-representative-sequences)
 - [Using results for differential gene expression](#using-results-for-differential-gene-expression)
+- [Other utilities provided with BINge](#other-utilities-provided-with-binge)
   - [generate_annotation_table.py](#generate_annotation_tablepy)
   - [tabulate_salmon_qc.py](#tabulate_salmon_qcpy)
 - [A typical analysis pipeline](#a-typical-analysis-pipeline)
@@ -19,7 +20,7 @@
 
 # Getting started
 ```
-# Download this repository [no installation required]
+# Download this repository [making sure you have prerequisite Python packages]
 git clone https://github.com/zkstewart/BINge.git
 
 # Cluster transcriptome sequences against a reference genome
@@ -79,7 +80,11 @@ And one of either:
 - MMseqs2 (https://github.com/soedinglab/MMseqs2)
 - CD-HIT (https://sites.google.com/view/cd-hit)
 
-It has been developed on Linux and within Windows Subsystem for Linux (WSL). If you want to run BINge in WSL, you must ensure that developer mode is enabled so that symbolic links are functional in Windows.
+With all dependencies accounted for, BINge can be obtained by cloning this repository.
+
+`git clone https://github.com/zkstewart/BINge.git`
+
+BINge has been developed on Linux and within Windows Subsystem for Linux (WSL). If you want to run BINge in WSL, you must ensure that developer mode is enabled so that symbolic links are functional in Windows.
 You can do that by going to Settings > For developers > Toggle 'Developer Mode' On.
 
 # How to use
