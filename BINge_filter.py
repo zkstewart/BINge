@@ -485,7 +485,7 @@ def main():
         blastResults = ZS_BlastIO.BLAST_Results(args.blastFile)
         blastResults.evalue = args.evalue
         blastResults.num_hits = 1 # only need to keep the best hit for each sequence
-        blastResults.parse_blast_hit_coords()
+        blastResults.parse()
         blastDict = blastResults.results
     else:
         blastDict = {}
