@@ -34,6 +34,12 @@ def main():
     any sequences that aren't the representatives of their cluster, and 2) update
     the result IDs to indicate the cluster number (e.g., 'cluster-42') rather than their
     original sequence ID.
+    
+    NOTE: It is very important that your sequences used during the original BLAST/MMseqs2
+    search contain EVERY sequence in your BINge clustering analysis. This will be the case
+    if you've generated the file for BLASTing using the 'extract_clustered_sequences.py'
+    script. If you have done something else or you are uncertain, you should probably just
+    re-run the BLAST/MMseqs2 search with the representative sequences as the query.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
@@ -50,20 +56,9 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
-    #### Disable functionality of this code until a better solution is found ####
-    
-    print("update_outfmt6.py has a flaw in its logic")
-    print("If a representative is from a reference genome, it may not have a hit")
-    print("This would result in NO hit showing through in the results")
-    print("You're better off running BLAST/MMSeqs2 again using the output representative sequences" +
-          " to prevent any silent errors in your data")
-    quit()
-    
-    #### ----- ####
-    
     # Associate representatives with their cluster IDs
-    clustersDict = {} # don't like this variable name anymore but I need to keep it ...
-    with open(args.representativesFasta, "r") as fileIn: # ... consistent with unify_representatives
+    clustersDict = {}
+    with open(args.representativesFasta, "r") as fileIn:
         fastaRecords = SeqIO.parse(fileIn, "fasta")
         for record in fastaRecords:
             clusterID = record.id
