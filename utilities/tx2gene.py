@@ -59,7 +59,7 @@ def main():
         fileOut.write("TXNAME\tGENEID\n")
         for clusterNum, seqIDs in clusterDict.items():
             for seqID in seqIDs:
-                fileOut.write(f"{seqID}\t{clusterNum}\n")
+                fileOut.write(f"{seqID}\tcluster-{clusterNum}\n")
     
     print("Program completed successfully!")
 
