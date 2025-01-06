@@ -1,86 +1,63 @@
 import os, sys, re, pickle
 from Bio import SeqIO
 from pyfaidx import Fasta
+from Bio.SeqIO.FastaIO import SimpleFastaParser
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_SeqIO # expose this to any callers
+from Various_scripts.Function_packages import ZS_SeqIO, ZS_ORF # expose this to any callers
 
-def generate_sequence_length_index(fastaFile):
+# Define classes
+class FastaParser:
+    def __init__(self, file):
+        self.file = file
+    
+    def __iter__(self):
+        with open(self.file, 'r') as fastaFile:
+            for title, seq in SimpleFastaParser(fastaFile):
+                yield title, seq
+
+class FastaCollection:
     '''
-    Helper function to take a FASTA file and generate a dictionary of
-    sequence lengths which is to be pickled at the same location as the FASTA.
+    Wrapper for pyfaidx Fasta objects which allows multiple to be combined
+    and queried as one logical entity.
     
     Parameters:
-        fastaFile -- a string indicating the location of the FASTA file to index.
+        fastaFiles -- a list of strings pointing to the locations of FASTA files
+                      which are to be loaded in using pyfaidx.Fasta
     '''
-    indexFile = f"{fastaFile}.lengths.pkl"
-    if not os.path.exists(indexFile):
-        seqLenDict = {}
-        with open(fastaFile, "r") as fileIn:
-            records = SeqIO.parse(fileIn, "fasta")
-            for record in records:
-                seqLenDict[record.id] = len(record)
-        with open(indexFile, "wb") as fileOut:
-            pickle.dump(seqLenDict, fileOut)
-
-def load_sequence_length_index(indexFile):
-    '''
-    Load in the pickled result of generate_sequence_length_index().
+    def __init__(self, fastaFiles):
+        self.fastaFiles = fastaFiles
+        self.records = []
+        
+        self._parse_fastas()
     
-    Parameters:
-        indexFile -- a string indicating the location of index generated from a FASTA file.
-    '''
-    if os.path.exists(indexFile):
-        with open(indexFile, "rb") as fileIn:
-            seqLenDict = pickle.load(fileIn)
-        return seqLenDict
-    else:
-        raise FileNotFoundError(("load_sequence_length_index() failed because " + 
-                                 f"'{indexFile}' doesn't exist!"))
-
-def remove_sequence_from_fasta(fastaFile, sequenceIDs, outputFile, force=False):
-    '''
-    Helper function to take a FASTA file and remove one or more sequences in the
-    sequenceIDs list. The result is written to outputFile.
+    def _parse_fastas(self):
+        for fastaFile in self.fastaFiles:
+            self.records.append(Fasta(fastaFile))
     
-    Parameters:
-        fastaFile -- a string indicating the location of the FASTA file to remove IDs from.
-        sequenceIDs -- a list of strings indicating the sequence IDs to remove.
-        outputFile -- a string indicating the location to write the modified FASTA to.
-    '''
-    # Check if output file exists
-    if os.path.exists(outputFile):
-        if force:
-            os.unlink(outputFile)
-        else:
-            raise FileExistsError(f"remove_sequence_from_fasta() failed because '{outputFile}' exists!")
+    def __getitem__(self, key):
+        for records in self.records:
+            try:
+                return records[key]
+            except:
+                pass
+        raise KeyError(f"'{key}' not found in collection")
     
-    # Iterate through the FASTA and drop any IDs encountered
-    sequenceIDs = set(sequenceIDs)
-    foundIDs = []
-    wroteASequence = False
-    with open(fastaFile, "r") as fileIn, open(outputFile, "w") as fileOut:
-        records = SeqIO.parse(fileIn, "fasta")
-        for record in records:
-            seqID = record.id
-            if seqID not in sequenceIDs:
-                fileOut.write(record.format("fasta"))
-                wroteASequence = True
-            else:
-                foundIDs.append(seqID)
+    def __contains__(self, key):
+        try:
+            self[key] # __getitem__ raises exception if the key isn't found
+            return True
+        except:
+            return False
     
-    # Check if all IDs were found
-    if len(sequenceIDs) != len(foundIDs):
-        os.unlink(outputFile) # clean up flawed file
-        missing = sequenceIDs - set(foundIDs)
-        raise KeyError(("remove_sequence_from_fasta() failed because " +
-                        f"the following IDs weren't found in '{fastaFile}': {missing}"))
-
-    # Check if any sequences were written at all
-    if not wroteASequence:
-        os.unlink(outputFile)
-        raise Exception(("remove_sequence_from_fasta() failed because no sequences " +
-                         "remained after removing the provided sequence IDs!"))
+    def __iter__(self):
+        for records in self.records:
+            yield from records
+    
+    def __repr__(self):
+        return (f"<FastaCollection object;num_records='{len(self.records)}';" +
+                f"fastaFiles={self.fastaFiles}"
+        )
 
 class AnnotationExtractor:
     '''
@@ -192,7 +169,7 @@ class AnnotationExtractor:
             contigSequence -- a string of the sequence to extract bits out of.
         '''
         assert all([ len(x) == 2 for x in coordsList ]) or all([ len(x) == 3 for x in coordsList ]), \
-            ".assemble_sequence() received coordinates that aren't in a list of lists with 2 or 3 entries each!"
+            "assemble_sequence() received coordinates that aren't in a list of lists with 2 or 3 entries each!"
         
         # Sort coordsList appropriately
         coordsList.sort(key = lambda x: (int(x[0]), int(x[1])))
@@ -223,6 +200,7 @@ class AnnotationExtractor:
             exonSeq -- a string representing the exon/transcript sequence.
             cdsSeq -- a string representing the CDS.
         '''
+        warnedOnce = False
         for details, exon, cds in self._gff3_iterator():
             mrnaID, contig, strand = details
             
@@ -231,49 +209,93 @@ class AnnotationExtractor:
             
             exonSeq = AnnotationExtractor.assemble_sequence(exon, strand, contigSequence)
             cdsSeq = AnnotationExtractor.assemble_sequence(cds, strand, contigSequence)
+            protSeq = ZS_SeqIO.FastASeq.dna_to_protein(cdsSeq)
+            
+            # Warn if the protein sequence contains a stop codon
+            if "*" in protSeq.strip("*"):
+                if not warnedOnce:
+                    print(f"WARNING: protein sequence for '{mrnaID}' contains an internal stop codon; " + 
+                          f"further warnings for file '{self.gff3File}' will be suppressed.")
+                    warnedOnce = True
             
             # Yield products
-            yield mrnaID, exonSeq, cdsSeq
+            yield mrnaID, exonSeq, cdsSeq, protSeq
 
-class FastaCollection:
+# Define functions
+def generate_sequence_length_index(fastaFile):
     '''
-    Wrapper for pyfaidx Fasta objects which allows multiple to be combined
-    and queried as one logical entity.
+    Helper function to take a FASTA file and generate a dictionary of
+    sequence lengths which is to be pickled at the same location as the FASTA.
     
     Parameters:
-        fastaFiles -- a list of strings pointing to the locations of FASTA files
-                      which are to be loaded in using pyfaidx.Fasta
+        fastaFile -- a string indicating the location of the FASTA file to index.
     '''
-    def __init__(self, fastaFiles):
-        self.fastaFiles = fastaFiles
-        self.records = []
-        
-        self._parse_fastas()
+    seqLenDict = {}
+    for title, seq in FastaParser(fastaFile):
+        seqid = title.split(None, 1)[0]
+        if seqid in seqLenDict:
+            raise KeyError(f"'{seqid}' was found multiple times in '{fastaFile}'!")
+        seqLenDict[seqid] = len(seq)
     
-    def _parse_fastas(self):
-        for fastaFile in self.fastaFiles:
-            self.records.append(Fasta(fastaFile))
+    indexFile = f"{fastaFile}.lengths.pkl"
+    with open(indexFile, "wb") as fileOut:
+        pickle.dump(seqLenDict, fileOut)
+
+def load_sequence_length_index(indexFile):
+    '''
+    Load in the pickled result of generate_sequence_length_index().
     
-    def __getitem__(self, key):
-        for records in self.records:
-            try:
-                return records[key]
-            except:
-                pass
-        raise KeyError(f"'{key}' not found in collection")
+    Parameters:
+        indexFile -- a string indicating the location of index generated from a FASTA file.
+    '''
+    if os.path.exists(indexFile):
+        with open(indexFile, "rb") as fileIn:
+            seqLenDict = pickle.load(fileIn)
+        return seqLenDict
+    else:
+        raise FileNotFoundError(("load_sequence_length_index() failed because " + 
+                                 f"'{indexFile}' doesn't exist!"))
+
+def remove_sequence_from_fasta(fastaFile, sequenceIDs, outputFile, force=False):
+    '''
+    Helper function to take a FASTA file and remove one or more sequences in the
+    sequenceIDs list. The result is written to outputFile.
     
-    def __contains__(self, key):
-        try:
-            self[key] # __getitem__ raises exception if the key isn't found
-            return True
-        except:
-            return False
+    Parameters:
+        fastaFile -- a string indicating the location of the FASTA file to remove IDs from.
+        sequenceIDs -- a list of strings indicating the sequence IDs to remove.
+        outputFile -- a string indicating the location to write the modified FASTA to.
+    '''
+    # Check if output file exists
+    if os.path.exists(outputFile):
+        if force:
+            os.unlink(outputFile)
+        else:
+            raise FileExistsError(f"remove_sequence_from_fasta() failed because '{outputFile}' exists!")
     
-    def __iter__(self):
-        for records in self.records:
-            yield from records
+    # Iterate through the FASTA and drop any IDs encountered
+    sequenceIDs = set(sequenceIDs)
+    foundIDs = []
+    wroteASequence = False
+    with open(fastaFile, "r") as fileIn, open(outputFile, "w") as fileOut:
+        records = SeqIO.parse(fileIn, "fasta")
+        for record in records:
+            seqID = record.id
+            if seqID not in sequenceIDs:
+                fileOut.write(record.format("fasta"))
+                wroteASequence = True
+            else:
+                foundIDs.append(seqID)
     
-    def __repr__(self):
-        return (f"<FastaCollection object;num_records='{len(self.records)}';" +
-                f"fastaFiles={self.fastaFiles}"
-        )
+    # Check if all IDs were found
+    if len(sequenceIDs) != len(foundIDs):
+        os.unlink(outputFile) # clean up flawed file
+        missing = sequenceIDs - set(foundIDs)
+        raise KeyError(("remove_sequence_from_fasta() failed because " +
+                        f"the following IDs weren't found in '{fastaFile}': {missing}"))
+
+    # Check if any sequences were written at all
+    if not wroteASequence:
+        os.unlink(outputFile)
+        raise Exception(("remove_sequence_from_fasta() failed because no sequences " +
+                         "remained after removing the provided sequence IDs!"))
