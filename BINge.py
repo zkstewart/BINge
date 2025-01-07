@@ -12,51 +12,23 @@
 
 import os, argparse, sys, pickle, platform, subprocess, json
 from hashlib import sha256
-from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from modules.bins import BinBundle
 from modules.bin_handling import generate_bin_collections, populate_bin_collections
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
+from modules.gff3_handling import extract_annotations_from_gff3
 from modules.clustering import cluster_unbinned_sequences
 from modules.validation import validate_init_args, validate_cluster_args, validate_view_args, \
-    validate_fasta
+    validate_fasta, handle_symlink_change, touch_ok
 from modules.fasta_handling import AnnotationExtractor, FastaCollection, \
-    generate_sequence_length_index, ZS_ORF
+    generate_sequence_length_index, process_transcripts
 HASHING_PARAMS = ["inputFiles", "targetGenomeFiles",      # These hashes are the only ones 
                   "gmapIdentity", "clusterVoteThreshold"] # which behaviourally influence the 
                                                           # pre-external clustering
 
 # Define functions
-def touch_ok(fileName):
-    '''
-    Creates a file with the '.ok' suffix to indicate that a process has completed.
-    
-    Parameters:
-        fileName -- a string indicating the file to create with the '.ok' suffix.
-    '''
-    if not fileName.endswith(".ok"):
-        fileName = f"{fileName}.ok"
-    open(fileName, "w").close()
-
-def handle_symlink_change(existingLink, newLinkLocation):
-    '''
-    Detects if a symlink already exists and if it does, checks if it's pointing to the
-    same location as the new link location. If it's not, an error is raised.
-    
-    Parameters:
-        existingLink -- a string indicating the existing symlink file.
-        newLink -- a string indicating where the symlink should point to.
-    '''
-    existingResolved = str(Path(existingLink).resolve())
-    newResolved = str(Path(newLinkLocation).resolve())
-    
-    if existingResolved != newLinkLocation and existingResolved != newResolved:
-        msg = f"File '{existingLink}' already points to '{existingResolved}'; and " + \
-              f"you're trying to change it to '{newLinkLocation}'; initialise a new directory instead."
-        raise FileExistsError(msg)
-
 def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, workingDirectory):
     '''
     Given a mix of FASTA and/or GFF3 files, this function will symlink FASTA files
@@ -225,149 +197,6 @@ def setup_param_cache(args, paramHash):
     # Write updated param cache to file
     with open(os.path.join(args.workingDirectory, "param_cache.json"), "w") as fileOut:
         json.dump(paramsDict, fileOut)
-
-def extract_annotations_from_gff3(workingDirectory, isMicrobial=False):
-    '''
-    Will take the files within the 'gff3s' subdirectory of workingDirectory and
-    produce sequence files from them.
-    
-    Parameters:
-        workingDirectory -- a string indicating an existing directory to symlink and/or
-                            write FASTAs to.
-        isMicrobial -- a boolean indicating whether the organism is a microbe and hence GFF3
-                       has gene -> CDS features, rather than gene -> mRNA -> CDS/exon.
-    '''
-    # Derive subdirectory containing files
-    sequencesDir = os.path.join(workingDirectory, "sequences")
-    gff3Dir = os.path.join(sequencesDir, "gff3s")
-    
-    # Locate all GFF3/genome pairs
-    filePairs = []
-    for file in os.listdir(gff3Dir):
-        if file.endswith(".gff3"):
-            if not file.startswith("annotation"):
-                raise ValueError(f"'{file}' in '{gff3Dir}' does not begin with 'annotation' as expected")
-            
-            # Extract file prefix/suffix components
-            filePrefix = file.split(".gff3")[0]
-            suffixNum = filePrefix.split("annotation")[1]
-            if not suffixNum.isdigit():
-                raise ValueError(f"'{file}' in '{gff3Dir}' does not have a number suffix as expected")
-            
-            # Check that the corresponding genome file exists
-            genomeFile = os.path.join(gff3Dir, f"genome{suffixNum}.fasta")
-            if not os.path.exists(genomeFile):
-                raise FileNotFoundError(f"Expected to find 'genome{suffixNum}.fasta' in '{gff3Dir}' but could not")
-            
-            # Store the pairing
-            filePairs.append([os.path.join(gff3Dir, file), genomeFile, suffixNum])
-    
-    # Parse out sequences from each GFF3/genome pair
-    notifiedOnce = False
-    for gff3File, fastaFile, suffixNum in filePairs:
-        # Derive output file names
-        mrnaFileName = os.path.join(sequencesDir, f"annotations{suffixNum}.mrna")
-        cdsFileName = os.path.join(sequencesDir, f"annotations{suffixNum}.cds")
-        protFileName = os.path.join(sequencesDir, f"annotations{suffixNum}.aa")
-        sequenceFileNames = [mrnaFileName, cdsFileName, protFileName]
-        
-        # Generate files if they don't exist
-        if not all([ os.path.exists(x) for x in sequenceFileNames ]) or \
-        not all([ os.path.exists(x + ".ok") for x in sequenceFileNames ]):
-            # Give user a heads up
-            if not notifiedOnce:
-                print(f"# Generating sequences from GFF3/genome pair(s)...")
-                notifiedOnce = True
-            
-            # Generate sequences
-            with open(mrnaFileName, "w") as mrnaOut, open(cdsFileName, "w") as cdsOut, open(protFileName, "w") as protOut:
-                seqGenerator = AnnotationExtractor(gff3File, fastaFile, isMicrobial)
-                for mrnaID, exonSeq, cdsSeq, protSeq in seqGenerator.iter_sequences():
-                    mrnaOut.write(f">{mrnaID}\n{exonSeq}\n")
-                    cdsOut.write(f">{mrnaID}\n{cdsSeq}\n")
-                    protOut.write(f">{mrnaID}\n{protSeq}\n")
-            
-            # Touch the .ok files to indicate completion
-            touch_ok(mrnaFileName)
-            touch_ok(cdsFileName)
-            touch_ok(protFileName)
-
-def process_transcripts(workingDirectory):
-    '''
-    Will take the files within the 'transcripts' subdirectory of workingDirectory and
-    produce sequence files from them where appropriate.
-    
-    Parameters:
-        workingDirectory -- a string indicating an existing directory to symlink and/or
-                            write FASTAs to.
-    '''
-    # Derive subdirectory containing files
-    sequencesDir = os.path.join(workingDirectory, "sequences")
-    txDir = os.path.join(sequencesDir, "transcripts")
-    
-    # Locate all transcript files / triplets
-    txFiles = []
-    for file in os.listdir(txDir):
-        if file.endswith(".mrna"):
-            if not file.startswith("transcriptome"):
-                raise ValueError(f"'{file}' in '{txDir}' does not begin with 'transcriptome' as expected")
-            
-            # Extract file prefix/suffix components
-            filePrefix = file.split(".mrna")[0]
-            suffixNum = filePrefix.split("transcriptome")[1]
-            if not suffixNum.isdigit():
-                raise ValueError(f"'{file}' in '{txDir}' does not have a number suffix as expected")
-            
-            # Build up the triplet of files
-            thisTriplet = [os.path.join(txDir, file), None, None]
-            
-            cdsFile = os.path.join(txDir, f"transcriptome{suffixNum}.cds")
-            aaFile = os.path.join(txDir, f"transcriptome{suffixNum}.aa")
-            if os.path.exists(cdsFile) and os.path.exists(aaFile):
-                thisTriplet[1] = cdsFile
-                thisTriplet[2] = aaFile
-            
-            # Store the triplet
-            txFiles.append([thisTriplet, suffixNum])
-    
-    # Process each triplet of files
-    notifiedOnce = False
-    for triplet, suffixNum in txFiles:
-        # Derive output file names
-        mrnaFileName = os.path.join(sequencesDir, f"transcriptome{suffixNum}.mrna")
-        cdsFileName = os.path.join(sequencesDir, f"transcriptome{suffixNum}.cds")
-        protFileName = os.path.join(sequencesDir, f"transcriptome{suffixNum}.aa")
-        
-        # Symbolic link to existing files
-        for origFile, linkFile in zip(triplet, [mrnaFileName, cdsFileName, protFileName]):
-            if origFile is not None:
-                if os.path.exists(linkFile):
-                    handle_symlink_change(linkFile, origFile)
-                else:
-                    os.symlink(origFile, linkFile)
-                    touch_ok(linkFile)
-        
-        # Extract ORFs from mRNA if necessary
-        orfFileNames = [cdsFileName, protFileName]
-        if not all([ os.path.exists(x) for x in orfFileNames ]) or \
-        not all([ os.path.exists(x + ".ok") for x in orfFileNames ]):
-            # Give user a heads up
-            if not notifiedOnce:
-                print(f"# Predicting ORFs from transcriptome file(s)...")
-                notifiedOnce = True
-            
-            # Generate sequences
-            with open(cdsFileName, "w") as cdsOut, open(protFileName, "w") as protOut:
-                orfFinder = ZS_ORF.ORF_Find(triplet[0])
-                orfFinder.hitsToPull = 1
-                
-                for mrnaID, protSeq, cdsSeq in orfFinder.process():
-                    cdsOut.write(f">{mrnaID}\n{cdsSeq}\n")
-                    protOut.write(f">{mrnaID}\n{protSeq}\n")
-            
-            # Touch the .ok files to indicate completion
-            touch_ok(cdsFileName)
-            touch_ok(protFileName)
 
 def get_unbinned_sequence_ids(clusterDict, eliminatedIDs, transcriptRecords):
     '''
@@ -737,10 +566,10 @@ def imain(args):
                             args.targetGenomeFiles, args.workingDirectory)
     
     # Extract mRNAs from any input GFF3 annotations
-    extract_annotations_from_gff3(args.workingDirectory, args.isMicrobial)
+    extract_annotations_from_gff3(args.workingDirectory, args.isMicrobial, args.threads)
     
     # Extract CDS/proteins from any input transcript FASTAs
-    process_transcripts(args.workingDirectory)
+    process_transcripts(args.workingDirectory, args.threads)
     
     # Establish GMAP indexes
     setup_gmap_indices(args.workingDirectory, args.gmapDir, args.threads)

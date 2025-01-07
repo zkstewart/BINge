@@ -118,3 +118,18 @@ def parse_binge_clusters(bingeFile, typeToReturn="all"):
                     clusterDict.setdefault(clustNum, [])
                     clusterDict[clustNum].append(seqID)
     return clusterDict
+
+def load_sequence_length_index(indexFile):
+    '''
+    Load in the pickled result of generate_sequence_length_index().
+    
+    Parameters:
+        indexFile -- a string indicating the location of index generated from a FASTA file.
+    '''
+    if os.path.exists(indexFile):
+        with open(indexFile, "rb") as fileIn:
+            seqLenDict = pickle.load(fileIn)
+        return seqLenDict
+    else:
+        raise FileNotFoundError(("load_sequence_length_index() failed because " + 
+                                 f"'{indexFile}' doesn't exist!"))

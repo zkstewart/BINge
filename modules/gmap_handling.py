@@ -1,11 +1,25 @@
 import os, sys, re
-
-from .thread_workers import GmapIndexProcess
 from .fasta_handling import remove_sequence_from_fasta
+from .thread_workers import BasicProcess
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_MapIO import GMAP_DB, GMAP
 
+# Multithreaded functions and classes
+class GmapIndexProcess(BasicProcess):
+    '''
+    Handles GMAP indexing in a separate thread.
+    
+    Parameters:
+        fasta -- a string indicating the location of a FASTA file for GMAP indexing.
+        gmapDir -- a string indicating the location of the GMAP executable files.
+    '''
+    def task(self, fasta, gmapDir):
+        db = GMAP_DB(fasta, gmapDir)
+        if not db.index_exists():
+            db.index()
+
+# Other functions
 def setup_gmap_indices(workingDirectory, gmapDir, threads):
     '''
     Will take the genome files in the workingDirectory 'genomes' subdir and
@@ -39,26 +53,23 @@ def setup_gmap_indices(workingDirectory, gmapDir, threads):
             needsIndexing.append(genomeFile)
     
     # Process each db in need of indexing via threading
-    notifiedOnce = False
-    for i in range(0, len(needsIndexing), threads): # only process n (threads) files at a time
-        # Give user a heads up
-        if not notifiedOnce:
-            print(f"# Setting up GMAP indices...")
-            notifiedOnce = True
+    if len(needsIndexing) > 0:
+        print(f"# Setting up GMAP indices...")
         
-        processing = []
-        for x in range(threads): # begin processing n files
-            if i+x < len(needsIndexing): # parent loop may excess if n > the number of files needing indexing
-                genomeFile = needsIndexing[i+x]
-                
-                indexWorkerThread = GmapIndexProcess(genomeFile, gmapDir)
-                indexWorkerThread.start()
-                processing.append(indexWorkerThread)
-        
-        # Gather results
-        for indexWorkerThread in processing:
-            indexWorkerThread.join()
-            indexWorkerThread.check_errors()
+        for i in range(0, len(needsIndexing), threads): # only process n (threads) files at a time
+            processing = []
+            for x in range(threads): # begin processing n files
+                if i+x < len(needsIndexing): # parent loop may excess if n > the number of files needing indexing
+                    genomeFile = needsIndexing[i+x]
+                    
+                    indexWorkerThread = GmapIndexProcess(genomeFile, gmapDir)
+                    indexWorkerThread.start()
+                    processing.append(indexWorkerThread)
+            
+            # Gather results
+            for indexWorkerThread in processing:
+                indexWorkerThread.join()
+                indexWorkerThread.check_errors()
 
 def auto_gmapping(workingDirectory, gmapDir, threads):
     '''

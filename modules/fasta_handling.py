@@ -3,8 +3,11 @@ from Bio import SeqIO
 from pyfaidx import Fasta
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 
+from .thread_workers import BasicProcess
+from .validation import handle_symlink_change, touch_ok
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_SeqIO, ZS_ORF # expose this to any callers
+from Various_scripts.Function_packages import ZS_SeqIO, ZS_ORF
 
 # Define classes
 class FastaParser:
@@ -221,6 +224,30 @@ class AnnotationExtractor:
             # Yield products
             yield mrnaID, exonSeq, cdsSeq, protSeq
 
+class ORFPredictionProcess(BasicProcess):
+    '''
+    Handles ORF prediction in a separate thread.
+    
+    Parameters:
+        mrnaFileIn -- a string indicating the location of the FASTA file containing mRNA sequences.
+        cdsFileOut -- a string indicating the location to write the CDS sequences to.
+        protFileOut -- a string indicating the location to write the protein sequences to.
+    '''
+    def task(self, mrnaFileIn, cdsFileOut, protFileOut):
+        # Establish the finder object
+        orfFinder = ZS_ORF.ORF_Find(mrnaFileIn)
+        orfFinder.hitsToPull = 1
+        
+        # Produce the CDS and protein sequence files
+        with open(cdsFileOut, "w") as cdsOut, open(protFileOut, "w") as protOut:
+            for mrnaID, protSeq, cdsSeq in orfFinder.process():
+                cdsOut.write(f">{mrnaID}\n{cdsSeq}\n")
+                protOut.write(f">{mrnaID}\n{protSeq}\n")
+        
+        # Touch the OK files
+        touch_ok(cdsFileOut)
+        touch_ok(protFileOut)
+
 # Define functions
 def generate_sequence_length_index(fastaFile):
     '''
@@ -240,21 +267,6 @@ def generate_sequence_length_index(fastaFile):
     indexFile = f"{fastaFile}.lengths.pkl"
     with open(indexFile, "wb") as fileOut:
         pickle.dump(seqLenDict, fileOut)
-
-def load_sequence_length_index(indexFile):
-    '''
-    Load in the pickled result of generate_sequence_length_index().
-    
-    Parameters:
-        indexFile -- a string indicating the location of index generated from a FASTA file.
-    '''
-    if os.path.exists(indexFile):
-        with open(indexFile, "rb") as fileIn:
-            seqLenDict = pickle.load(fileIn)
-        return seqLenDict
-    else:
-        raise FileNotFoundError(("load_sequence_length_index() failed because " + 
-                                 f"'{indexFile}' doesn't exist!"))
 
 def remove_sequence_from_fasta(fastaFile, sequenceIDs, outputFile, force=False):
     '''
@@ -293,9 +305,105 @@ def remove_sequence_from_fasta(fastaFile, sequenceIDs, outputFile, force=False):
         missing = sequenceIDs - set(foundIDs)
         raise KeyError(("remove_sequence_from_fasta() failed because " +
                         f"the following IDs weren't found in '{fastaFile}': {missing}"))
-
+    
     # Check if any sequences were written at all
     if not wroteASequence:
         os.unlink(outputFile)
         raise Exception(("remove_sequence_from_fasta() failed because no sequences " +
                          "remained after removing the provided sequence IDs!"))
+
+def process_transcripts(workingDirectory, threads):
+    '''
+    Will take the files within the 'transcripts' subdirectory of workingDirectory and
+    produce sequence files from them where appropriate.
+    
+    Parameters:
+        workingDirectory -- a string indicating an existing directory to symlink and/or
+                            write FASTAs to.
+    '''
+    # Derive subdirectory containing files
+    sequencesDir = os.path.join(workingDirectory, "sequences")
+    txDir = os.path.join(sequencesDir, "transcripts")
+    
+    # Locate all transcript files / triplets
+    needsSymlink = []
+    needsPrediction = []
+    for file in os.listdir(txDir):
+        if file.endswith(".mrna"):
+            if not file.startswith("transcriptome"):
+                raise ValueError(f"'{file}' in '{txDir}' does not begin with 'transcriptome' as expected")
+            
+            # Extract file prefix/suffix components
+            filePrefix = file.split(".mrna")[0]
+            suffixNum = filePrefix.split("transcriptome")[1]
+            if not suffixNum.isdigit():
+                raise ValueError(f"'{file}' in '{txDir}' does not have a number suffix as expected")
+            
+            # Symbolic link the mRNA file
+            mrnaFile = os.path.join(txDir, file)
+            mrnaLink = os.path.join(sequencesDir, file)
+            if os.path.exists(mrnaLink):
+                handle_symlink_change(mrnaLink, mrnaFile)
+            else:
+                os.symlink(mrnaFile, mrnaLink)
+                touch_ok(mrnaLink)
+            
+            # Build up the triplet of files
+            thisTriplet = [mrnaFile, None, None]
+            cdsFile = os.path.join(txDir, f"transcriptome{suffixNum}.cds")
+            aaFile = os.path.join(txDir, f"transcriptome{suffixNum}.aa")
+            if os.path.exists(cdsFile) and os.path.exists(aaFile):
+                thisTriplet[1] = cdsFile
+                thisTriplet[2] = aaFile
+            
+            # Store the triplet according to their needs
+            if None in thisTriplet:
+                needsPrediction.append([thisTriplet, suffixNum])
+            else:
+                needsSymlink.append([thisTriplet, suffixNum])
+    
+    # Symlink files that don't need ORF prediction
+    for (mrnaFile, cdsFile, protFile), suffixNum in needsSymlink:
+        # Derive output file names
+        mrnaLink = os.path.join(sequencesDir, f"transcriptome{suffixNum}.mrna")
+        cdsLink = os.path.join(sequencesDir, f"transcriptome{suffixNum}.cds")
+        protLink = os.path.join(sequencesDir, f"transcriptome{suffixNum}.aa")
+        
+        # Symlink the files
+        for origFile, linkFile in zip([cdsFile, protFile], [cdsLink, protLink]):
+            if os.path.exists(linkFile):
+                handle_symlink_change(linkFile, origFile)
+            else:
+                os.symlink(origFile, linkFile)
+                touch_ok(linkFile)
+    
+    # Narrow down files needing prediction to those not previously predicted
+    filteredPrediction = []
+    for triplet, suffixNum in needsPrediction:
+        # Derive output file names
+        cdsFileName = os.path.join(sequencesDir, f"transcriptome{suffixNum}.cds")
+        protFileName = os.path.join(sequencesDir, f"transcriptome{suffixNum}.aa")
+        newTriplet = [cdsFileName, protFileName]
+        
+        # Store files that need ORF prediction
+        if not all([ os.path.exists(x) for x in newTriplet ]) and not all([ os.path.exists(x + ".ok") for x in newTriplet ]):
+            filteredPrediction.append([triplet[0], newTriplet])
+    
+    # Predict ORFs for files needing it
+    if len(filteredPrediction) > 0:
+        print(f"# Predicting ORFs from transcriptome file(s)...")
+        
+        for i in range(0, len(filteredPrediction), threads): # only process n (threads) files at a time
+            processing = []
+            for x in range(threads): # begin processing n files
+                if i+x < len(filteredPrediction): # parent loop may excess if n > the number of files needing indexing
+                    mrnaFile, (cdsFile, protFile) = filteredPrediction[i+x]
+                    
+                    predictionWorkerThread = ORFPredictionProcess(mrnaFile, cdsFile, protFile)
+                    predictionWorkerThread.start()
+                    processing.append(predictionWorkerThread)
+            
+            # Gather results
+            for predictionWorkerThread in processing:
+                predictionWorkerThread.join()
+                predictionWorkerThread.check_errors()

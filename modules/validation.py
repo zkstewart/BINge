@@ -1,4 +1,5 @@
 import os, distutils.spawn, platform, subprocess, sys
+from pathlib import Path
 
 def _validate_gmap(args):
     if args.gmapDir == None:
@@ -243,3 +244,31 @@ def validate_fasta(fastaFile):
         if not firstLine.startswith(">"):
             return False
         return True
+
+def handle_symlink_change(existingLink, newLinkLocation):
+    '''
+    Detects if a symlink already exists and if it does, checks if it's pointing to the
+    same location as the new link location. If it's not, an error is raised.
+    
+    Parameters:
+        existingLink -- a string indicating the existing symlink file.
+        newLink -- a string indicating where the symlink should point to.
+    '''
+    existingResolved = str(Path(existingLink).resolve())
+    newResolved = str(Path(newLinkLocation).resolve())
+    
+    if existingResolved != newLinkLocation and existingResolved != newResolved:
+        msg = f"File '{existingLink}' already points to '{existingResolved}'; and " + \
+              f"you're trying to change it to '{newLinkLocation}'; initialise a new directory instead."
+        raise FileExistsError(msg)
+
+def touch_ok(fileName):
+    '''
+    Creates a file with the '.ok' suffix to indicate that a process has completed.
+    
+    Parameters:
+        fileName -- a string indicating the file to create with the '.ok' suffix.
+    '''
+    if not fileName.endswith(".ok"):
+        fileName = f"{fileName}.ok"
+    open(fileName, "w").close()
