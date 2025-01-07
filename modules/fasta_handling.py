@@ -78,22 +78,19 @@ class AnnotationExtractor:
     def _gff3_iterator(self):
         '''
         Provides a simple iterator for a GFF3 file that AnnotationExtractor is built around.
-        Will only parse features where the parent and child match the object attributes.
         
-        This parser is intended to be quick and dumb - which is a positive for GFF3s which are
+        It is intended to be quick and dumb - which is a positive for GFF3s which are
         frequently poorly formatted. But if a GFF3 is _so poorly_ formatted that it isn't even
         ordered as expected (gene -> mRNA -> CDS/exon, then the next gene -> ...) this function
         will fail.
         
-        These failures will be detected and the program will end to prevent erroneous behaviour.
+        These failures cannot be detected so the user must be vigilant for them.
         '''
         # Setup data structures
         idRegex = re.compile(r"ID=(.+?)($|;|\n)")
         parentRegex = re.compile(r"Parent=(.+?)($|;|\n)")
-        details = [None, None, None] # mrnaID, contig, strand
-        exon = []
-        cds = []
         foundSomething = False
+        gff3Dict = {}
         
         # Configuration for microbial or normal GFF3
         if self.isMicrobial:
@@ -101,7 +98,7 @@ class AnnotationExtractor:
         else:
             subfeature = ["mRNA", "transcript"]
         
-        # Iterate through file now
+        # Iterate through file and build up a dictionary of features
         with open(self.gff3File, "r") as fileIn:
             for line in fileIn:
                 # Parse and skip irrelevant lines
@@ -113,53 +110,32 @@ class AnnotationExtractor:
                 
                 # Extract line details
                 contig, source, featureType, start, end, \
-                    score, strand, frame, attributes \
-                    = sl
-                isMRNA = featureType in subfeature
-                isBreakpoint = featureType == "gene"
+                    score, strand, frame, attributes = sl
+                isParent = featureType in subfeature
                 
-                # Check if we should yield a feature
-                if (isMRNA or isBreakpoint) and details[0] != None:
-                    if not self.isMicrobial:
-                        if len(exon) > 0 and len(cds) > 0: # if this fails it might be a pseudogene
-                            foundSomething = True
-                            yield details, exon, cds
-                    else:
-                        if len(cds) > 0: # if this fails it might be a pseudogene
-                            foundSomething = True
-                            yield details, cds, cds # CDS and exon are equivalent in microbe GFF3s
-                    
-                    # Zero the details again as a safeguard for if we hit a breakpoint and not isMRNA
-                    details = [None, None, None]
-                    exon = []
-                    cds = []
-                
-                # Check if we should build a new feature
-                if isMRNA:
-                    details = [idRegex.search(sl[8]).groups()[0], contig, strand]
-                    exon = []
-                    cds = []
+                # Index parent features (which may be genes or mRNAs)
+                if isParent:
+                    mrnaID = idRegex.search(sl[8]).groups()[0]
+                    gff3Dict[mrnaID] = [contig, strand, [], []] # exon, CDS lists
                 
                 # Build an ongoing feature
-                if featureType == "exon":
-                    if details[0] != None:
-                        assert parentRegex.search(sl[8]).groups()[0] == details[0], \
-                            "AnnotationExtractor error: exon parent doesn't match mRNA ID; file is not ordered!!"
-                    exon.append([int(start), int(end)])
-                elif featureType == "CDS":
-                    if details[0] != None:
-                        assert parentRegex.search(sl[8]).groups()[0] == details[0], \
-                            "AnnotationExtractor error: CDS parent doesn't match mRNA ID; file is not ordered!!"
-                    cds.append([int(start), int(end), int(frame)])
+                featureIndex = 2 if featureType == "exon" else 3 if featureType == "CDS" else None
+                if featureIndex != None:
+                    parentIDs = parentRegex.search(sl[8]).groups()[0].split(",")
+                    for pid in parentIDs:
+                        if pid in gff3Dict:
+                            gff3Dict[pid][featureIndex].append([int(start), int(end), frame])
+                            foundSomething = True
         
-        # Yield the last feature in the GFF3
+        # Yield each feature in the GFF3
         if foundSomething == False:
             raise Exception(f"AnnotationExtractor error: '{self.gff3File}' does not appear to be a valid GFF3 file!")
-        if details[0] != None:
-            if not self.isMicrobial:
-                yield details, exon, cds
-            else:
-                yield details, cds, cds
+        else:
+            for mrnaID, (contig, strand, exon, cds) in gff3Dict.items():
+                if not self.isMicrobial:
+                    yield mrnaID, contig, strand, exon, cds
+                else:
+                    yield mrnaID, contig, strand, cds, cds # exon is equivalent to CDS in microbe GFF3s
     
     @staticmethod
     def assemble_sequence(coordsList, strand, contigSequence):
@@ -179,18 +155,31 @@ class AnnotationExtractor:
         
         # Assemble the sequence now
         sequence = ""
-        for value in coordsList:
+        for i, value in enumerate(coordsList):
+            # Extract details from coords value
             if len(value) == 2:
                 start, end = value
+                frame = 0
             else:
-                start, end, _ = value # don't need the frame value for this
+                start, end, frame = value
             
+            # Extend sequence
             sequenceBit = contigSequence[start-1:end] # 1-based correction to start to make it 0-based
             sequence += sequenceBit
+            
+            # Note the frame if necessary
+            if (i == 0 and strand == "+") or (i == len(coordsList)-1 and strand == "-"):
+                try:
+                    startingFrame = int(frame)
+                except:
+                    startingFrame = 0
         
         # Reverse complement if necessary
         if strand == "-":
             sequence = ZS_SeqIO.FastASeq.get_reverse_complement(self=None, staticSeq=sequence)
+        
+        # Trim the sequence to the correct frame
+        sequence = sequence[startingFrame:]
         
         return sequence
     
@@ -204,8 +193,9 @@ class AnnotationExtractor:
             cdsSeq -- a string representing the CDS.
         '''
         warnedOnce = False
-        for details, exon, cds in self._gff3_iterator():
-            mrnaID, contig, strand = details
+        for mrnaID, contig, strand, exon, cds in self._gff3_iterator():
+            #if mrnaID == "AT1G01020.1":
+            #    STOP
             
             # Create sequence by piecing together exon / CDS bits
             contigSequence = str(self.fasta[contig].seq)
