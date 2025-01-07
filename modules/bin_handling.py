@@ -2,6 +2,7 @@ import os
 from .thread_workers import ReturningProcess
 from .parsing import load_sequence_length_index
 from .gff3_handling import GFF3, iterate_gmap_gff3
+from .bins import Bin, BinCollection
 
 # Multithreaded functions and classes
 class CollectionSeedProcess(ReturningProcess):
@@ -228,21 +229,21 @@ def generate_bin_collections(workingDirectory, threads, isMicrobial):
     '''
     # Locate subdirectory containing files
     genomesDir = os.path.join(workingDirectory, "genomes")
-    assert os.path.isdir(genomesDir), \
-        f"generate_bin_collections failed because '{genomesDir}' isn't a directory somehow?"
+    if not os.path.isdir(genomesDir):
+        raise FileNotFoundError(f"generate_bin_collections failed because '{genomesDir}' doesn't exist or isn't a directory.")
     
     # Locate all genome/GFF3 pairings
     filePairs = []
     for file in os.listdir(genomesDir):
         if file.endswith(".fasta"):
-            assert file.startswith("genome"), \
-                f"FASTA file in '{genomesDir}' has a different name than expected?"
+            if not file.startswith("genome"):
+                raise ValueError(f"FASTA file '{file}' in '{genomesDir}' does not start with 'genome' as expected.")
             
             # Extract file prefix/suffix components
             filePrefix = file.split(".fasta")[0]
             suffixNum = filePrefix.split("genome")[1]
-            assert suffixNum.isdigit(), \
-                f"FASTA file in '{genomesDir}' does not have a number suffix?"
+            if not suffixNum.isdigit():
+                raise ValueError(f"FASTA file '{file}' in '{genomesDir}' does not have a number suffix as expected.")
             
             # Add value to pairings list
             filePairs.append([None, suffixNum])
@@ -252,17 +253,17 @@ def generate_bin_collections(workingDirectory, threads, isMicrobial):
             if os.path.exists(os.path.join(genomesDir, gff3File)):
                 filePairs[-1][0] = os.path.join(genomesDir, gff3File)
     
-    assert len(filePairs) > 0, \
-        f"generate_bin_collections failed because '{genomesDir}' contains no genomes somehow?"
+    if not len(filePairs) > 0:
+        raise FileNotFoundError(f"generate_bin_collections failed because '{genomesDir}' contains no genome files")
     
     # Sort the list for consistency of ordering
     "If there are gaps in the suffixNum's, ordering is important to keep things paired up"
     filePairs.sort(key = lambda x: int(x[1]))
     suffixes = [ int(x[1]) for x in filePairs ]
     isConsecutive = suffixes == list(range(1, len(suffixes)+1))
-    assert isConsecutive, \
-        (f"generate_bin_collections failed because genome files in '{genomesDir}' are not " + 
-        "consecutively numbered, which is important for later program logic!")
+    if not isConsecutive:
+        raise ValueError(f"generate_bin_collections failed because genome files in '{genomesDir}' are not " + 
+                         "consecutively numbered, which is important for later program logic!")
     
     # Start up threads
     collectionList = []
@@ -272,7 +273,7 @@ def generate_bin_collections(workingDirectory, threads, isMicrobial):
             if i+x < len(filePairs): # parent loop may excess if n > the number of GMAP files
                 gff3File, _ = filePairs[i+x]
                 
-                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial)
+                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial) # returns empty BinCollection if no GFF3
                 seedWorkerThread.start()
                 processing.append(seedWorkerThread)
         
@@ -296,17 +297,15 @@ def populate_bin_collections(workingDirectory, collectionList, gmapFiles,
     Parameters:
         collectionList -- a list of BinCollection objects as resulting from
                           generate_bin_collections().
-        gmapFiles -- a list of strings pointing to GMAP GFF3 files; they should
-                     be ordered the same as the files which were used as input to
-                     generate_bin_collections().
-        threads -- an integer indicating how many threads to run; this code is
+        gmapFiles -- a list of strings pointing to GMAP GFF3 files for population.
+        threads -- an integer indicating how many threads to run at a time; this code is
                    parallelised in terms of processing multiple GMAP files at a time,
-                   if you have only 1 GMAP file then only 1 thread will be used.
+                   if you have only 1 GMAP file then only 1 thread can be used.
         gmapIdentity -- a float indicating what identity value a GMAP alignment
                         must have for it to be considered for binning.
     Returns:
-        novelBinCollection -- a BinCollection containing Bins which did not overlap existing
-                              Bins part of the input collectionList.
+        collectionList -- a list of BinCollections, each BinCollection containing
+                          Bins populated with GMAP alignments.
     '''
     # Establish lists for feeding data into threads
     threadData = []
@@ -329,7 +328,7 @@ def populate_bin_collections(workingDirectory, collectionList, gmapFiles,
         threadData.append([thisGmapFiles, thisBinCollection, thisGenomeIndex])
     
     # Start up threads
-    resultBinCollections = []
+    collectionList = []
     for i in range(0, len(threadData), threads): # only process n (threads) collections at a time
         processing = []
         for x in range(threads): # begin processing n collections
@@ -347,6 +346,6 @@ def populate_bin_collections(workingDirectory, collectionList, gmapFiles,
             populateWorkerThread.join()
             populateWorkerThread.check_errors()
             
-            resultBinCollections.append(binCollection)
+            collectionList.append(binCollection)
         
-    return resultBinCollections
+    return collectionList

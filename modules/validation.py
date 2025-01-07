@@ -45,11 +45,6 @@ def validate_init_args(args):
         raise ValueError(f"Something other than a directory already exists at '{args.workingDirectory}'. " +
                          "Please move this, or specify a different -d value, then try again.")
     
-    # Create checkpoint directory
-    args.checkpointDir = os.path.join(args.workingDirectory, "checkpoints")
-    if not os.path.exists(args.checkpointDir):
-        os.mkdir(args.checkpointDir)
-    
     # Validate -ig file locations
     for inputArgument in args.inputGff3Files:
         if not inputArgument.count(",") == 1:
@@ -87,6 +82,7 @@ def validate_init_args(args):
 
 def validate_cluster_args(args):
     # Validate working directory
+    args.workingDirectory = os.path.abspath(args.workingDirectory)
     if not os.path.isdir(args.workingDirectory):
         raise FileNotFoundError(f"Unable to locate the working directory '{args.workingDirectory}'")
     
@@ -118,21 +114,21 @@ def validate_cluster_args(args):
         # Validate remaining parameters
         if not os.path.isdir(args.mmseqsDir):
             raise FileNotFoundError(f"Unable to locate the MMseqs2 directory '{args.mmseqsDir}'")
-        if args.evalue < 0:
-            raise ValueError("--evalue must be greater than or equal to 0")
-        if not 0 <= args.coverage <= 1.0:
-            raise ValueError("--coverage must be a float in the range 0.0 -> 1.0")
+        if args.mmseqsEvalue < 0:
+            raise ValueError("--mmseqs_evalue must be greater than or equal to 0")
+        if not 0 <= args.mmseqsCoverage <= 1.0:
+            raise ValueError("--mmseqs_cov must be a float in the range 0.0 -> 1.0")
         "--mode is controlled by argparse choices"
         "--tmpDir is validated by the MM_DB Class"
         
         # Validate "MMS-CASCADE" parameters
-        if args.sensitivity in ["5.7", "7.5"]:
-            args.sensitivity = float(args.sensitivity)
+        if args.mmseqsSensitivity in ["5.7", "7.5"]:
+            args.mmseqsSensitivity = float(args.mmseqsSensitivity)
         else:
-            args.sensitivity = int(args.sensitivity)
+            args.mmseqsSensitivity = int(args.mmseqsSensitivity)
         
-        if args.steps < 1:
-            raise ValueError("--steps must be greater than or equal to 1")
+        if args.mmseqsSteps < 1:
+            raise ValueError("--mmseqs_steps must be greater than or equal to 1")
     
     # Validate optional CD-HIT parameters
     if args.unbinnedClusterer == "cd-hit":
@@ -155,6 +151,7 @@ def validate_cluster_args(args):
 
 def validate_view_args(args):
     # Validate working directory
+    args.workingDirectory = os.path.abspath(args.workingDirectory)
     if not os.path.isdir(args.workingDirectory):
         raise FileNotFoundError(f"Unable to locate the working directory '{args.workingDirectory}'")
 

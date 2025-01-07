@@ -1,3 +1,4 @@
+import os, pickle
 from .salmon import EquivalenceClassCollection, QuantCollection, DGEQuantCollection
 
 def parse_equivalence_classes(equivalenceClassFiles, sampleNames):

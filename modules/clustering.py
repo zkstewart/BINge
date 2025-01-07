@@ -49,9 +49,9 @@ def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args):
     if args.unbinnedClusterer in ["mmseqs-cascade", "mmseqs-linclust"]:
         resultClusters = mmseqs_clustering(tmpFileName, args.unbinnedClusterer, 
                                            args.mmseqsDir, args.tmpDir,
-                                           args.threads, args.evalue, args.identity,
-                                           args.coverage, args.mode, args.sensitivity,
-                                           args.steps)
+                                           args.threads, args.mmseqsEvalue, args.identity,
+                                           args.mmseqsCoverage, args.mmseqsMode,
+                                           args.mmseqsSensitivity, args.mmseqsSteps)
     else:
         resultClusters = cdhit_clustering(tmpFileName, args.cdhitDir, args.threads,
                                           args.cdhitMem, args.identity,

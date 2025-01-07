@@ -24,9 +24,8 @@ from modules.validation import validate_init_args, validate_cluster_args, valida
     validate_fasta, handle_symlink_change, touch_ok
 from modules.fasta_handling import AnnotationExtractor, FastaCollection, \
     generate_sequence_length_index, process_transcripts
-HASHING_PARAMS = ["inputFiles", "targetGenomeFiles",      # These hashes are the only ones 
-                  "gmapIdentity", "clusterVoteThreshold"] # which behaviourally influence the 
-                                                          # pre-external clustering
+
+HASHING_PARAMS = ["gmapIdentity", "clusterVoteThreshold"]
 
 # Define functions
 def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, workingDirectory):
@@ -153,51 +152,6 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, workingDir
             generate_sequence_length_index(linkedFASTA)
             touch_ok(linkedFASTA)
 
-def load_param_cache(workingDirectory):
-    '''
-    Loads the parameter cache file from the working directory, if it exists,
-    as a dictionary with JSON parsing.
-    
-    Parameters:
-        workingDirectory -- a string indicating the parent dir where the analysis is being
-                            run.
-    '''
-    # Parse any existing param cache file
-    paramCacheFile = os.path.join(workingDirectory, "param_cache.json")
-    if os.path.exists(paramCacheFile):
-        try:
-            with open(paramCacheFile, "r") as fileIn:
-                paramsDict = json.load(fileIn)
-        except:
-            raise Exception((f"'{paramCacheFile}' exists but cannot be loaded as a JSON. " + 
-                             "If the file is malformed, delete it so I can reinitialise one."))
-    else:
-        paramsDict = {}
-    
-    return paramsDict
-
-def setup_param_cache(args, paramHash):
-    '''
-    Writes the parameter hash to the param cache file in the working directory, appending
-    the parameters to the cache if one already exists.
-    
-    Parameters:
-        args -- the argparse object of BINge called through the main function.
-        paramHash -- a string of the hash for these parameters to store in the param cache.
-    '''
-    # Parse any existing param cache file
-    paramsDict = load_param_cache(args.workingDirectory)
-    
-    # Add this program run to the paramsDict cache (if needed)
-    paramsDict[paramHash] = {
-        param : args.__dict__[param]
-        for param in HASHING_PARAMS
-    }
-    
-    # Write updated param cache to file
-    with open(os.path.join(args.workingDirectory, "param_cache.json"), "w") as fileOut:
-        json.dump(paramsDict, fileOut)
-
 def get_unbinned_sequence_ids(clusterDict, eliminatedIDs, transcriptRecords):
     '''
     Compares one or more BinBundle objects against the transcript sequences
@@ -232,7 +186,7 @@ def get_unbinned_sequence_ids(clusterDict, eliminatedIDs, transcriptRecords):
     
     return unbinnedIDs
 
-def get_parameters_hash(args):
+def get_parameters_hash(args, hashLen=20):
     '''
     Function to receive the arguments associated with BINge.py and generate a hash
     unique to this run. This hash can be used for pickle persistance of data which
@@ -241,6 +195,7 @@ def get_parameters_hash(args):
     
     Parameters:
         args -- the Argparse object associated with the main BINge.py function.
+        hashLen -- an integer indicating the length of the hash to generate (default==20)
     Returns:
         paramHash -- a sha256 hash string of the parameters
     '''
@@ -249,7 +204,7 @@ def get_parameters_hash(args):
         strForHash += str(args.__dict__[param])
     paramHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
     
-    return paramHash
+    return paramHash[0:hashLen]
 
 ## Main
 def main():
@@ -463,12 +418,6 @@ def main():
                          does not contain mRNA and exon features; in this case, I expect the GFF3
                          feature to have 'gene' and 'CDS' features."""),
                          default=False)
-    cparser.add_argument("--debug", dest="debug",
-                         required=False,
-                         action="store_true",
-                         help=hide("""Optionally provide this argument if you want to generate detailed
-                         logging information along the way to help with debugging."""),
-                         default=False)
     cparser.add_argument("--identity", dest="identity",
                          required=False,
                          type=float,
@@ -476,6 +425,12 @@ def main():
                          (default==0.98); this value should be strict unless you are clustering
                          multiple species' together for a DGE analysis"""),
                          default=0.98)
+    cparser.add_argument("--debug", dest="debug",
+                         required=False,
+                         action="store_true",
+                         help=hide("""Optionally provide this argument if you want to generate detailed
+                         logging information along the way to help with debugging."""),
+                         default=False)
     ### GMAP
     cparser.add_argument("--gmapIdentity", dest="gmapIdentity",
                          required=False,
@@ -488,32 +443,27 @@ def main():
                          same genus alignment, and least strict for different genus alignments"""),
                          default=0.95)
     ### MMseqs2
-    cparser.add_argument("--tmpDir", dest="tmpDir",
-                         required=False,
-                         help=hide("""MMSEQS: Specify the tmpDir for MMseqs2 running; default='mms2_tmp'
-                         in your current working directory"""),
-                         default="mms2_tmp")
-    cparser.add_argument("--evalue", dest="evalue",
+    cparser.add_argument("--mmseqs_evalue", dest="mmseqsEvalue",
                          required=False,
                          type=float,
                          help=hide("MMSEQS: Specify the evalue threshold for clustering (default==1e-3)"),
                          default=1e-3)
-    cparser.add_argument("--coverage", dest="coverage",
+    cparser.add_argument("--mmseqs_cov", dest="mmseqsCoverage",
                          required=False,
                          type=float,
                          help=hide("MMSEQS: Specify the coverage ratio for clustering (default==0.4)"),
                          default=0.4)
-    cparser.add_argument("--mode", dest="mode",
+    cparser.add_argument("--mmseqs_mode", dest="mmseqsMode",
                          required=False,
                          choices=["set-cover", "connected-component", "greedy"],
                          help=hide("MMSEQS: Specify the clustering mode (default=='connected-component')"),
                          default="connected-component")
-    cparser.add_argument("--sensitivity", dest="sensitivity",
+    cparser.add_argument("--mmseqs_sens", dest="mmseqsSensitivity",
                          required=False,
                          choices=["4","5","5.7","6","7","7.5"],
                          help=hide("MMSEQS-CASCADE: Specify the sensitivity value (default==5.7)"),
                          default="5.7")
-    cparser.add_argument("--steps", dest="steps",
+    cparser.add_argument("--mmseqs_steps", dest="mmseqsSteps",
                          required=False,
                          type=int,
                          help=hide("""MMSEQS-CASCADE: Specify the number of cascaded clustering steps 
@@ -541,7 +491,7 @@ def main():
     
     # View-subparser arguments
     # N/A
-    args = subParentParser.parse_args() # sets args.checkpointDir
+    args = subParentParser.parse_args()
     
     # Split into mode-specific functions
     if args.mode in ["initialise", "init"]:
@@ -575,42 +525,46 @@ def imain(args):
     setup_gmap_indices(args.workingDirectory, args.gmapDir, args.threads)
     
     # Perform GMAP mapping
-    gmapFiles = auto_gmapping(args.workingDirectory, args.gmapDir, args.threads)
+    auto_gmapping(args.workingDirectory, args.gmapDir, args.threads)
     
     print("Initialisation complete!")
 
 def cmain(args):
     paramHash = get_parameters_hash(args)
-    setup_param_cache(args, paramHash)
-    print(f"# Hash associated with this run is {paramHash}")
+    print(f"# Hash associated with this 'cluster' analysis is {paramHash}")
+    
+    # Set up analysis directory for this run
+    analysisDir = os.path.join(args.workingDirectory, "analysis")
+    os.makedirs(analysisDir, exist_ok=True)
+    
+    runDir = os.path.join(analysisDir, f"run_{paramHash}")
+    os.makedirs(runDir, exist_ok=True)
+    
+    mostRecentDir = os.path.join(analysisDir, "most_recent")
+    if os.path.exists(mostRecentDir):
+        os.remove(mostRecentDir)
+    os.symlink(runDir, mostRecentDir)
     
     # Figure out if we've already run BINge here before and exit if so
-    outputFileName = os.path.join(args.workingDirectory, f"BINge_clustering_result.{paramHash}.tsv")
-    if os.path.exists(outputFileName):
-        print(f"A BINge output file already exists at '{outputFileName}'")
-        print("This program will not overwrite an existing file.")
-        print("If you want to resume an existing run, make sure to move/rename/delete this file first.")
-        print("Fix this before trying again.")
-        quit()
+    outputFileName = os.path.join(runDir, f"BINge_clustering_result.tsv")
+    if os.path.exists(outputFileName) and os.path.exists(outputFileName + ".ok"):
+        raise FileExistsError(f"A BINge output file already exists within '{runDir}'; " +
+                              "this program will not overwrite an existing file. " +
+                              "To resume or overwrite, move/rename/delete this file then try again.")
     
     # Figure out what our pickle file is called
-    pickleFile = os.path.join(args.workingDirectory, f"{paramHash}.binge.pkl")
+    pickleFile = os.path.join(runDir, f".binge.pkl")
     
     # Either load a pickle generated by previous BINge run ...
-    if os.path.isfile(pickleFile) or os.path.islink(pickleFile):
+    if os.path.isfile(pickleFile):
         with open(pickleFile, "rb") as pickleIn:
-            binBundle = pickle.load(pickleIn)
-        print("Note: an existing pickle file with a matching parameters hash is present " + 
-              f"i.e., '{pickleFile}'.")
-        print("I will load that in now and resume program operation.")
+            clusterDict, eliminations = pickle.load(pickleIn)
+        print("# An existing pickle file will be loaded to resume program operation.")
     
     # ... error out if it's a directory or something weird ...
     elif os.path.exists(pickleFile):
-        print(f"{pickleFile} already exists, but is not a file?")
-        print("BINge expects this to be a file which it can read or write to.")
-        print("Something weird is happening, so I will exit the program now.")
-        print(f"Move whatever is at the location of '{pickleFile}' then try again.")
-        quit()
+        raise FileExistsError(f"'{pickleFile}' already exists within '{runDir}', but is not a file; " +
+                              "move/delete/fix this to allow BINge to continue.")
     
     # ... or begin pre-external clustering BINge
     else:
@@ -620,6 +574,14 @@ def cmain(args):
             print(f"# Generated a list with {len(collectionList)} collections")
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} contains {len(_cl)} bins")
+        
+        # Locate GMAP alignments
+        mappingDir = os.path.join(args.workingDirectory, "mapping")
+        gmapFiles = [
+            os.path.join(mappingDir, f)
+            for f in os.listdir(mappingDir)
+            if f.endswith(".gff3")
+        ]
         
         # Parse GMAP alignments into our bin collection with multiple threads
         collectionList = populate_bin_collections(args.workingDirectory,
@@ -641,7 +603,7 @@ def cmain(args):
         
         # Write pickle file for potential resuming of program
         with open(pickleFile, "wb") as pickleOut:
-            pickle.dump(clusterDict, pickleOut)
+            pickle.dump([clusterDict, eliminations], pickleOut)
     
     # Write binned clusters to file
     with open(outputFileName, "w") as fileOut:
@@ -655,9 +617,10 @@ def cmain(args):
                 fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
     
     # Cluster remaining unbinned sequences
+    sequencesDir = os.path.join(args.workingDirectory, "sequences")
     transcriptRecords = FastaCollection([
-        os.path.join(args.workingDirectory, f)
-        for f in os.listdir(args.workingDirectory)
+        os.path.join(sequencesDir, f)
+        for f in os.listdir(sequencesDir)
         if f.endswith(".nucl")
     ])
     unbinnedIDs = get_unbinned_sequence_ids(clusterDict, eliminations, transcriptRecords)
@@ -677,6 +640,7 @@ def cmain(args):
         for clusterNum, clusterIDs in unbinnedClusterDict.items():
             for seqID in clusterIDs:
                 fileOut.write(f"{clusterNum+numClusters+1}\t{seqID}\tunbinned\n")
+    touch_ok(outputFileName)
     
     print("Clustering complete!")
 

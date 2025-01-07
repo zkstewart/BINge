@@ -1,6 +1,7 @@
 import os, sys, re
 from .fasta_handling import remove_sequence_from_fasta
 from .thread_workers import BasicProcess
+from .validation import touch_ok
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages.ZS_MapIO import GMAP_DB, GMAP
@@ -116,14 +117,13 @@ def auto_gmapping(workingDirectory, gmapDir, threads):
     
     # Iteratively perform GMAP search for all combinations
     notifiedOnce = False
-    gmapFiles = []
     for queryFile, queryPrefix in queryFiles:
         originalQuery = queryFile # remember what the original query file was if we end up using tmp files
         tmpQueryFile = f"{originalQuery}.tmp" # temporary file for problem sequences
         
         for genomeFile, genomePrefix in genomeFiles:
             outputFileName = os.path.join(mappingDir, f"{queryPrefix}_to_{genomePrefix}_gmap.gff3")
-            if not os.path.exists(outputFileName):
+            if not os.path.exists(outputFileName) or not os.path.exists(outputFileName + ".ok"):
                 # Give user a heads up
                 if not notifiedOnce:
                     print(f"# Running GMAP alignment...")
@@ -144,7 +144,7 @@ def auto_gmapping(workingDirectory, gmapDir, threads):
                         assert gmapper.index_exists(), \
                             f"auto_gmapping failed because '{genomeFile}' doesn't have an index?"
                         
-                        gmapper.gmap(outputFileName)
+                        gmapper.gmap(outputFileName, force=True) # allows overwrite if .ok file is missing
                         
                         # Clean up temporary file (if it exists) on successful run
                         if os.path.exists(f"{originalQuery}.tmp"):
@@ -170,7 +170,4 @@ def auto_gmapping(workingDirectory, gmapDir, threads):
                     
                     # If no errors, then exit out of the while loop
                     break
-            
-            gmapFiles.append(outputFileName)
-    
-    return gmapFiles
+            touch_ok(outputFileName)
