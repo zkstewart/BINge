@@ -154,7 +154,21 @@ def validate_view_args(args):
     args.workingDirectory = os.path.abspath(args.workingDirectory)
     if not os.path.isdir(args.workingDirectory):
         raise FileNotFoundError(f"Unable to locate the working directory '{args.workingDirectory}'")
-
+    
+    # Validate that viewed directory exists
+    analysisDir = os.path.join(args.workingDirectory, "analysis")
+    if args.analysisFolder != "most_recent":
+        if args.analysisFolder.startswith("run_"):
+            args.runDirName = args.analysisFolder
+        else:
+            args.runDirName = f"run_{args.analysisFolder}"
+    else:
+        args.runDirName = args.analysisFolder
+    
+    if not os.path.isdir(os.path.join(analysisDir, args.runDirName)):
+        raise FileNotFoundError(f"Unable to locate '{args.runDirName}' within '{analysisDir}'; " +
+                                "have you run the clustering step yet?")
+    
 def validate_salmon_files(salmonFiles):
     '''
     Validates Salmon files for 1) their existence and 2) their consistency of file format.

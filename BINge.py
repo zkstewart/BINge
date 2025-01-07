@@ -12,6 +12,7 @@
 
 import os, argparse, sys, pickle, platform, subprocess, json
 from hashlib import sha256
+from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -20,6 +21,7 @@ from modules.bin_handling import generate_bin_collections, populate_bin_collecti
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.gff3_handling import extract_annotations_from_gff3
 from modules.clustering import cluster_unbinned_sequences
+from modules.parsing import parse_binge_clusters
 from modules.validation import validate_init_args, validate_cluster_args, validate_view_args, \
     validate_fasta, handle_symlink_change, touch_ok
 from modules.fasta_handling import AnnotationExtractor, FastaCollection, \
@@ -490,7 +492,12 @@ def main():
                          default=6000)
     
     # View-subparser arguments
-    # N/A
+    vparser.add_argument("--analysis", dest="analysisFolder",
+                         required=False,
+                         help="""Specify the analysis folder to view by its hash; if not provided,
+                         the most recent analysis folder will be viewed""",
+                         default="most_recent")
+    
     args = subParentParser.parse_args()
     
     # Split into mode-specific functions
@@ -504,7 +511,7 @@ def main():
         cmain(args)
     elif args.mode == "view":
         print("## BINge.py - Viewing ##")
-        validate_view_args(args)
+        validate_view_args(args) # sets args.runDirName
         vmain(args)
     
     # Print completion flag if we reach this point
@@ -544,6 +551,10 @@ def cmain(args):
     if os.path.exists(mostRecentDir):
         os.remove(mostRecentDir)
     os.symlink(runDir, mostRecentDir)
+    
+    # Store the parameters used in this run
+    with open(os.path.join(runDir, "parameters.json"), "w") as paramOut:
+        json.dump({ param: args.__dict__[param] for param in HASHING_PARAMS }, paramOut)
     
     # Figure out if we've already run BINge here before and exit if so
     outputFileName = os.path.join(runDir, f"BINge_clustering_result.tsv")
@@ -645,8 +656,107 @@ def cmain(args):
     print("Clustering complete!")
 
 def vmain(args):
-    pass
-
+    # Establish directory locations
+    genomesDir = os.path.join(args.workingDirectory, "genomes")
+    sequencesDir = os.path.join(args.workingDirectory, "sequences")
+    gff3Dir = os.path.join(sequencesDir, "gff3s")
+    txDir = os.path.join(sequencesDir, "transcripts")
+    analysisDir = os.path.join(args.workingDirectory, "analysis")
+    runDir = os.path.join(analysisDir, args.runDirName)
+    
+    # Load the parameters used in the analysis
+    with open(os.path.join(runDir, "parameters.json"), "r") as paramsIn:
+        params = json.load(paramsIn)
+    
+    print("# Parameters:")
+    for key, value in params.items():
+        print(f"{key}: {value}")
+    print()
+    
+    # Derive the files used in the analysis
+    print("## File inputs:")
+    print("# Genome targets:")
+    genomeLinks = [ os.path.join(genomesDir, f) for f in os.listdir(genomesDir) if f.endswith(".fasta") ]
+    annotLinks = []
+    for genomeLink in genomeLinks:
+        suffixNum = genomeLink.rsplit("genome", maxsplit=1)[1].split(".fasta")[0]
+        annotLink = os.path.join(genomesDir, f"annotation{suffixNum}.gff3")
+        if os.path.exists(annotLink):
+            annotLinks.append(annotLink)
+        else:
+            annotLinks.append(None)
+    genomeOrigins = [ str(Path(g).resolve()) for g in genomeLinks ]
+    annotOrigins = [ str(Path(a).resolve()) if a is not None else None for a in annotLinks ]
+    for gLink, gOrigin, aLink, aOrigin in zip(genomeLinks, genomeOrigins, annotLinks, annotOrigins):
+        print(f"{gLink} -> {gOrigin}")
+        if aOrigin is not None:
+            print(f"    pre-seeded by: {aLink} -> {aOrigin}")
+    
+    print()
+    
+    print("# GFF3 annotations:")
+    gff3Links = [ os.path.join(gff3Dir, f) for f in os.listdir(gff3Dir) if f.endswith(".gff3") ]
+    gff3Origins = [ str(Path(g).resolve()) for g in gff3Links ]
+    if len(gff3Links) == 0:
+        print("None")
+    else:
+        for link, origin in zip(gff3Links, gff3Origins):
+            print(f"{link} -> {origin}")
+    print()
+    
+    print("# Transcript FASTAs:")
+    mrnaLinks = [ os.path.join(txDir, f) for f in os.listdir(txDir) if f.endswith(".mrna") ]
+    otherSeqLinks = []
+    for mrnaLink in mrnaLinks:
+        suffixNum = mrnaLink.rsplit("transcriptome", maxsplit=1)[1].split(".mrna")[0]
+        cdsLink = os.path.join(txDir, f"transcriptome{suffixNum}.cds")
+        protLink = os.path.join(txDir, f"transcriptome{suffixNum}.aa")
+        if os.path.exists(cdsLink) and os.path.exists(protLink):
+            otherSeqLinks.append([cdsLink, protLink])
+        else:
+            otherSeqLinks.append(None)
+    mrnaOrigins = [ str(Path(t).resolve()) for t in mrnaLinks ]
+    otherSeqOrigins = [ (str(Path(value[0]).resolve()), str(Path(value[1]).resolve())) if value is not None else None for value in otherSeqLinks ]
+    
+    if len(mrnaLinks) == 0:
+        print("None")
+    else:
+        ongoingCount = 0
+        for mrnaLink, mrnaOrigin, otherSeqOrigin in zip(mrnaLinks, mrnaOrigins, otherSeqOrigins):
+            if otherSeqOrigin is not None:
+                cdsOrigin, protOrigin = otherSeqOrigin
+                print(f"mRNA: {mrnaLink} -> {mrnaOrigin}")
+                print(f"CDS: {cdsOrigin} -> {cdsOrigin}")
+                print(f"AA: {protOrigin} -> {protOrigin}")
+            else:
+                suffixNum = mrnaLink.rsplit("transcriptome", maxsplit=1)[1].split(".mrna")[0]
+                cdsFile = os.path.join(sequencesDir, f"transcriptome{suffixNum}.cds")
+                aaFile = os.path.join(sequencesDir, f"transcriptome{suffixNum}.aa")
+                print(f"mRNA: {mrnaLink} -> {mrnaOrigin}")
+                print(f"CDS (predicted): {cdsFile}")
+                print(f"AA (predicted): {aaFile}")
+            ongoingCount += 1
+            if ongoingCount < len(mrnaLinks):
+                print()
+    print()
+    
+    # Parse the clustering results (if available)
+    print("# Clustering result:")
+    clusterFile = os.path.join(runDir, "BINge_clustering_result.tsv")
+    if os.path.exists(clusterFile):
+        binnedDict = parse_binge_clusters(clusterFile, "binned")
+        unbinnedDict = parse_binge_clusters(clusterFile, "unbinned")
+        
+        seqsBinned = sum([len(seqIDs) for seqIDs in binnedDict.values()])
+        seqsUnbinned = sum([len(seqIDs) for seqIDs in unbinnedDict.values()])
+        
+        print(f"# Number of binned clusters: {len(binnedDict)}")
+        print(f"# Number of sequences in binned clusters: {seqsBinned}")
+        print(f"# Number of unbinned clusters: {len(unbinnedDict)}")
+        print(f"# Number of sequences in unbinned clusters: {seqsUnbinned}")
+    else:
+        print("No clustering result available")
+    
     print("Viewing complete!")
 
 if __name__ == "__main__":
