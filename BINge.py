@@ -549,7 +549,7 @@ def cmain(args):
     
     mostRecentDir = os.path.join(analysisDir, "most_recent")
     if os.path.exists(mostRecentDir):
-        os.remove(mostRecentDir)
+        os.unlink(mostRecentDir)
     os.symlink(runDir, mostRecentDir)
     
     # Store the parameters used in this run
@@ -632,7 +632,7 @@ def cmain(args):
     transcriptRecords = FastaCollection([
         os.path.join(sequencesDir, f)
         for f in os.listdir(sequencesDir)
-        if f.endswith(".nucl")
+        if f.endswith(".cds")
     ])
     unbinnedIDs = get_unbinned_sequence_ids(clusterDict, eliminations, transcriptRecords)
     if args.debug:
@@ -668,7 +668,7 @@ def vmain(args):
     with open(os.path.join(runDir, "parameters.json"), "r") as paramsIn:
         params = json.load(paramsIn)
     
-    print("# Parameters:")
+    print(f"# Parameters for '{args.runDirName}':")
     for key, value in params.items():
         print(f"{key}: {value}")
     print()
