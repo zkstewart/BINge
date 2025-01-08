@@ -1,6 +1,7 @@
 import os, distutils.spawn, platform, subprocess, sys
 from pathlib import Path
 
+# Argument validations
 def _validate_gmap(args):
     if args.gmapDir == None:
         gmap = distutils.spawn.find_executable("gmap")
@@ -168,7 +169,193 @@ def validate_view_args(args):
     if not os.path.isdir(os.path.join(analysisDir, args.runDirName)):
         raise FileNotFoundError(f"Unable to locate '{args.runDirName}' within '{analysisDir}'; " +
                                 "have you run the clustering step yet?")
+
+def validate_blast_args(args):
+    # Validate working directory
+    args.workingDirectory = os.path.abspath(args.workingDirectory)
+    if not os.path.isdir(args.workingDirectory):
+        raise FileNotFoundError(f"Unable to locate the working directory '{args.workingDirectory}'")
     
+    # Validate that sequences directory exists
+    sequencesDir = os.path.join(args.workingDirectory, "sequences")
+    if not os.path.isdir(sequencesDir):
+        raise FileNotFoundError(f"Unable to locate 'sequences' within '{sequencesDir}'; " +
+                                "have you run the initialisation step yet?")
+    
+    # Validate that sequences exist in the sequences directory
+    sequenceSuffix = ".cds" if args.sequenceType == "nucleotide" else ".aa"
+    sequenceFiles = [
+        os.path.join(sequencesDir, f)
+        for f in os.listdir(sequencesDir)
+        if f.endswith(sequenceSuffix)
+    ]
+    if sequenceFiles == []:
+        raise FileNotFoundError(f"Unable to locate any '{sequenceSuffix}' files within '{sequencesDir}'; " +
+                                "have you run the initialisation step yet?")
+    else:
+        for sequenceFile in sequenceFiles:
+            if not os.path.isfile(sequenceFile + ".ok"):
+                raise FileNotFoundError(f"Unable to locate '{sequenceFile}.ok' to go along with '{sequenceFile}'; " +
+                                        "re-run the initialisation step to ensure file is OK.")
+    args.sequenceFiles = sequenceFiles
+    
+    # Validate that the BLAST database exists
+    args.targetFile = os.path.abspath(args.targetFile)
+    if not os.path.isfile(args.targetFile):
+        raise FileNotFoundError(f"Unable to locate the -t FASTA file '{args.targetFile}'")
+    
+    # Validate that MMseqs2 executable is locateable
+    if args.mms2Exe == None:
+        mms2 = distutils.spawn.find_executable("mmseqs")
+        if mms2 == None:
+            raise FileNotFoundError("--mms2Exe wasn't specified, and 'mmseqs' is missing from your PATH")
+        args.mms2Exe = mms2
+    else:
+        if not os.path.isfile(args.mms2Exe):
+            raise FileNotFoundError(f"Unable to locate the MMseqs2 executable '{args.mms2Exe}'")
+    args.mms2Exe = os.path.abspath(args.mms2Exe)
+    
+def validate_filter_args(args):
+    # Validate working directory
+    args.workingDirectory = os.path.abspath(args.workingDirectory)
+    if not os.path.isdir(args.workingDirectory):
+        raise FileNotFoundError(f"Unable to locate the working directory '{args.workingDirectory}'")
+    
+    # Derive the analysis directory name (without following symlink yet)
+    if args.analysisFolder != "most_recent":
+        if args.analysisFolder.startswith("run_"):
+            args.runDirName = args.analysisFolder
+        else:
+            args.runDirName = f"run_{args.analysisFolder}"
+    else:
+        args.runDirName = args.analysisFolder
+    
+    # Validate that analysis directory exists
+    analysisDir = os.path.join(args.workingDirectory, "analysis")
+    args.runDirName = _derive_folder_location(analysisDir, args.runDirName)
+    
+    # Validate that the cluster file exists
+    resultsDir = os.path.join(analysisDir, args.runDirName)
+    clusterFile = os.path.join(resultsDir, "BINge_clustering_result.tsv")
+    if not os.path.isfile(clusterFile) and os.path.exists(clusterFile + ".ok"):
+        raise FileNotFoundError("Unable to locate 'BINge_clustering_result.tsv' and " + 
+                                f"'BINge_clustering_result.tsv.ok' within '{resultsDir}'")
+    args.bingeFile = clusterFile
+    
+    # Validate cluster file format
+    isBinge = validate_cluster_file(clusterFile)
+    if not isBinge:
+        raise ValueError(f"The file '{clusterFile}' does not appear to be a BINge cluster file; " + 
+                         "has this been corrupted somehow?")
+    
+    # Validate BLAST file (if applicable)
+    ## TBD: Implement properly
+    
+    # Validate GFF3 file (if applicable)
+    ## TBD: Implement properly
+    
+    # Validate numeric parameters
+    if args.evalue < 0:
+        raise ValueError("--evalue must be a positive float value >= 0")
+    if args.readLength < 1:
+        raise ValueError("--readLength must be a positive integer value >= 1")
+    if args.minimumLength < 0:
+        raise ValueError("--length must be a positive integer value >= zero")
+    
+    # Validate salmon files if relevant
+    ## TBD: Implement properly
+    #if args.salmonFiles != []:
+    #    args.salmonFileFormat = validate_salmon_files(args.salmonFiles)
+
+def validate_representatives_args(args):
+    # Validate working directory
+    args.workingDirectory = os.path.abspath(args.workingDirectory)
+    if not os.path.isdir(args.workingDirectory):
+        raise FileNotFoundError(f"Unable to locate the working directory '{args.workingDirectory}'")
+    
+    # Derive the analysis directory name (without following symlink yet)
+    if args.analysisFolder != "most_recent":
+        if args.analysisFolder.startswith("run_"):
+            args.runDirName = args.analysisFolder
+        else:
+            args.runDirName = f"run_{args.analysisFolder}"
+    else:
+        args.runDirName = args.analysisFolder
+    
+    # Locate which analysis directory to use
+    rawDir = os.path.join(args.workingDirectory, "analysis")
+    filterDir = os.path.join(args.workingDirectory, "filter")
+    
+    rawRunDir = os.path.join(rawDir, args.runDirName)
+    filterRunDir = os.path.join(filterDir, args.runDirName)
+    
+    if os.path.isdir(filterRunDir):
+        print(f"Detected '{args.runDirName}' within the 'filter' directory; will attempt to use " + 
+              "this for representative selection")
+        
+        # Update the folder location (following symlink if necessary)
+        args.runDirName = _derive_folder_location(filterDir, args.runDirName)
+        filterRunDir = os.path.join(filterDir, args.runDirName) # update the path with symlink-followed location
+        
+        # Validate that the cluster file exists
+        clusterFile = os.path.join(filterRunDir, "BINge_clustering_result.filtered.tsv")
+        if not os.path.isfile(clusterFile) and not os.path.exists(clusterFile + ".ok"):
+            raise FileNotFoundError(f"Unable to locate 'BINge_clustering_result.filtered.tsv' and " +
+                                    f"'BINge_clustering_result.filtered.tsv.ok' within '{filterRunDir}'")
+    else:
+        print(f"Detected '{args.runDirName}' within the 'analysis' directory; will attempt to use " + 
+              "this for representative selection")
+        
+        # Update the folder location (following symlink if necessary)
+        args.runDirName = _derive_folder_location(rawDir, args.runDirName)
+        rawRunDir = os.path.join(rawDir, args.runDirName) # update the path with symlink-followed location
+        
+        # Validate that the cluster file exists
+        clusterFile = os.path.join(rawRunDir, "BINge_clustering_result.tsv")
+        if not os.path.isfile(clusterFile) and not os.path.exists(clusterFile + ".ok"):
+            raise FileNotFoundError(f"Unable to locate 'BINge_clustering_result.tsv' and " +
+                                    f"'BINge_clustering_result.tsv.ok' within '{rawRunDir}'")
+    args.bingeFile = clusterFile
+    
+    # Validate cluster file format
+    isBinge = validate_cluster_file(clusterFile)
+    if not isBinge:
+        raise ValueError(f"The file '{clusterFile}' does not appear to be a BINge cluster file; " + 
+                         "has this been corrupted somehow?")
+    
+    # Validate numeric parameters
+    if args.evalue < 0:
+        raise ValueError("--evalue must be a positive float value >= 0")
+    
+    # Validate BLAST file (if applicable)
+    ## TBD: Implement properly
+    
+    # Validate GFF3 file (if applicable)
+    ## TBD: Implement properly
+    
+    # Validate salmon files if relevant
+    ## TBD: Implement properly
+    #if args.salmonFiles != []:
+    #    args.salmonFileFormat = validate_salmon_files(args.salmonFiles)
+
+def _derive_folder_location(analysisFolder, runDirName):
+    # Follow the symlink if necessary
+    if runDirName != "most_recent":
+        if runDirName.startswith("run_"):
+            runDirName = runDirName
+        else:
+            runDirName = f"run_{runDirName}"
+    else:
+        runDirLink = os.path.join(analysisFolder, runDirName)
+        runDirLocation = os.path.basename(str(Path(runDirLink).resolve())) # go from 'most_recent' to 'run_XX'
+        if not os.path.isdir(os.path.join(analysisFolder, runDirLocation)):
+            raise FileNotFoundError(f"Unable to locate '{runDirLocation}' within '{analysisFolder}'")
+        
+        runDirName = runDirLocation
+        print(f"Run folder identified as: 'most_recent' -> '{runDirLocation}'")
+    return runDirName
+
+# File validations
 def validate_salmon_files(salmonFiles):
     '''
     Validates Salmon files for 1) their existence and 2) their consistency of file format.
