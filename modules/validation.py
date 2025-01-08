@@ -182,22 +182,9 @@ def validate_blast_args(args):
         raise FileNotFoundError(f"Unable to locate 'sequences' within '{sequencesDir}'; " +
                                 "have you run the initialisation step yet?")
     
-    # Validate that sequences exist in the sequences directory
+    # Locate and validate that sequences exist in the sequences directory
     sequenceSuffix = ".cds" if args.sequenceType == "nucleotide" else ".aa"
-    sequenceFiles = [
-        os.path.join(sequencesDir, f)
-        for f in os.listdir(sequencesDir)
-        if f.endswith(sequenceSuffix)
-    ]
-    if sequenceFiles == []:
-        raise FileNotFoundError(f"Unable to locate any '{sequenceSuffix}' files within '{sequencesDir}'; " +
-                                "have you run the initialisation step yet?")
-    else:
-        for sequenceFile in sequenceFiles:
-            if not os.path.isfile(sequenceFile + ".ok"):
-                raise FileNotFoundError(f"Unable to locate '{sequenceFile}.ok' to go along with '{sequenceFile}'; " +
-                                        "re-run the initialisation step to ensure file is OK.")
-    args.sequenceFiles = sequenceFiles
+    args.sequenceFiles = validate_sequence_files(sequencesDir, sequenceSuffix)
     
     # Validate that the BLAST database exists
     args.targetFile = os.path.abspath(args.targetFile)
@@ -208,13 +195,40 @@ def validate_blast_args(args):
     if args.mms2Exe == None:
         mms2 = distutils.spawn.find_executable("mmseqs")
         if mms2 == None:
-            raise FileNotFoundError("--mms2Exe wasn't specified, and 'mmseqs' is missing from your PATH")
+            raise FileNotFoundError("--mms2 wasn't specified, and 'mmseqs' is missing from your PATH")
         args.mms2Exe = mms2
     else:
         if not os.path.isfile(args.mms2Exe):
             raise FileNotFoundError(f"Unable to locate the MMseqs2 executable '{args.mms2Exe}'")
     args.mms2Exe = os.path.abspath(args.mms2Exe)
+
+def validate_salmon_args(args):
+    # Validate working directory
+    args.workingDirectory = os.path.abspath(args.workingDirectory)
+    if not os.path.isdir(args.workingDirectory):
+        raise FileNotFoundError(f"Unable to locate the working directory '{args.workingDirectory}'")
     
+    # Validate that sequences directory exists
+    sequencesDir = os.path.join(args.workingDirectory, "sequences")
+    if not os.path.isdir(sequencesDir):
+        raise FileNotFoundError(f"Unable to locate 'sequences' within '{sequencesDir}'; " +
+                                "have you run the initialisation step yet?")
+    
+    # Locate and validate that sequences exist in the sequences directory
+    sequenceSuffix = ".cds" # always CDS for Salmon mapping
+    args.sequenceFiles = validate_sequence_files(sequencesDir, sequenceSuffix)
+    
+    # Validate that salmon executable is locateable
+    if args.salmonExe == None:
+        salmon = distutils.spawn.find_executable("salmon")
+        if salmon == None:
+            raise FileNotFoundError("--salmon wasn't specified, and 'salmon' is missing from your PATH")
+        args.salmonExe = salmon
+    else:
+        if not os.path.isfile(args.salmonExe):
+            raise FileNotFoundError(f"Unable to locate the salmon executable '{args.salmonExe}'")
+    args.salmonExe = os.path.abspath(args.salmonExe)
+
 def validate_filter_args(args):
     # Validate working directory
     args.workingDirectory = os.path.abspath(args.workingDirectory)
@@ -283,39 +297,7 @@ def validate_representatives_args(args):
         args.runDirName = args.analysisFolder
     
     # Locate which analysis directory to use
-    rawDir = os.path.join(args.workingDirectory, "analysis")
-    filterDir = os.path.join(args.workingDirectory, "filter")
-    
-    rawRunDir = os.path.join(rawDir, args.runDirName)
-    filterRunDir = os.path.join(filterDir, args.runDirName)
-    
-    if os.path.isdir(filterRunDir):
-        print(f"Detected '{args.runDirName}' within the 'filter' directory; will attempt to use " + 
-              "this for representative selection")
-        
-        # Update the folder location (following symlink if necessary)
-        args.runDirName = _derive_folder_location(filterDir, args.runDirName)
-        filterRunDir = os.path.join(filterDir, args.runDirName) # update the path with symlink-followed location
-        
-        # Validate that the cluster file exists
-        clusterFile = os.path.join(filterRunDir, "BINge_clustering_result.filtered.tsv")
-        if not os.path.isfile(clusterFile) and not os.path.exists(clusterFile + ".ok"):
-            raise FileNotFoundError(f"Unable to locate 'BINge_clustering_result.filtered.tsv' and " +
-                                    f"'BINge_clustering_result.filtered.tsv.ok' within '{filterRunDir}'")
-    else:
-        print(f"Detected '{args.runDirName}' within the 'analysis' directory; will attempt to use " + 
-              "this for representative selection")
-        
-        # Update the folder location (following symlink if necessary)
-        args.runDirName = _derive_folder_location(rawDir, args.runDirName)
-        rawRunDir = os.path.join(rawDir, args.runDirName) # update the path with symlink-followed location
-        
-        # Validate that the cluster file exists
-        clusterFile = os.path.join(rawRunDir, "BINge_clustering_result.tsv")
-        if not os.path.isfile(clusterFile) and not os.path.exists(clusterFile + ".ok"):
-            raise FileNotFoundError(f"Unable to locate 'BINge_clustering_result.tsv' and " +
-                                    f"'BINge_clustering_result.tsv.ok' within '{rawRunDir}'")
-    args.bingeFile = clusterFile
+    args.bingeFile = _locate_raw_or_filtered_results(args)
     
     # Validate cluster file format
     isBinge = validate_cluster_file(clusterFile)
@@ -337,6 +319,64 @@ def validate_representatives_args(args):
     ## TBD: Implement properly
     #if args.salmonFiles != []:
     #    args.salmonFileFormat = validate_salmon_files(args.salmonFiles)
+
+def validate_dge_args(args):
+    # Validate working directory
+    args.workingDirectory = os.path.abspath(args.workingDirectory)
+    if not os.path.isdir(args.workingDirectory):
+        raise FileNotFoundError(f"Unable to locate the working directory '{args.workingDirectory}'")
+    
+    # Derive the analysis directory name (without following symlink yet)
+    if args.analysisFolder != "most_recent":
+        if args.analysisFolder.startswith("run_"):
+            args.runDirName = args.analysisFolder
+        else:
+            args.runDirName = f"run_{args.analysisFolder}"
+    else:
+        args.runDirName = args.analysisFolder
+    
+    # Locate which analysis directory to use
+    args.bingeFile = _locate_raw_or_filtered_results(args)
+    
+    # Validate cluster file format
+    isBinge = validate_cluster_file(clusterFile)
+    if not isBinge:
+        raise ValueError(f"The file '{clusterFile}' does not appear to be a BINge cluster file; " + 
+                         "has this been corrupted somehow?")
+
+def _locate_raw_or_filtered_results(args):
+    rawDir = os.path.join(args.workingDirectory, "analysis")
+    filterDir = os.path.join(args.workingDirectory, "filter")
+    
+    rawRunDir = os.path.join(rawDir, args.runDirName)
+    filterRunDir = os.path.join(filterDir, args.runDirName)
+    
+    if os.path.isdir(filterRunDir):
+        print(f"Detected '{args.runDirName}' within the 'filter' directory; will attempt to use this.")
+        
+        # Update the folder location (following symlink if necessary)
+        args.runDirName = _derive_folder_location(filterDir, args.runDirName)
+        filterRunDir = os.path.join(filterDir, args.runDirName) # update the path with symlink-followed location
+        
+        # Validate that the cluster file exists
+        clusterFile = os.path.join(filterRunDir, "BINge_clustering_result.filtered.tsv")
+        if not os.path.isfile(clusterFile) and not os.path.exists(clusterFile + ".ok"):
+            raise FileNotFoundError(f"Unable to locate 'BINge_clustering_result.filtered.tsv' and " +
+                                    f"'BINge_clustering_result.filtered.tsv.ok' within '{filterRunDir}'")
+    else:
+        print("No filtered results found; will try to use raw results instead.")
+        print(f"Detected '{args.runDirName}' within the 'analysis' directory; will attempt to use this.")
+        
+        # Update the folder location (following symlink if necessary)
+        args.runDirName = _derive_folder_location(rawDir, args.runDirName)
+        rawRunDir = os.path.join(rawDir, args.runDirName) # update the path with symlink-followed location
+        
+        # Validate that the cluster file exists
+        clusterFile = os.path.join(rawRunDir, "BINge_clustering_result.tsv")
+        if not os.path.isfile(clusterFile) and not os.path.exists(clusterFile + ".ok"):
+            raise FileNotFoundError(f"Unable to locate 'BINge_clustering_result.tsv' and " +
+                                    f"'BINge_clustering_result.tsv.ok' within '{rawRunDir}'")
+    return clusterFile
 
 def _derive_folder_location(analysisFolder, runDirName):
     # Follow the symlink if necessary
@@ -442,6 +482,22 @@ def validate_fasta(fastaFile):
         if not firstLine.startswith(">"):
             return False
         return True
+
+def validate_sequence_files(sequencesDir, sequenceSuffix):
+    sequenceFiles = [
+        os.path.join(sequencesDir, f)
+        for f in os.listdir(sequencesDir)
+        if f.endswith(sequenceSuffix)
+    ]
+    if sequenceFiles == []:
+        raise FileNotFoundError(f"Unable to locate any '{sequenceSuffix}' files within '{sequencesDir}'; " +
+                                "have you run the initialisation step yet?")
+    else:
+        for sequenceFile in sequenceFiles:
+            if not os.path.isfile(sequenceFile + ".ok"):
+                raise FileNotFoundError(f"Unable to locate '{sequenceFile}.ok' to go along with '{sequenceFile}'; " +
+                                        "re-run the initialisation step to ensure file is OK.")
+    return sequenceFiles
 
 def handle_symlink_change(existingLink, newLinkLocation):
     '''

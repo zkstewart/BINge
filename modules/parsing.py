@@ -134,3 +134,63 @@ def load_sequence_length_index(indexFile):
     else:
         raise FileNotFoundError(("load_sequence_length_index() failed because " + 
                                  f"'{indexFile}' doesn't exist!"))
+
+def locate_read_files(readsDir, readsSuffix, isSingleEnd):
+    '''
+    Parameters:
+        readsDir -- a list of strings indicating the directory where
+                    reads files are located.
+        readsSuffix -- a string indicating the suffix of the reads files.
+        isSingleEnd -- a boolean indicating whether the reads are single-end (True)
+                       or paired-end (False).
+    Returns:
+        forwardReads -- a list of strings indicating the location of forward reads.
+        reverseReads -- a list of strings indicating the location of reverse reads
+                        OR None if the reads are single-end.
+        sampleNames -- a list of strings indicating the common prefix of the reads files
+                       (if paired-end) or the file name sans suffix (if single-end).
+    '''
+    # Locate files from the directory
+    forwardReads = []
+    reverseReads = []
+    sampleNames = []
+    for dir in readsDir:
+        for file in os.listdir(dir):
+            if file.endswith(readsSuffix):
+                if isSingleEnd:
+                    forwardReads.append(os.path.join(dir, file))
+                    sampleNames.append(file.rsplit(readsSuffix, maxsplit=1)[0])
+                else:
+                    if file.endswith(f"1{readsSuffix}"):
+                        forwardReads.append(os.path.join(dir, file))
+                    elif file.endswith(f"2{readsSuffix}"):
+                        reverseReads.append(os.path.join(dir, file))
+                    else:
+                        raise ValueError(f"{file} ends with the expected suffix '{readsSuffix}' but is " +
+                                        "not preceeded by a 1 or 2!")
+    forwardReads.sort()
+    reverseReads.sort()
+    
+    # Validate that paired files match
+    if not isSingleEnd:
+        if not len(forwardReads) == len(reverseReads):
+            raise FileNotFoundError(f"Number of reads don't match for forward ({len(forwardReads)}) " + 
+                                    f"and reverse ({len(reverseReads)}) files")
+        
+        for i in range(len(forwardReads)):
+            forward = os.path.basename(forwardReads[i]) # strip directory which may falsely give a common prefix
+            reverse = os.path.basename(reverseReads[i])
+            
+            prefix = os.path.commonprefix([forward, reverse]).rstrip("_ ")
+            if prefix == "":
+                raise ValueError("Forward and reverse read pairs don't have a common prefix after " +
+                                 "sorting; make sure that files are named in a way that they can be " +
+                                 "paired together!")
+            if not forwardReads[i].startswith(f"{prefix}1") and reverseReads[i].startswith(f"{prefix}2"):
+                raise ValueError(f"Forward read '{forwardReads[i]}' and reverse read '{forwardReads[i]}' " +
+                                 "files don't start with a valid common prefix i.e., " + 
+                                 f"'{prefix} should preceed a 1 or 2")
+            sampleNames.append(prefix)
+    
+    # Return files
+    return forwardReads, reverseReads if reverseReads != [] else None, sampleNames

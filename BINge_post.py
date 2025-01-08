@@ -3,8 +3,8 @@
 # BIN Genes for Expression analyses - post-processing modules
 
 # A collection of functions for downstream processing of BINge clustering,
-# allowing you to 1) BLAST sequences against a database, 2) map reads
-# to sequences using salmon, 3) filter clusters based on these results,
+# allowing you to 1) BLAST sequences against a database, 2) quantify reads
+# using salmon, 3) filter clusters based on these results,
 # and 4) extract representative sequences for each cluster also based on
 # these results.
 
@@ -12,12 +12,13 @@ import os, argparse, sys
 import numpy as np
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from Various_scripts.Function_packages import ZS_BlastIO
+from Various_scripts.Function_packages import ZS_BlastIO, ZS_MapIO
 
 from modules.fasta_handling import ZS_SeqIO, FastaCollection
-from modules.validation import validate_blast_args, validate_filter_args, \
-    validate_representatives_args, validate_salmon_files, validate_cluster_file, touch_ok
-from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge_clusters
+from modules.validation import validate_blast_args, validate_salmon_args, validate_filter_args, \
+    validate_representatives_args, validate_dge_args, touch_ok
+from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge_clusters, \
+    locate_read_files
 
 # Define functions
 def validate_args(args):
@@ -275,11 +276,37 @@ def determine_if_1x_filter(transcriptCounts, seqIDs, transcriptRecords, readLeng
     
     return has1x
 
+def concatenate_sequences(sequenceFiles, outputFileName):
+    '''
+    Helper function to concatenate all sequence files into a single file, as needed
+    when running BLAST or salmon read quantification.
+    
+    Parameters:
+        sequenceFiles -- a list of strings indicating the locations of FASTA files to
+                         concatenate.
+        outputFileName -- a string indicating the location of the output file.
+    '''
+    if not os.path.exists(outputFileName) or not os.path.exists(outputFileName + ".ok"):
+        print("# Concatenating all sequence files into a single file...")
+        with open(outputFileName, "w") as fileOut:
+            for fastaFile in sequenceFiles:
+                with open(fastaFile, "r") as fileIn:
+                    for line in fileIn:
+                        fileOut.write(line)
+                if not line.endswith("\n"):
+                    fileOut.write("\n")
+        touch_ok(outputFileName)
+
 ## Main
 def main():
-    blastDescription = '''TBD'''
+    blastDescription = """'blast' aims to query the sequences used during BINge clustering
+    to a target database using MMseqs2. This information can be used to filter clusters or
+    pick representatives of clusters."""
     
-    salmonDescription = '''TBD'''
+    salmonDescription = """'salmon' aims to quantify sequences used during BINge clustering
+    with reads from one or more FASTQ files. This information can be used to filter clusters
+    or pick representatives of clusters. It also allows for their downstream use in DGE
+    analysis."""
     
     filterDescription = """'filter' aims to remove low-quality clusters from a BINge
     clustering analysis on the basis of various biological evidence. These can include
@@ -311,11 +338,11 @@ def main():
     The ID for each sequence follows a format like '>Cluster-1 representative=transcript_92'.
     """
     
-    dgeDescription = '''TBD'''
+    dgeDescription = """TBD"""
     
     mainDescription = """%(prog)s provides the ability to 'filter' clusters from a BINge
     clustering analysis, as well as pick 'representatives' for each cluster. Data required
-    to do this (i.e., BLAST and salmon read mapping) is facilitated by the 'blast' and
+    to do this (i.e., BLAST and salmon read quantification) is facilitated by the 'blast' and
     'salmon' options, respectively. Note that the term 'BLAST' is being used informally;
     the MMseqs2 program is used for any sequence similarity searches."""
     
@@ -342,7 +369,7 @@ def main():
     sparser = subparsers.add_parser("salmon",
                                     parents=[p],
                                     add_help=False,
-                                    help="Run salmon read mapping against sequences",
+                                    help="Run salmon read quantification against sequences",
                                     description=salmonDescription)
     sparser.set_defaults(func=smain)
     
@@ -384,6 +411,40 @@ def main():
                          default=None)
     ## Optional (parameters)
     bparser.add_argument("--threads", dest="threads",
+                         required=False,
+                         type=int,
+                         help="""Optionally, specify how many threads to run search with
+                         (default==1)""",
+                         default=1)
+    
+    # Salmon-subparser arguments
+    sparser.add_argument("-r", dest="readsDir",
+                         required=True,
+                         nargs="+",
+                         help="""Specify one or more locations containing FASTQ files
+                         for read quantification.""")
+    sparser.add_argument("-s", dest="readsSuffix",
+                         required=True,
+                         help="""Indicate the suffix of your FASTQ files (e.g., '.fastq',
+                         '.fq', '.fq.gz'); if your reads are paired, this suffix must
+                         immediately follow the read number (e.g., '_1.fastq', '_2.fastq');
+                         all files with this suffix in locations provided
+                         to -r will be used.""")
+    ## Optional (flags)
+    sparser.add_argument("--singleEnd", dest="singleEnd",
+                         required=False,
+                         action="store_true",
+                         help="""Set this flag if your reads are single-ended; if they are not,
+                         read pairs will be automatically determined by shared file prefix.""",
+                         default=False)
+    ## Optional (program locations)
+    sparser.add_argument("--salmon", dest="salmonExe",
+                         required=False,
+                         help="""Specify the location of the salmon executable if not locateable
+                         in your PATH variable.""",
+                         default=None)
+    ## Optional (parameters)
+    sparser.add_argument("--threads", dest="threads",
                          required=False,
                          type=int,
                          help="""Optionally, specify how many threads to run search with
@@ -491,7 +552,7 @@ def main():
         validate_blast_args(args) # sets args.sequenceFiles
         bmain(args)
     elif args.mode == "salmon":
-        print("## BINge_post.py - Salmon read mapping ##")
+        print("## BINge_post.py - Salmon read quantification ##")
         validate_salmon_args(args)
         smain(args)
     elif args.mode == "filter":
@@ -529,16 +590,7 @@ def bmain(args):
     # Concatenate all FASTA files into a single file
     sequenceSuffix = ".cds" if args.sequenceType == "nucleotide" else ".aa"
     concatFileName = os.path.join(blastDir, f"concatenated{sequenceSuffix}")
-    if not os.path.exists(concatFileName) or not os.path.exists(concatFileName + ".ok"):
-        print("# Concatenating all sequence files into a single file...")
-        with open(concatFileName, "w") as fileOut:
-            for fastaFile in args.sequenceFiles:
-                with open(fastaFile, "r") as fileIn:
-                    for line in fileIn:
-                        fileOut.write(line)
-                if not line.endswith("\n"):
-                    fileOut.write("\n")
-        touch_ok(concatFileName)
+    concatenate_sequences(args.sequenceFiles, concatFileName)
     
     # Establish the MMseqs2 query and target databases
     queryDB = ZS_BlastIO.MM_DB(concatFileName, os.path.dirname(args.mms2Exe), tmpDir,
@@ -561,7 +613,45 @@ def bmain(args):
     print("BLAST search complete!")
 
 def smain(args):
-    pass
+    # Set up salmon directory
+    salmonDir = os.path.join(args.workingDirectory, "salmon")
+    os.makedirs(salmonDir, exist_ok=True)
+    
+    # Locate read files
+    forwardReads, reverseReads, sampleNames = locate_read_files(args.readsDir, args.readsSuffix,
+                                                               args.singleEnd)
+    
+    # Concatenate all FASTA files into a single file
+    concatFileName = os.path.join(salmonDir, f"concatenated.cds") # map to CDS
+    concatenate_sequences(args.sequenceFiles, concatFileName)
+    
+    # Establish the salmon target database
+    targetDB = ZS_MapIO.Salmon_DB(concatFileName, os.path.dirname(args.salmonExe),
+                                  args.threads)
+    if not targetDB.index_exists():
+        targetDB.index()
+    
+    # Run salmon read quantification
+    for i, sampleName in enumerate(sampleNames):
+        # Establish the salmon object
+        if args.singleEnd:
+            salmon = ZS_MapIO.Salmon([forwardReads[i]], targetDB, os.path.dirname(args.salmonExe),
+                                     args.threads)
+        else:
+            salmon = ZS_MapIO.Salmon([forwardReads[i], reverseReads[i]], targetDB, os.path.dirname(args.salmonExe),
+                                     args.threads)
+        
+        # Set up sample directory
+        sampleDir = os.path.join(salmonDir, sampleName)
+        os.makedirs(sampleDir, exist_ok=True)
+        
+        # Run salmon (if not already run)
+        if not os.path.exists(sampleDir + ".ok"):
+            print(f"# Running salmon quantification for '{sampleName}'...")
+            salmon.quant(sampleDir)
+            touch_ok(sampleDir + ".ok")
+    
+    print("Salmon quant complete!")
 
 def fmain(args):
     # Set up filter directory for this run
