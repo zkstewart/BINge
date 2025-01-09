@@ -211,14 +211,14 @@ def find_overlapping_bins(binCollection, binQuery):
     return binOverlap
 
 # Other functions
-def generate_bin_collections(workingDirectory, threads, isMicrobial):
+def generate_bin_collections(genomesDir, threads, isMicrobial):
     '''
     Receives a list of genome FASTA files and generates bin collections each of these
     into BinCollection structures which are separately stored in the returned list.
     
     Parameters:
-        workingDirectory -- a string indicating an existing directory with genome GFF3
-                            and/or FASTA files in the subdirectory 'genomes'.
+        genomesDir -- a string indicating an existing directory with genome GFF3
+                      and/or FASTA files in it.
         threads -- an integer indicating how many threads to run.
         isMicrobial -- a boolean indicating whether the genomes are microbial or not which,
                        in turn, determines whether we will parse mRNA features (False) or
@@ -228,7 +228,6 @@ def generate_bin_collections(workingDirectory, threads, isMicrobial):
                           files.
     '''
     # Locate subdirectory containing files
-    genomesDir = os.path.join(workingDirectory, "genomes")
     if not os.path.isdir(genomesDir):
         raise FileNotFoundError(f"generate_bin_collections failed because '{genomesDir}' doesn't exist or isn't a directory.")
     
@@ -287,7 +286,7 @@ def generate_bin_collections(workingDirectory, threads, isMicrobial):
     
     return collectionList
 
-def populate_bin_collections(workingDirectory, collectionList, gmapFiles,
+def populate_bin_collections(genomesDir, collectionList, gmapFiles,
                              threads, gmapIdentity):
     '''
     Receives a list of BinCollection objects, alongside a list of GMAP GFF3 file
@@ -295,6 +294,8 @@ def populate_bin_collections(workingDirectory, collectionList, gmapFiles,
     an existing bin, or into a novel bin collection which is returned.
     
     Parameters:
+        genomesDir -- a string indicating an existing directory with genome GFF3
+                      and/or FASTA files in it.
         collectionList -- a list of BinCollection objects as resulting from
                           generate_bin_collections().
         gmapFiles -- a list of strings pointing to GMAP GFF3 files for population.
@@ -315,8 +316,7 @@ def populate_bin_collections(workingDirectory, collectionList, gmapFiles,
         genomeIndex = int(suffixNum) - 1
         
         # Get the location of the genome length index
-        thisGenomeIndex = os.path.join(workingDirectory, "genomes",
-                                       f"{genomePrefix}.fasta.lengths.pkl")
+        thisGenomeIndex = os.path.join(genomesDir, f"{genomePrefix}.fasta.lengths.pkl")
         
         # Get all GMAP files associated with this genome
         thisGmapFiles = [ gmFile for gmFile in gmapFiles if f"{genomePrefix}_" in gmFile]

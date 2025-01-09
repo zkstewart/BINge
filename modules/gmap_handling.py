@@ -21,30 +21,28 @@ class GmapIndexProcess(BasicProcess):
             db.index()
 
 # Other functions
-def setup_gmap_indices(workingDirectory, gmapDir, threads):
+def setup_gmap_indices(locations, gmapDir, threads):
     '''
     Will take the genome files in the workingDirectory 'genomes' subdir and
     generate indices for all files.
     
     Parameters:
-        workingDirectory -- a string indicating an existing directory to symlink and/or
-                            write FASTAs to.
+        locations -- a Locations object with attributes for directory locations.
         gmapDir -- a string indicating the location where 'gmap' and 'gmap_build' are found.
         threads -- an integer indicating how many threads to run GMAP with.
     '''
     # Locate subdirectory containing files
-    genomesDir = os.path.join(workingDirectory, "genomes")
-    if not os.path.isdir(genomesDir):
-        raise FileNotFoundError(f"setup_gmap_indices failed because '{genomesDir}' doesn't exist somehow?")
+    if not os.path.isdir(locations.genomesDir):
+        raise FileNotFoundError(f"setup_gmap_indices failed because '{locations.genomesDir}' doesn't exist somehow?")
     
     # Locate all genome files for indexing
     genomeFiles = [
-        [ os.path.join(genomesDir, f), f.split(".fasta")[0] ]
-        for f in os.listdir(genomesDir)
+        [ os.path.join(locations.genomesDir, f), f.split(".fasta")[0] ]
+        for f in os.listdir(locations.genomesDir)
         if f.endswith(".fasta")
     ]
     if not len(genomeFiles) > 0:
-        raise FileNotFoundError(f"setup_gmap_indices failed because '{genomesDir}' is empty somehow?")
+        raise FileNotFoundError(f"setup_gmap_indices failed because '{locations.genomesDir}' is empty somehow?")
     
     # Narrow down files to those needing indexing
     needsIndexing = []
@@ -72,48 +70,42 @@ def setup_gmap_indices(workingDirectory, gmapDir, threads):
                 indexWorkerThread.join()
                 indexWorkerThread.check_errors()
 
-def auto_gmapping(workingDirectory, gmapDir, threads):
+def auto_gmapping(locations, gmapDir, threads):
     '''
     Will take the transcriptome and annotation files in workingDirectory and
     use GMAP to align them to every file in the 'genomes' subdirectory.
     
     Parameters:
-        workingDirectory -- a string indicating an existing directory to symlink and/or
-                            write FASTAs to.
+        locations -- a Locations object with attributes for directory locations.
         gmapDir -- a string indicating the location where 'gmap' and 'gmap_build' are found.
         threads -- an integer indicating how many threads to run GMAP with.
     '''
     PROBLEM_REGEX = re.compile(r"Problem sequence: (.+?) \(.+?\)\n")
     
-    # Derive subdirectory locations
-    mappingDir = os.path.join(workingDirectory, "mapping")
-    sequencesDir = os.path.join(workingDirectory, "sequences")
-    
     # Create subdirectory for output files (if not already existing)
-    os.makedirs(mappingDir, exist_ok=True)
+    os.makedirs(locations.mappingDir, exist_ok=True)
     
     # Locate subdirectory containing files
-    genomesDir = os.path.join(workingDirectory, "genomes")
-    if not os.path.isdir(genomesDir):
-        raise FileNotFoundError(f"auto_gmapping failed because '{genomesDir}' doesn't exist somehow?")
+    if not os.path.isdir(locations.genomesDir):
+        raise FileNotFoundError(f"auto_gmapping failed because '{locations.genomesDir}' doesn't exist somehow?")
     
     # Locate all genome files for alignment target
     genomeFiles = [
-        [ os.path.join(genomesDir, f), f.split(".fasta", maxsplit=1)[0] ]
-        for f in os.listdir(genomesDir)
+        [ os.path.join(locations.genomesDir, f), f.split(".fasta", maxsplit=1)[0] ]
+        for f in os.listdir(locations.genomesDir)
         if f.endswith(".fasta")
     ]
     if not len(genomeFiles) > 0:
-        raise FileNotFoundError(f"auto_gmapping failed because '{genomesDir}' is empty somehow?")
+        raise FileNotFoundError(f"auto_gmapping failed because '{locations.genomesDir}' is empty somehow?")
     
     # Locate all sequence files for alignment query
     queryFiles = [
-        [ os.path.join(sequencesDir, f), f.split(".cds", maxsplit=1)[0] ]
-        for f in os.listdir(sequencesDir)
+        [ os.path.join(locations.sequencesDir, f), f.split(".cds", maxsplit=1)[0] ]
+        for f in os.listdir(locations.sequencesDir)
         if f.endswith(".cds")
     ]
     if not len(queryFiles) > 0:
-       raise FileNotFoundError(f"auto_gmapping failed because '{workingDirectory}' contains no query files somehow?")
+       raise FileNotFoundError(f"auto_gmapping failed because '{locations.sequencesDir}' contains no query files somehow?")
     
     # Iteratively perform GMAP search for all combinations
     notifiedOnce = False
@@ -122,7 +114,7 @@ def auto_gmapping(workingDirectory, gmapDir, threads):
         tmpQueryFile = f"{originalQuery}.tmp" # temporary file for problem sequences
         
         for genomeFile, genomePrefix in genomeFiles:
-            outputFileName = os.path.join(mappingDir, f"{queryPrefix}_to_{genomePrefix}_gmap.gff3")
+            outputFileName = os.path.join(locations.mappingDir, f"{queryPrefix}_to_{genomePrefix}_gmap.gff3")
             if not os.path.exists(outputFileName) or not os.path.exists(outputFileName + ".ok"):
                 # Give user a heads up
                 if not notifiedOnce:

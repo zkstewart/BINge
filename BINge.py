@@ -16,13 +16,15 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from modules.locations import Locations
 from modules.bins import BinBundle
 from modules.bin_handling import generate_bin_collections, populate_bin_collections
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.gff3_handling import extract_annotations_from_gff3
 from modules.clustering import cluster_unbinned_sequences
 from modules.parsing import parse_binge_clusters
-from modules.validation import validate_init_args, validate_cluster_args, validate_view_args, \
+from modules.validation import initialise_working_directory, validate_init_args, \
+    validate_cluster_args, validate_view_args, \
     validate_fasta, handle_symlink_change, touch_ok
 from modules.fasta_handling import AnnotationExtractor, FastaCollection, \
     generate_sequence_length_index, process_transcripts
@@ -30,7 +32,7 @@ from modules.fasta_handling import AnnotationExtractor, FastaCollection, \
 HASHING_PARAMS = ["gmapIdentity", "clusterVoteThreshold"]
 
 # Define functions
-def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, workingDirectory):
+def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations):
     '''
     Given a mix of FASTA and/or GFF3 files, this function will symlink FASTA files
     and generate FASTAs from the GFF3 files at the indicated working directory location.
@@ -40,19 +42,13 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, workingDir
         txomeFIles -- a list of strings pointing to transcriptome FASTAs as individual mRNA
                       files or as mRNA,CDS,protein files.
         targetGenomeFiles -- a list of strings pointing to genome FASTAs to align against.
-        workingDirectory -- a string indicating an existing directory to symlink and/or
-                            write FASTAs to.
+        locations -- a Locations object with attributes for directory locations.
     '''
     # Create subdirectory for files (if not already existing)
-    genomesDir = os.path.join(workingDirectory, "genomes")
-    sequencesDir = os.path.join(workingDirectory, "sequences")
-    gff3Dir = os.path.join(sequencesDir, "gff3s")
-    txDir = os.path.join(sequencesDir, "transcripts")
-    
-    os.makedirs(sequencesDir, exist_ok=True)
-    os.makedirs(gff3Dir, exist_ok=True)
-    os.makedirs(txDir, exist_ok=True)
-    os.makedirs(genomesDir, exist_ok=True)
+    os.makedirs(locations.sequencesDir, exist_ok=True)
+    os.makedirs(locations.gff3Dir, exist_ok=True)
+    os.makedirs(locations.txDir, exist_ok=True)
+    os.makedirs(locations.genomesDir, exist_ok=True)
     
     # Link to the -ig GFF3,genome values
     numIG = 0    
@@ -68,13 +64,13 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, workingDir
             raise ValueError(f"-ig value '{file}' after the ',' is not a FASTA file")
         
         # Symlink files to GFF3s subdirectory if not aleady existing
-        linkedGFF3 = os.path.join(gff3Dir, f"annotation{numIG}.gff3")
+        linkedGFF3 = os.path.join(locations.gff3Dir, f"annotation{numIG}.gff3")
         if os.path.exists(linkedGFF3):
             handle_symlink_change(linkedGFF3, gff3)
         else:
             os.symlink(gff3, linkedGFF3)
         
-        linkedFASTA = os.path.join(gff3Dir, f"genome{numIG}.fasta")
+        linkedFASTA = os.path.join(locations.gff3Dir, f"genome{numIG}.fasta")
         if os.path.exists(linkedFASTA):
             handle_symlink_change(linkedFASTA, fasta)
         else:
@@ -96,7 +92,7 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, workingDir
             
             # Symlink to main working directory if not already existing
             suffix = "mrna" if i == 0 else "cds" if i == 1 else "aa"
-            linkedTranscriptome = os.path.join(txDir, f"transcriptome{numTX}.{suffix}")
+            linkedTranscriptome = os.path.join(locations.txDir, f"transcriptome{numTX}.{suffix}")
             if os.path.exists(linkedTranscriptome):
                 handle_symlink_change(linkedTranscriptome, f)
             else:
@@ -118,13 +114,13 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, workingDir
                 quit()
             
             # Symlink files to genomes subdirectory if not aleady existing
-            linkedGFF3 = os.path.join(genomesDir, f"annotation{numGenomes}.gff3")
+            linkedGFF3 = os.path.join(locations.genomesDir, f"annotation{numGenomes}.gff3")
             if os.path.exists(linkedGFF3):
                 handle_symlink_change(linkedGFF3, gff3)
             else:
                 os.symlink(gff3, linkedGFF3)
             
-            linkedFASTA = os.path.join(genomesDir, f"genome{numGenomes}.fasta")
+            linkedFASTA = os.path.join(locations.genomesDir, f"genome{numGenomes}.fasta")
             if os.path.exists(linkedFASTA):
                 handle_symlink_change(linkedFASTA, fasta)
             else:
@@ -142,7 +138,7 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, workingDir
                 quit()
             
             # Symlink to main working directory if not already existing
-            linkedFASTA = os.path.join(genomesDir, f"genome{numGenomes}.fasta")
+            linkedFASTA = os.path.join(locations.genomesDir, f"genome{numGenomes}.fasta")
             
             if os.path.exists(linkedFASTA):
                 handle_symlink_change(linkedFASTA, fasta)
@@ -499,72 +495,73 @@ def main():
                          default="most_recent")
     
     args = subParentParser.parse_args()
+    initialise_working_directory(args.workingDirectory)
     
     # Split into mode-specific functions
     if args.mode in ["initialise", "init"]:
         print("## BINge.py - Initialisation ##")
-        validate_init_args(args)
-        imain(args)
+        locations = validate_init_args(args)
+        imain(args, locations)
     elif args.mode == "cluster":
         print("## BINge.py - Clustering ##")
-        validate_cluster_args(args)
-        cmain(args)
+        locations = validate_cluster_args(args)
+        cmain(args, locations)
     elif args.mode == "view":
         print("## BINge.py - Viewing ##")
-        validate_view_args(args) # sets args.runDirName
-        vmain(args)
+        locations = validate_view_args(args) # sets args.runDirName
+        vmain(args, locations)
     
     # Print completion flag if we reach this point
     print("Program completed successfully!")
 
-def imain(args):
+def imain(args, locations):
     # Setup sequence working directory for analysis
     setup_working_directory(args.inputGff3Files, args.inputTxomeFiles,
-                            args.targetGenomeFiles, args.workingDirectory)
+                            args.targetGenomeFiles, locations)
     
     # Extract mRNAs from any input GFF3 annotations
-    extract_annotations_from_gff3(args.workingDirectory, args.isMicrobial, args.threads)
+    extract_annotations_from_gff3(locations, args.isMicrobial, args.threads)
     
     # Extract CDS/proteins from any input transcript FASTAs
-    process_transcripts(args.workingDirectory, args.threads)
+    process_transcripts(locations, args.threads)
     
     # Establish GMAP indexes
-    setup_gmap_indices(args.workingDirectory, args.gmapDir, args.threads)
+    setup_gmap_indices(locations, args.gmapDir, args.threads)
     
     # Perform GMAP mapping
-    auto_gmapping(args.workingDirectory, args.gmapDir, args.threads)
+    auto_gmapping(locations, args.gmapDir, args.threads)
     
     print("Initialisation complete!")
 
-def cmain(args):
+def cmain(args, locations):
     paramHash = get_parameters_hash(args)
     print(f"# Hash associated with this 'cluster' analysis is {paramHash}")
+    locations.runName = paramHash
     
     # Set up analysis directory for this run
-    analysisDir = os.path.join(args.workingDirectory, "analysis")
-    os.makedirs(analysisDir, exist_ok=True)
+    os.makedirs(locations.analysisDir, exist_ok=True)
     
-    runDir = os.path.join(analysisDir, f"run_{paramHash}")
+    runDir = os.path.join(locations.analysisDir, locations.runName)
     os.makedirs(runDir, exist_ok=True)
     
-    mostRecentDir = os.path.join(analysisDir, "most_recent")
+    mostRecentDir = os.path.join(locations.analysisDir, "most_recent")
     if os.path.exists(mostRecentDir):
         os.unlink(mostRecentDir)
     os.symlink(runDir, mostRecentDir)
     
     # Store the parameters used in this run
-    with open(os.path.join(runDir, "parameters.json"), "w") as paramOut:
+    with open(os.path.join(runDir, locations.parametersFile), "w") as paramOut:
         json.dump({ param: args.__dict__[param] for param in HASHING_PARAMS }, paramOut)
     
     # Figure out if we've already run BINge here before and exit if so
-    outputFileName = os.path.join(runDir, f"BINge_clustering_result.tsv")
+    outputFileName = os.path.join(runDir, locations.clusterFile)
     if os.path.exists(outputFileName) and os.path.exists(outputFileName + ".ok"):
         raise FileExistsError(f"A BINge output file already exists within '{runDir}'; " +
                               "this program will not overwrite an existing file. " +
                               "To resume or overwrite, move/rename/delete this file then try again.")
     
     # Figure out what our pickle file is called
-    pickleFile = os.path.join(runDir, f".binge.pkl")
+    pickleFile = os.path.join(runDir, locations.pickleFile)
     
     # Either load a pickle generated by previous BINge run ...
     if os.path.isfile(pickleFile):
@@ -580,22 +577,21 @@ def cmain(args):
     # ... or begin pre-external clustering BINge
     else:
         # Set up a bin collection structure for each genome
-        collectionList = generate_bin_collections(args.workingDirectory, args.threads, args.isMicrobial)
+        collectionList = generate_bin_collections(locations.genomesDir, args.threads, args.isMicrobial)
         if args.debug:
             print(f"# Generated a list with {len(collectionList)} collections")
             for index, _cl in enumerate(collectionList):
                 print(f"# Collection #{index+1} contains {len(_cl)} bins")
         
         # Locate GMAP alignments
-        mappingDir = os.path.join(args.workingDirectory, "mapping")
         gmapFiles = [
-            os.path.join(mappingDir, f)
-            for f in os.listdir(mappingDir)
+            os.path.join(locations.mappingDir, f)
+            for f in os.listdir(locations.mappingDir)
             if f.endswith(".gff3")
         ]
         
         # Parse GMAP alignments into our bin collection with multiple threads
-        collectionList = populate_bin_collections(args.workingDirectory,
+        collectionList = populate_bin_collections(locations.genomesDir,
                                                   collectionList, gmapFiles,
                                                   args.threads, args.gmapIdentity)
         if args.debug:
@@ -628,10 +624,9 @@ def cmain(args):
                 fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
     
     # Cluster remaining unbinned sequences
-    sequencesDir = os.path.join(args.workingDirectory, "sequences")
     transcriptRecords = FastaCollection([
-        os.path.join(sequencesDir, f)
-        for f in os.listdir(sequencesDir)
+        os.path.join(locations.sequencesDir, f)
+        for f in os.listdir(locations.sequencesDir)
         if f.endswith(".cds")
     ])
     unbinnedIDs = get_unbinned_sequence_ids(clusterDict, eliminations, transcriptRecords)
@@ -641,7 +636,8 @@ def cmain(args):
     if len(unbinnedIDs) == 1:
         unbinnedClusterDict = { 0: list(unbinnedIDs)[0] }
     elif len(unbinnedIDs) > 0:
-        unbinnedClusterDict = cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args)
+        unbinnedClusterDict = cluster_unbinned_sequences(unbinnedIDs, transcriptRecords,
+                                                         args, locations.tmpDir)
     else:
         unbinnedClusterDict = {} # blank to append nothing to output file
     
@@ -655,20 +651,12 @@ def cmain(args):
     
     print("Clustering complete!")
 
-def vmain(args):
-    # Establish directory locations
-    genomesDir = os.path.join(args.workingDirectory, "genomes")
-    sequencesDir = os.path.join(args.workingDirectory, "sequences")
-    gff3Dir = os.path.join(sequencesDir, "gff3s")
-    txDir = os.path.join(sequencesDir, "transcripts")
-    analysisDir = os.path.join(args.workingDirectory, "analysis")
-    runDir = os.path.join(analysisDir, args.runDirName)
-    
+def vmain(args, locations):
     # Load the parameters used in the analysis
-    with open(os.path.join(runDir, "parameters.json"), "r") as paramsIn:
+    with open(os.path.join(args.runDir, locations.parametersFile), "r") as paramsIn:
         params = json.load(paramsIn)
     
-    print(f"# Parameters for '{args.runDirName}':")
+    print(f"# Parameters for '{args.runDir}':")
     for key, value in params.items():
         print(f"{key}: {value}")
     print()
@@ -676,11 +664,11 @@ def vmain(args):
     # Derive the files used in the analysis
     print("## File inputs:")
     print("# Genome targets:")
-    genomeLinks = [ os.path.join(genomesDir, f) for f in os.listdir(genomesDir) if f.endswith(".fasta") ]
+    genomeLinks = [ os.path.join(locations.genomesDir, f) for f in os.listdir(locations.genomesDir) if f.endswith(".fasta") ]
     annotLinks = []
     for genomeLink in genomeLinks:
         suffixNum = genomeLink.rsplit("genome", maxsplit=1)[1].split(".fasta")[0]
-        annotLink = os.path.join(genomesDir, f"annotation{suffixNum}.gff3")
+        annotLink = os.path.join(locations.genomesDir, f"annotation{suffixNum}.gff3")
         if os.path.exists(annotLink):
             annotLinks.append(annotLink)
         else:
@@ -695,22 +683,25 @@ def vmain(args):
     print()
     
     print("# GFF3 annotations:")
-    gff3Links = [ os.path.join(gff3Dir, f) for f in os.listdir(gff3Dir) if f.endswith(".gff3") ]
+    gff3Links = [ os.path.join(locations.gff3Dir, f) for f in os.listdir(locations.gff3Dir) if f.endswith(".gff3") ]
     gff3Origins = [ str(Path(g).resolve()) for g in gff3Links ]
+    fastaLinks = [ os.path.join(locations.gff3Dir, f) for f in os.listdir(locations.gff3Dir) if f.endswith(".fasta") ]
+    fastaOrigins = [ str(Path(f).resolve()) for f in fastaLinks ]
     if len(gff3Links) == 0:
         print("None")
     else:
-        for link, origin in zip(gff3Links, gff3Origins):
-            print(f"{link} -> {origin}")
+        for gLink, gOrigin, fLink, fOrigin in zip(gff3Links, gff3Origins, fastaLinks, fastaOrigins):
+            print(f"{gLink} -> {gOrigin}")
+            print(f"    associated FASTA: {fLink} -> {fOrigin}")
     print()
     
     print("# Transcript FASTAs:")
-    mrnaLinks = [ os.path.join(txDir, f) for f in os.listdir(txDir) if f.endswith(".mrna") ]
+    mrnaLinks = [ os.path.join(locations.txDir, f) for f in os.listdir(locations.txDir) if f.endswith(".mrna") ]
     otherSeqLinks = []
     for mrnaLink in mrnaLinks:
         suffixNum = mrnaLink.rsplit("transcriptome", maxsplit=1)[1].split(".mrna")[0]
-        cdsLink = os.path.join(txDir, f"transcriptome{suffixNum}.cds")
-        protLink = os.path.join(txDir, f"transcriptome{suffixNum}.aa")
+        cdsLink = os.path.join(locations.txDir, f"transcriptome{suffixNum}.cds")
+        protLink = os.path.join(locations.txDir, f"transcriptome{suffixNum}.aa")
         if os.path.exists(cdsLink) and os.path.exists(protLink):
             otherSeqLinks.append([cdsLink, protLink])
         else:
@@ -730,8 +721,8 @@ def vmain(args):
                 print(f"AA: {protOrigin} -> {protOrigin}")
             else:
                 suffixNum = mrnaLink.rsplit("transcriptome", maxsplit=1)[1].split(".mrna")[0]
-                cdsFile = os.path.join(sequencesDir, f"transcriptome{suffixNum}.cds")
-                aaFile = os.path.join(sequencesDir, f"transcriptome{suffixNum}.aa")
+                cdsFile = os.path.join(locations.sequencesDir, f"transcriptome{suffixNum}.cds")
+                aaFile = os.path.join(locations.sequencesDir, f"transcriptome{suffixNum}.aa")
                 print(f"mRNA: {mrnaLink} -> {mrnaOrigin}")
                 print(f"CDS (predicted): {cdsFile}")
                 print(f"AA (predicted): {aaFile}")
@@ -742,7 +733,7 @@ def vmain(args):
     
     # Parse the clustering results (if available)
     print("# Clustering result:")
-    clusterFile = os.path.join(runDir, "BINge_clustering_result.tsv")
+    clusterFile = os.path.join(args.runDir, locations.clusterFile)
     if os.path.exists(clusterFile):
         binnedDict = parse_binge_clusters(clusterFile, "binned")
         unbinnedDict = parse_binge_clusters(clusterFile, "unbinned")

@@ -302,36 +302,32 @@ def remove_sequence_from_fasta(fastaFile, sequenceIDs, outputFile, force=False):
         raise Exception(("remove_sequence_from_fasta() failed because no sequences " +
                          "remained after removing the provided sequence IDs!"))
 
-def process_transcripts(workingDirectory, threads):
+def process_transcripts(locations, threads):
     '''
     Will take the files within the 'transcripts' subdirectory of workingDirectory and
     produce sequence files from them where appropriate.
     
     Parameters:
-        workingDirectory -- a string indicating an existing directory to symlink and/or
-                            write FASTAs to.
+        locations -- a Locations object with attributes for directory locations.
+        threads -- an integer indicating the number of threads to use for ORF prediction.
     '''
-    # Derive subdirectory containing files
-    sequencesDir = os.path.join(workingDirectory, "sequences")
-    txDir = os.path.join(sequencesDir, "transcripts")
-    
     # Locate all transcript files / triplets
     needsSymlink = []
     needsPrediction = []
-    for file in os.listdir(txDir):
+    for file in os.listdir(locations.txDir):
         if file.endswith(".mrna"):
             if not file.startswith("transcriptome"):
-                raise ValueError(f"'{file}' in '{txDir}' does not begin with 'transcriptome' as expected")
+                raise ValueError(f"'{file}' in '{locations.txDir}' does not begin with 'transcriptome' as expected")
             
             # Extract file prefix/suffix components
             filePrefix = file.split(".mrna")[0]
             suffixNum = filePrefix.split("transcriptome")[1]
             if not suffixNum.isdigit():
-                raise ValueError(f"'{file}' in '{txDir}' does not have a number suffix as expected")
+                raise ValueError(f"'{file}' in '{locations.txDir}' does not have a number suffix as expected")
             
             # Symbolic link the mRNA file
-            mrnaFile = os.path.join(txDir, file)
-            mrnaLink = os.path.join(sequencesDir, file)
+            mrnaFile = os.path.join(locations.txDir, file)
+            mrnaLink = os.path.join(locations.sequencesDir, file)
             if os.path.exists(mrnaLink):
                 handle_symlink_change(mrnaLink, mrnaFile)
             else:
@@ -340,8 +336,8 @@ def process_transcripts(workingDirectory, threads):
             
             # Build up the triplet of files
             thisTriplet = [mrnaFile, None, None]
-            cdsFile = os.path.join(txDir, f"transcriptome{suffixNum}.cds")
-            aaFile = os.path.join(txDir, f"transcriptome{suffixNum}.aa")
+            cdsFile = os.path.join(locations.txDir, f"transcriptome{suffixNum}.cds")
+            aaFile = os.path.join(locations.txDir, f"transcriptome{suffixNum}.aa")
             if os.path.exists(cdsFile) and os.path.exists(aaFile):
                 thisTriplet[1] = cdsFile
                 thisTriplet[2] = aaFile
@@ -355,9 +351,9 @@ def process_transcripts(workingDirectory, threads):
     # Symlink files that don't need ORF prediction
     for (mrnaFile, cdsFile, protFile), suffixNum in needsSymlink:
         # Derive output file names
-        mrnaLink = os.path.join(sequencesDir, f"transcriptome{suffixNum}.mrna")
-        cdsLink = os.path.join(sequencesDir, f"transcriptome{suffixNum}.cds")
-        protLink = os.path.join(sequencesDir, f"transcriptome{suffixNum}.aa")
+        mrnaLink = os.path.join(locations.sequencesDir, f"transcriptome{suffixNum}.mrna")
+        cdsLink = os.path.join(locations.sequencesDir, f"transcriptome{suffixNum}.cds")
+        protLink = os.path.join(locations.sequencesDir, f"transcriptome{suffixNum}.aa")
         
         # Symlink the files
         for origFile, linkFile in zip([cdsFile, protFile], [cdsLink, protLink]):
@@ -371,8 +367,8 @@ def process_transcripts(workingDirectory, threads):
     filteredPrediction = []
     for triplet, suffixNum in needsPrediction:
         # Derive output file names
-        cdsFileName = os.path.join(sequencesDir, f"transcriptome{suffixNum}.cds")
-        protFileName = os.path.join(sequencesDir, f"transcriptome{suffixNum}.aa")
+        cdsFileName = os.path.join(locations.sequencesDir, f"transcriptome{suffixNum}.cds")
+        protFileName = os.path.join(locations.sequencesDir, f"transcriptome{suffixNum}.aa")
         newTriplet = [cdsFileName, protFileName]
         
         # Store files that need ORF prediction

@@ -110,50 +110,45 @@ def iterate_gmap_gff3(gff3File):
         raise Exception(f"'{gff3File}' does not appear to be a valid GFF3 file!")
     yield dataDict
 
-def extract_annotations_from_gff3(workingDirectory, isMicrobial, threads):
+def extract_annotations_from_gff3(locations, isMicrobial, threads):
     '''
     Will take the files within the 'gff3s' subdirectory of workingDirectory and
     produce sequence files from them.
     
     Parameters:
-        workingDirectory -- a string indicating an existing directory to symlink and/or
-                            write FASTAs to.
+        locations -- a Locations object with attributes for directory locations.
         isMicrobial -- a boolean indicating whether the organism is a microbe and hence GFF3
                        has gene -> CDS features, rather than gene -> mRNA -> CDS/exon.
         threads -- an integer indicating the number of threads to use for processing.
     '''
-    # Derive subdirectory containing files
-    sequencesDir = os.path.join(workingDirectory, "sequences")
-    gff3Dir = os.path.join(sequencesDir, "gff3s")
-    
     # Locate all GFF3/genome pairs
     filePairs = []
-    for file in os.listdir(gff3Dir):
+    for file in os.listdir(locations.gff3Dir):
         if file.endswith(".gff3"):
             if not file.startswith("annotation"):
-                raise ValueError(f"'{file}' in '{gff3Dir}' does not begin with 'annotation' as expected")
+                raise ValueError(f"'{file}' in '{locations.gff3Dir}' does not begin with 'annotation' as expected")
             
             # Extract file prefix/suffix components
             filePrefix = file.split(".gff3")[0]
             suffixNum = filePrefix.split("annotation")[1]
             if not suffixNum.isdigit():
-                raise ValueError(f"'{file}' in '{gff3Dir}' does not have a number suffix as expected")
+                raise ValueError(f"'{file}' in '{locations.gff3Dir}' does not have a number suffix as expected")
             
             # Check that the corresponding genome file exists
-            genomeFile = os.path.join(gff3Dir, f"genome{suffixNum}.fasta")
+            genomeFile = os.path.join(locations.gff3Dir, f"genome{suffixNum}.fasta")
             if not os.path.exists(genomeFile):
-                raise FileNotFoundError(f"Expected to find 'genome{suffixNum}.fasta' in '{gff3Dir}' but could not")
+                raise FileNotFoundError(f"Expected to find 'genome{suffixNum}.fasta' in '{locations.gff3Dir}' but could not")
             
             # Store the pairing
-            filePairs.append([os.path.join(gff3Dir, file), genomeFile, suffixNum])
+            filePairs.append([os.path.join(locations.gff3Dir, file), genomeFile, suffixNum])
     
     # Filter down to only those that need to be generated
     filteredPrediction = []
     for gff3File, fastaFile, suffixNum in filePairs:
         # Derive output file names
-        mrnaFileName = os.path.join(sequencesDir, f"annotations{suffixNum}.mrna")
-        cdsFileName = os.path.join(sequencesDir, f"annotations{suffixNum}.cds")
-        protFileName = os.path.join(sequencesDir, f"annotations{suffixNum}.aa")
+        mrnaFileName = os.path.join(locations.sequencesDir, f"annotations{suffixNum}.mrna")
+        cdsFileName = os.path.join(locations.sequencesDir, f"annotations{suffixNum}.cds")
+        protFileName = os.path.join(locations.sequencesDir, f"annotations{suffixNum}.aa")
         sequenceFileNames = [mrnaFileName, cdsFileName, protFileName]
         
         # Generate files if they don't exist

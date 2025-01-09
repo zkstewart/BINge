@@ -14,6 +14,7 @@ import numpy as np
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Various_scripts.Function_packages import ZS_BlastIO, ZS_MapIO
 
+from modules.locations import Locations
 from modules.fasta_handling import ZS_SeqIO, FastaCollection
 from modules.validation import validate_blast_args, validate_salmon_args, validate_filter_args, \
     validate_representatives_args, validate_dge_args, touch_ok
@@ -549,51 +550,50 @@ def main():
     # Split into mode-specific functions
     if args.mode == "blast":
         print("## BINge_post.py - MMseqs2 query ##")
-        validate_blast_args(args) # sets args.sequenceFiles
-        bmain(args)
+        locations = validate_blast_args(args) # sets args.sequenceFiles
+        bmain(args, locations)
     elif args.mode == "salmon":
         print("## BINge_post.py - Salmon read quantification ##")
-        validate_salmon_args(args)
-        smain(args)
+        locations = validate_salmon_args(args)
+        smain(args, locations)
     elif args.mode == "filter":
         print("## BINge_post.py - Filter clusters ##")
-        validate_filter_args(args) # sets args.runDirName, args.bingeFile
-        fmain(args)
+        locations = validate_filter_args(args) # sets args.runDirName, args.bingeFile
+        fmain(args, locations)
     elif args.mode == "representatives":
         print("## BINge_post.py - Representatives selection ##")
-        validate_representatives_args(args) # sets args.runDirName, args.bingeFile
-        rmain(args) # sets args.bingeFile
+        locations = validate_representatives_args(args) # sets args.runDirName, args.bingeFile
+        rmain(args, locations) # sets args.bingeFile
     elif args.mode == "dge":
         print("## BINge_post.py - DGE preparation ##")
-        validate_dge_args(args) # sets args.runDirName, args.bingeFile
-        dmain(args)
+        locations = validate_dge_args(args) # sets args.runDirName, args.bingeFile
+        dmain(args, locations)
     
     # Print completion flag if we reach this point
     print("Program completed successfully!")
 
-def bmain(args):
+def bmain(args, locations):
     # Set up BLAST directory
-    blastDir = os.path.join(args.workingDirectory, "blast")
-    os.makedirs(blastDir, exist_ok=True)
+    os.makedirs(locations.blastDir, exist_ok=True)
     
-    tmpDir = os.path.join(blastDir, "tmp")
+    tmpDir = os.path.join(locations.blastDir, "tmp")
     os.makedirs(tmpDir, exist_ok=True)
     
     # Figure out if we've already run BLAST and exit if so
-    outputFileName = os.path.join(blastDir, f"MMseqs2_results.tsv")
+    outputFileName = os.path.join(locations.blastDir, locations.blastFile)
     if os.path.exists(outputFileName) and os.path.exists(outputFileName + ".ok"):
-        raise FileExistsError(f"A MMseqs2 output file already exists within '{blastDir}'; " +
-                              "this program will not overwrite an existing file. " +
-                              "To resume or overwrite, move/rename/delete the file " + 
-                              f"'{outputFileName}' then try again.")
+        raise FileExistsError(f"The MMseqs2 output file '{locations.blastFile}' already exists " +
+                              f"within '{locations.blastDir}'; this program will not overwrite an existing " + 
+                              "file. To resume program operation, move/rename/delete the file " + 
+                              "then try again.")
     
     # Concatenate all FASTA files into a single file
     sequenceSuffix = ".cds" if args.sequenceType == "nucleotide" else ".aa"
-    concatFileName = os.path.join(blastDir, f"concatenated{sequenceSuffix}")
+    concatFileName = os.path.join(locations.blastDir, f"concatenated{sequenceSuffix}")
     concatenate_sequences(args.sequenceFiles, concatFileName)
     
     # Establish the MMseqs2 query and target databases
-    queryDB = ZS_BlastIO.MM_DB(concatFileName, os.path.dirname(args.mms2Exe), tmpDir,
+    queryDB = ZS_BlastIO.MM_DB(concatFileName, os.path.dirname(args.mms2Exe), locations.tmpDir,
                                args.sequenceType, args.threads)
     queryDB.generate()
     queryDB.index()
@@ -612,23 +612,23 @@ def bmain(args):
     
     print("BLAST search complete!")
 
-def smain(args):
+def smain(args, locations):
     # Set up salmon directory
-    salmonDir = os.path.join(args.workingDirectory, "salmon")
-    os.makedirs(salmonDir, exist_ok=True)
+    os.makedirs(locations.salmonDir, exist_ok=True)
     
     # Locate read files
     forwardReads, reverseReads, sampleNames = locate_read_files(args.readsDir, args.readsSuffix,
                                                                args.singleEnd)
     
     # Concatenate all FASTA files into a single file
-    concatFileName = os.path.join(salmonDir, f"concatenated.cds") # map to CDS
+    concatFileName = os.path.join(locations.salmonDir, f"concatenated.cds") # map to CDS
     concatenate_sequences(args.sequenceFiles, concatFileName)
     
     # Establish the salmon target database
     targetDB = ZS_MapIO.Salmon_DB(concatFileName, os.path.dirname(args.salmonExe),
                                   args.threads)
     if not targetDB.index_exists():
+        print(f"# Indexing '{concatFileName}' for salmon read quantification...")
         targetDB.index()
     
     # Run salmon read quantification
@@ -642,7 +642,7 @@ def smain(args):
                                      args.threads)
         
         # Set up sample directory
-        sampleDir = os.path.join(salmonDir, sampleName)
+        sampleDir = os.path.join(locations.salmonDir, sampleName)
         os.makedirs(sampleDir, exist_ok=True)
         
         # Run salmon (if not already run)
@@ -653,7 +653,7 @@ def smain(args):
     
     print("Salmon quant complete!")
 
-def fmain(args):
+def fmain(args, locations):
     # Set up filter directory for this run
     filterDir = os.path.join(args.workingDirectory, "filtered")
     os.makedirs(filterDir, exist_ok=True)
@@ -852,7 +852,7 @@ def fmain(args):
     
     print("Filtering complete!")
 
-def rmain(args):
+def rmain(args, locations):
     # Parse the BINge cluster file
     clusterDict = parse_binge_clusters(
         args.bingeFile,

@@ -23,7 +23,7 @@ def write_unbinned_fasta(unbinnedIDs, transcriptRecords):
     
     return tmpFileName
 
-def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args):
+def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args, tmpDir):
     '''
     Runs CD-HIT on the unbinned sequences in order to assign them to a cluster.
     It's not ideal, but the alternative is to exclude these sequences which may
@@ -41,6 +41,7 @@ def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args):
                              sequences.
         args -- an argparse ArgumentParser object with attributes as set by BINge's
                 main argument parsing process.
+        tmpDir -- a string location for where MMseqs2 should write temp files.
     '''
     # Generate a temporary FASTA file containing unbinned transcripts
     tmpFileName = write_unbinned_fasta(unbinnedIDs, transcriptRecords)
@@ -48,7 +49,7 @@ def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args):
     # Cluster the unbinned transcripts depending on BINge parameters
     if args.unbinnedClusterer in ["mmseqs-cascade", "mmseqs-linclust"]:
         resultClusters = mmseqs_clustering(tmpFileName, args.unbinnedClusterer, 
-                                           args.mmseqsDir, args.tmpDir,
+                                           args.mmseqsDir, tmpDir,
                                            args.threads, args.mmseqsEvalue, args.identity,
                                            args.mmseqsCoverage, args.mmseqsMode,
                                            args.mmseqsSensitivity, args.mmseqsSteps)
@@ -84,7 +85,7 @@ def mmseqs_clustering(fastaFile, algorithm, mmseqsDir, tmpDir, threads, evalue, 
                 corresponding to modes 0, 1, and 2,3 of MMseqs2.
     '''
     # Generate the MMseqs2 sequence database
-    mmDB = ZS_BlastIO.MM_DB(fastaFile, mmseqsDir, tmpDir, threads)
+    mmDB = ZS_BlastIO.MM_DB(fastaFile, mmseqsDir, tmpDir, "nucleotide", threads)
     mmDB.generate()
     mmDB.index()
     
