@@ -106,6 +106,10 @@ def validate_cluster_args(args):
         raise ValueError("--clusterVoteThreshold should be given a value greater than zero, and equal to " + 
                          "or less than 1")
     
+    # Locate and validate that sequences exist in the sequences directory
+    sequenceSuffix = ".cds" # always CDS for Salmon mapping
+    args.sequenceFiles = locations.get_sequenceFiles(sequenceSuffix)
+    
     # Validate GMAP location
     _validate_gmap(args)
     
@@ -172,14 +176,13 @@ def validate_blast_args(args):
     locations = Locations(args.workingDirectory)
     
     # Validate that sequences directory exists
-    sequencesDir = os.path.join(args.workingDirectory, "sequences")
-    if not os.path.isdir(sequencesDir):
-        raise FileNotFoundError(f"Unable to locate 'sequences' within '{sequencesDir}'; " +
+    if not os.path.isdir(locations.sequencesDir):
+        raise FileNotFoundError(f"Unable to locate '{args.workingDirectory}'; " +
                                 "have you run the initialisation step yet?")
     
     # Locate and validate that sequences exist in the sequences directory
     sequenceSuffix = ".cds" if args.sequenceType == "nucleotide" else ".aa"
-    args.sequenceFiles = validate_sequence_files(sequencesDir, sequenceSuffix)
+    args.sequenceFiles = locations.get_sequenceFiles(sequenceSuffix)
     
     # Validate that the BLAST database exists
     args.targetFile = os.path.abspath(args.targetFile)
@@ -208,19 +211,18 @@ def validate_salmon_args(args):
     locations = Locations(args.workingDirectory)
     
     # Validate that sequences directory exists
-    sequencesDir = os.path.join(args.workingDirectory, "sequences")
-    if not os.path.isdir(sequencesDir):
-        raise FileNotFoundError(f"Unable to locate 'sequences' within '{sequencesDir}'; " +
+    if not os.path.isdir(locations.sequencesDir):
+        raise FileNotFoundError(f"Unable to locate '{args.workingDirectory}'; " +
                                 "have you run the initialisation step yet?")
     
     # Validate that reads directory exists
     for rDir in args.readsDir:
         if not os.path.isdir(rDir):
             raise FileNotFoundError(f"Unable to locate the -r reads directory '{args.rDir}'")
-        
+    
     # Locate and validate that sequences exist in the sequences directory
     sequenceSuffix = ".cds" # always CDS for Salmon mapping
-    args.sequenceFiles = validate_sequence_files(sequencesDir, sequenceSuffix)
+    args.sequenceFiles = locations.get_sequenceFiles(sequenceSuffix)
     
     # Validate that salmon executable is locateable
     if args.salmonExe == None:
@@ -247,47 +249,41 @@ def validate_filter_args(args):
     locations.runName = args.analysisFolder
     
     # Validate that analysis directory exists
-    args.runDirName = locations.resolve_runName(locations.analysisDir, locations.runName)
+    args.runDir = locations.resolve_runName(locations.analysisDir)
     
     # Validate that the cluster file exists
-    resultsDir = os.path.join(analysisDir, args.runDirName)
-    clusterFile = os.path.join(resultsDir, "BINge_clustering_result.tsv")
-    if not os.path.isfile(clusterFile) and os.path.exists(clusterFile + ".ok"):
-        raise FileNotFoundError("Unable to locate 'BINge_clustering_result.tsv' and " + 
-                                f"'BINge_clustering_result.tsv.ok' within '{resultsDir}'")
-    args.bingeFile = clusterFile
+    args.bingeFile = os.path.join(args.runDir, locations.clusterFile)
+    if not os.path.isfile(args.bingeFile) or not os.path.exists(args.bingeFile + ".ok"):
+        raise FileNotFoundError(f"Unable to locate '{locations.clusterFile}' and " + 
+                                f"'{locations.clusterFile}.ok' within '{args.runDir}'")
     
     # Validate cluster file format
-    isBinge = validate_cluster_file(clusterFile)
+    isBinge = validate_cluster_file(args.bingeFile)
     if not isBinge:
-        raise ValueError(f"The file '{clusterFile}' does not appear to be a BINge cluster file; " + 
+        raise ValueError(f"The file '{args.bingeFile}' does not appear to be a BINge cluster file; " + 
                          "has this been corrupted somehow?")
+    
+    # Locate and validate that sequences exist in the sequences directory
+    sequenceSuffix = ".cds" # always CDS for sequence lengths
+    args.sequenceFiles = locations.get_sequenceFiles(sequenceSuffix)
     
     # Validate BLAST file (if applicable)
     if args.useBLAST:
-        blastDir = os.path.join(args.workingDirectory, "blast")
-        blastFile = os.path.join(blastDir, f"MMseqs2_results.tsv")
-        if not os.path.isfile(blastFile) and os.path.exists(blastFile + ".ok"):
-            raise FileNotFoundError(f"Unable to locate 'MMseqs2_results.tsv' and " + 
-                                    f"'MMseqs2_results.tsv.ok' within '{blastDir}'")
-        args.blastFile = blastFile
+        print("# --useBLAST was specified; will attempt to use previous 'blast' file for filtering...")
+        args.blastFile = os.path.join(locations.blastDir, locations.blastFile)
+        if not os.path.isfile(args.blastFile) or not os.path.exists(args.blastFile + ".ok"):
+            raise FileNotFoundError(f"Unable to locate '{locations.blastFile}' or " + 
+                                    f"'{locations.blastFile}.ok' within '{locations.blastDir}'")
     
     # Validate GFF3 file (if applicable)
     if args.useGFF3:
-        sequencesDir = os.path.join(args.workingDirectory, "sequences")
-        gff3Dir = os.path.join(sequencesDir, "gff3s")
-        gff3Files = []
-        for file in os.listdir(gff3Dir):
-            if file.endswith(".gff3"):
-                gff3Files.append(os.path.join(gff3Dir, file))
-        if len(gff3Files) == 0:
-            raise FileNotFoundError(f"Unable to locate any GFF3 files within '{gff3Dir}'")
-        args.gff3Files = gff3Files
+        print("# --useGFF3 was specified; will attempt to use GFF3 files for filtering...")
+        args.gff3Files = locations.gff3Files
     
     # Validate salmon files (if applicable)
     if args.useSalmon:
-        if args.salmonFiles != []:
-            args.salmonFileFormat = validate_salmon_files(args.salmonFiles)
+        print("# --useSalmon was specified; will attempt to use salmon quant files for filtering...")
+        args.salmonFiles = locations.salmonFiles
     
     # Validate numeric parameters
     if args.evalue < 0:
@@ -307,13 +303,18 @@ def validate_representatives_args(args):
     locations.runName = args.analysisFolder
     
     # Locate which analysis directory to use
-    args.bingeFile = _locate_raw_or_filtered_results(args)
+    args.bingeFile = _locate_raw_or_filtered_results(args, locations)
     
     # Validate cluster file format
-    isBinge = validate_cluster_file(clusterFile)
+    isBinge = validate_cluster_file(args.bingeFile)
     if not isBinge:
-        raise ValueError(f"The file '{clusterFile}' does not appear to be a BINge cluster file; " + 
+        raise ValueError(f"The file '{args.bingeFile}' does not appear to be a BINge cluster file; " + 
                          "has this been corrupted somehow?")
+    
+    # Locate and validate that sequences exist in the sequences directory
+    args.mrnaSequenceFiles = locations.get_sequenceFiles(".mrna")
+    args.cdsSequenceFiles = locations.get_sequenceFiles(".cds")
+    args.aaSequenceFiles = locations.get_sequenceFiles(".aa")
     
     # Validate numeric parameters
     if args.evalue < 0:
@@ -321,29 +322,21 @@ def validate_representatives_args(args):
     
     # Validate BLAST file (if applicable)
     if args.useBLAST:
-        blastDir = os.path.join(args.workingDirectory, "blast")
-        blastFile = os.path.join(blastDir, f"MMseqs2_results.tsv")
-        if not os.path.isfile(blastFile) and os.path.exists(blastFile + ".ok"):
-            raise FileNotFoundError(f"Unable to locate 'MMseqs2_results.tsv' and " + 
-                                    f"'MMseqs2_results.tsv.ok' within '{blastDir}'")
-        args.blastFile = blastFile
+        print("# --useBLAST was specified; will attempt to use previous 'blast' file for representative picking...")
+        args.blastFile = os.path.join(locations.blastDir, locations.blastFile)
+        if not os.path.isfile(args.blastFile) or not os.path.exists(args.blastFile + ".ok"):
+            raise FileNotFoundError(f"Unable to locate '{locations.blastFile}' or " + 
+                                    f"'{locations.blastFile}.ok' within '{locations.blastDir}'")
     
     # Validate GFF3 file (if applicable)
     if args.useGFF3:
-        sequencesDir = os.path.join(args.workingDirectory, "sequences")
-        gff3Dir = os.path.join(sequencesDir, "gff3s")
-        gff3Files = []
-        for file in os.listdir(gff3Dir):
-            if file.endswith(".gff3"):
-                gff3Files.append(os.path.join(gff3Dir, file))
-        if len(gff3Files) == 0:
-            raise FileNotFoundError(f"Unable to locate any GFF3 files within '{gff3Dir}'")
-        args.gff3Files = gff3Files
+        print("# --useGFF3 was specified; will attempt to use GFF3 files for representative picking...")
+        args.gff3Files = locations.gff3Files
     
-    # Validate salmon files if relevant
-    ## TBD: Implement properly
-    #if args.salmonFiles != []:
-    #    args.salmonFileFormat = validate_salmon_files(args.salmonFiles)
+    # Validate salmon files (if applicable)
+    if args.useSalmon:
+        print("# --useSalmon was specified; will attempt to use salmon quant files for representative picking...")
+        args.salmonFiles = locations.salmonFiles
     
     return locations
 
@@ -355,12 +348,12 @@ def validate_dge_args(args):
     locations.runName = args.analysisFolder
     
     # Locate which analysis directory to use
-    args.bingeFile = _locate_raw_or_filtered_results(args)
+    args.bingeFile = _locate_raw_or_filtered_results(args, locations)
     
     # Validate cluster file format
-    isBinge = validate_cluster_file(clusterFile)
+    isBinge = validate_cluster_file(args.bingeFile)
     if not isBinge:
-        raise ValueError(f"The file '{clusterFile}' does not appear to be a BINge cluster file; " + 
+        raise ValueError(f"The file '{args.bingeFile}' does not appear to be a BINge cluster file; " + 
                          "has this been corrupted somehow?")
     
     return locations
@@ -370,78 +363,31 @@ def _locate_raw_or_filtered_results(args, locations):
     filterRunDir = os.path.join(locations.filterDir, locations.runName)
     
     if os.path.isdir(filterRunDir):
-        print(f"Detected '{args.runName}' within the 'filter' directory; will attempt to use this.")
+        print(f"Detected '{locations.runName}' within the 'filter' directory; will attempt to use this.")
         
         # Update the folder location (following symlink if necessary)
         filterRunDir = locations.resolve_runName(locations.filterDir)
         
         # Validate that the cluster file exists
         clusterFile = os.path.join(filterRunDir, locations.filteredClusterFile)
-        if not os.path.isfile(clusterFile) and not os.path.exists(clusterFile + ".ok"):
+        if not os.path.isfile(clusterFile) or not os.path.exists(clusterFile + ".ok"):
             raise FileNotFoundError(f"Unable to locate '{locations.filteredClusterFile}' and " +
                                     f"'{locations.filteredClusterFile}.ok' within '{filterRunDir}'")
     else:
         print("No filtered results found; will try to use raw results instead.")
-        print(f"Detected '{args.runName}' within the 'analysis' directory; will attempt to use this.")
+        print(f"Detected '{locations.runName}' within the 'analysis' directory; will attempt to use this.")
         
         # Update the folder location (following symlink if necessary)
         rawRunDir = locations.resolve_runName(locations.analysisDir)
         
         # Validate that the cluster file exists
         clusterFile = os.path.join(rawRunDir, locations.clusterFile)
-        if not os.path.isfile(clusterFile) and not os.path.exists(clusterFile + ".ok"):
+        if not os.path.isfile(clusterFile) or not os.path.exists(clusterFile + ".ok"):
             raise FileNotFoundError(f"Unable to locate '{locations.clusterFile}' and " +
                                     f"'{locations.clusterFile}.ok' within '{rawRunDir}'")
     return clusterFile
 
 # File validations
-def validate_salmon_files(salmonFiles):
-    '''
-    Validates Salmon files for 1) their existence and 2) their consistency of file format.
-    Quits program if validation fails, so be warned!
-    
-    Parameters:
-        salmonFiles -- a list containing strings pointing to Salmon files.
-    Returns:
-        fileFormat -- a string equal to "ec" if input files are equivalence classes,
-                      or "quant" if they are quant.sf files.
-    '''
-    # Validate that salmon files exist
-    for salmonFile in salmonFiles:
-        if not os.path.isfile(salmonFile):
-            raise FileNotFoundError(f"Unable to locate the salmon input file '{salmonFile}'")
-    
-    # Validate that input files are all of a consistent format
-    isEC = False
-    isQuant = False
-    for salmonFile in salmonFiles:
-        thisFileValid = False
-        with open(salmonFile, "r") as fileIn:
-            # Get the first 3 lines out of the file
-            firstLine = fileIn.readline().rstrip("\r\n ")
-            secondLine = fileIn.readline().rstrip("\r\n ")
-            thirdLine = fileIn.readline().rstrip("\r\n ")
-            
-            # Check if it conforms to equivalence class expectations
-            if firstLine.isdigit() and secondLine.isdigit() and not thirdLine.isdigit():
-                isEC = True
-                thisFileValid = True
-            
-            # Check if it conforms to quant file expectations
-            elif firstLine.split("\t") == ["Name", "Length", "EffectiveLength", "TPM", "NumReads"]:
-                isQuant = True
-                thisFileValid = True
-        
-        if not thisFileValid:
-            raise ValueError(f"The input file '{salmonFile}' does not appear to be a Salmon quant or " + 
-                             "equivalence class file")
-    
-    if isEC and isQuant:
-        raise ValueError("You appear to have given a mix of quant and equivalence class files; " +
-                         "please only give one type.")
-    
-    return "ec" if isEC else "quant"
-
 def validate_cluster_file(clusterFile):
     with open(clusterFile, "r") as fileIn:
         # Get the first two lines out of the file
@@ -481,22 +427,6 @@ def validate_fasta(fastaFile):
         if not firstLine.startswith(">"):
             return False
         return True
-
-def validate_sequence_files(sequencesDir, sequenceSuffix):
-    sequenceFiles = [
-        os.path.join(sequencesDir, f)
-        for f in os.listdir(sequencesDir)
-        if f.endswith(sequenceSuffix)
-    ]
-    if sequenceFiles == []:
-        raise FileNotFoundError(f"Unable to locate any '{sequenceSuffix}' files within '{sequencesDir}'; " +
-                                "have you run the initialisation step yet?")
-    else:
-        for sequenceFile in sequenceFiles:
-            if not os.path.isfile(sequenceFile + ".ok"):
-                raise FileNotFoundError(f"Unable to locate '{sequenceFile}.ok' to go along with '{sequenceFile}'; " +
-                                        "re-run the initialisation step to ensure file is OK.")
-    return sequenceFiles
 
 def handle_symlink_change(existingLink, newLinkLocation):
     '''

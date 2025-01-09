@@ -120,6 +120,54 @@ def parse_binge_clusters(bingeFile, typeToReturn="all"):
                     clusterDict[clustNum].append(seqID)
     return clusterDict
 
+def parse_gff3_ids(gff3File):
+    '''
+    Simple function to iterate through a GFF3 file and hold onto any parent and
+    subfeature IDs. This process should encompass genes and mRNAs as well as any
+    other subfeature e.g., lnc_RNA, whilst skipping over exons and CDS'.
+    
+    Parameters:
+        gff3File -- a string indicating the location of a GFF3 file.
+    Returns:
+        annotIDs -- a set of strings containing the IDs of all parent and subfeatures
+                    found in the GFF3 file.
+    '''
+    # Setup for slim parsing of attributes
+    def _format_attributes(attributes):
+        "Code borrowed from ZS_GFF3IO"
+        SLIM_ATTRIBUTES = ["id", "parent"]
+        
+        splitAttributes = []
+        for a in attributes.split("="):
+            if ";" in a:
+                splitAttributes += a.rsplit(";", maxsplit=1)
+            else:
+                splitAttributes.append(a)
+        
+        attributesDict = {
+            splitAttributes[i]: splitAttributes[i+1]
+            for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2)
+            if splitAttributes[i].lower() in SLIM_ATTRIBUTES
+        }
+        return attributesDict
+    
+    parentIDs = set()
+    subIDs = set()
+    with open(gff3File, "r") as fileIn:
+        for line in fileIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            
+            # Parse content lines
+            if not line.startswith("#") and len(sl) == 9:
+                featureType, attributes = sl[2], sl[8]
+                attributesDict = _format_attributes(attributes)
+                if featureType == "gene":
+                    parentIDs.add(attributesDict["ID"])
+                elif "Parent" in attributesDict and attributesDict["Parent"] in parentIDs:
+                    subIDs.add(attributesDict["ID"])
+    annotIDs = parentIDs.union(subIDs)
+    return annotIDs
+
 def load_sequence_length_index(indexFile):
     '''
     Load in the pickled result of generate_sequence_length_index().

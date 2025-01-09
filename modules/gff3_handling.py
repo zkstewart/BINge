@@ -1,4 +1,4 @@
-import os, sys
+import os, sys, re
 from .validation import touch_ok
 from .fasta_handling import AnnotationExtractor
 from .thread_workers import BasicProcess
@@ -110,45 +110,45 @@ def iterate_gmap_gff3(gff3File):
         raise Exception(f"'{gff3File}' does not appear to be a valid GFF3 file!")
     yield dataDict
 
-def extract_annotations_from_gff3(locations, isMicrobial, threads):
+def extract_annotations_from_gff3(inputDir, outputDir, outputPrefix, isMicrobial, threads):
     '''
-    Will take the files within the 'gff3s' subdirectory of workingDirectory and
-    produce sequence files from them.
+    Will take the files within the inputDir location and produce sequence files from them
+    which are written to the outputDir location.
     
     Parameters:
-        locations -- a Locations object with attributes for directory locations.
+        inputDir -- a string indicating the location of a directory containing GFF3/FASTA files.
+        outputDir -- a string indicating the location to write the output sequence files to.
+        outputPrefix -- a string indicating the prefix to use for the output sequence files.
         isMicrobial -- a boolean indicating whether the organism is a microbe and hence GFF3
                        has gene -> CDS features, rather than gene -> mRNA -> CDS/exon.
         threads -- an integer indicating the number of threads to use for processing.
     '''
+    suffixRegex = re.compile(r"(\d+)\.gff3$")
+    
     # Locate all GFF3/genome pairs
     filePairs = []
-    for file in os.listdir(locations.gff3Dir):
+    for file in os.listdir(inputDir):
         if file.endswith(".gff3"):
-            if not file.startswith("annotation"):
-                raise ValueError(f"'{file}' in '{locations.gff3Dir}' does not begin with 'annotation' as expected")
-            
-            # Extract file prefix/suffix components
-            filePrefix = file.split(".gff3")[0]
-            suffixNum = filePrefix.split("annotation")[1]
+            # Extract suffix number from file name
+            suffixNum = suffixRegex.search(file).group(1)
             if not suffixNum.isdigit():
-                raise ValueError(f"'{file}' in '{locations.gff3Dir}' does not have a number suffix as expected")
+                raise ValueError(f"'{file}' in '{inputDir}' does not have a number suffix as expected")
             
             # Check that the corresponding genome file exists
-            genomeFile = os.path.join(locations.gff3Dir, f"genome{suffixNum}.fasta")
+            genomeFile = os.path.join(inputDir, file.replace(".gff3", ".fasta"))
             if not os.path.exists(genomeFile):
-                raise FileNotFoundError(f"Expected to find 'genome{suffixNum}.fasta' in '{locations.gff3Dir}' but could not")
+                raise FileNotFoundError(f"Expected to find '{os.path.basename(genomeFile)}' in '{inputDir}' but could not")
             
             # Store the pairing
-            filePairs.append([os.path.join(locations.gff3Dir, file), genomeFile, suffixNum])
+            filePairs.append([os.path.join(inputDir, file), genomeFile, suffixNum])
     
     # Filter down to only those that need to be generated
     filteredPrediction = []
     for gff3File, fastaFile, suffixNum in filePairs:
         # Derive output file names
-        mrnaFileName = os.path.join(locations.sequencesDir, f"annotations{suffixNum}.mrna")
-        cdsFileName = os.path.join(locations.sequencesDir, f"annotations{suffixNum}.cds")
-        protFileName = os.path.join(locations.sequencesDir, f"annotations{suffixNum}.aa")
+        mrnaFileName = os.path.join(outputDir, f"{outputPrefix}{suffixNum}.mrna")
+        cdsFileName = os.path.join(outputDir, f"{outputPrefix}{suffixNum}.cds")
+        protFileName = os.path.join(outputDir, f"{outputPrefix}{suffixNum}.aa")
         sequenceFileNames = [mrnaFileName, cdsFileName, protFileName]
         
         # Generate files if they don't exist
@@ -158,7 +158,7 @@ def extract_annotations_from_gff3(locations, isMicrobial, threads):
     
     # Extract annotations for files needing it
     if len(filteredPrediction) > 0:
-        print(f"# Generating sequences from GFF3/genome pair(s)...")
+        print(f"# Extracting sequences from GFF3/genome pair(s) to '{outputDir}' ...")
         
         for i in range(0, len(filteredPrediction), threads): # only process n (threads) files at a time
             processing = []

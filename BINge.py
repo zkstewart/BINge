@@ -64,13 +64,13 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
             raise ValueError(f"-ig value '{file}' after the ',' is not a FASTA file")
         
         # Symlink files to GFF3s subdirectory if not aleady existing
-        linkedGFF3 = os.path.join(locations.gff3Dir, f"annotation{numIG}.gff3")
+        linkedGFF3 = os.path.join(locations.gff3Dir, f"annotations{numIG}.gff3")
         if os.path.exists(linkedGFF3):
             handle_symlink_change(linkedGFF3, gff3)
         else:
             os.symlink(gff3, linkedGFF3)
         
-        linkedFASTA = os.path.join(locations.gff3Dir, f"genome{numIG}.fasta")
+        linkedFASTA = os.path.join(locations.gff3Dir, f"annotations{numIG}.fasta")
         if os.path.exists(linkedFASTA):
             handle_symlink_change(linkedFASTA, fasta)
         else:
@@ -114,7 +114,7 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
                 quit()
             
             # Symlink files to genomes subdirectory if not aleady existing
-            linkedGFF3 = os.path.join(locations.genomesDir, f"annotation{numGenomes}.gff3")
+            linkedGFF3 = os.path.join(locations.genomesDir, f"genome{numGenomes}.gff3")
             if os.path.exists(linkedGFF3):
                 handle_symlink_change(linkedGFF3, gff3)
             else:
@@ -504,7 +504,7 @@ def main():
         imain(args, locations)
     elif args.mode == "cluster":
         print("## BINge.py - Clustering ##")
-        locations = validate_cluster_args(args)
+        locations = validate_cluster_args(args) # sets args.sequenceFiles
         cmain(args, locations)
     elif args.mode == "view":
         print("## BINge.py - Viewing ##")
@@ -519,8 +519,13 @@ def imain(args, locations):
     setup_working_directory(args.inputGff3Files, args.inputTxomeFiles,
                             args.targetGenomeFiles, locations)
     
-    # Extract mRNAs from any input GFF3 annotations
-    extract_annotations_from_gff3(locations, args.isMicrobial, args.threads)
+    # Extract sequences from any -ig files
+    extract_annotations_from_gff3(locations.gff3Dir, locations.sequencesDir,
+                                  "annotations", args.isMicrobial, args.threads)
+    
+    # Extract sequences from any -t files
+    extract_annotations_from_gff3(locations.genomesDir, locations.genomesDir,
+                                  "genome", args.isMicrobial, args.threads)
     
     # Extract CDS/proteins from any input transcript FASTAs
     process_transcripts(locations, args.threads)
@@ -545,7 +550,7 @@ def cmain(args, locations):
     os.makedirs(runDir, exist_ok=True)
     
     mostRecentDir = os.path.join(locations.analysisDir, "most_recent")
-    if os.path.exists(mostRecentDir):
+    if os.path.exists(mostRecentDir) or os.path.islink(mostRecentDir):
         os.unlink(mostRecentDir)
     os.symlink(runDir, mostRecentDir)
     
@@ -624,11 +629,7 @@ def cmain(args, locations):
                 fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
     
     # Cluster remaining unbinned sequences
-    transcriptRecords = FastaCollection([
-        os.path.join(locations.sequencesDir, f)
-        for f in os.listdir(locations.sequencesDir)
-        if f.endswith(".cds")
-    ])
+    transcriptRecords = FastaCollection(args.sequenceFiles)
     unbinnedIDs = get_unbinned_sequence_ids(clusterDict, eliminations, transcriptRecords)
     if args.debug:
         print(f"# There are {len(unbinnedIDs)} unbinned sequences for external clustering")
@@ -668,7 +669,7 @@ def vmain(args, locations):
     annotLinks = []
     for genomeLink in genomeLinks:
         suffixNum = genomeLink.rsplit("genome", maxsplit=1)[1].split(".fasta")[0]
-        annotLink = os.path.join(locations.genomesDir, f"annotation{suffixNum}.gff3")
+        annotLink = os.path.join(locations.genomesDir, f"genome{suffixNum}.gff3")
         if os.path.exists(annotLink):
             annotLinks.append(annotLink)
         else:

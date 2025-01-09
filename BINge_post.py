@@ -19,128 +19,15 @@ from modules.fasta_handling import ZS_SeqIO, FastaCollection
 from modules.validation import validate_blast_args, validate_salmon_args, validate_filter_args, \
     validate_representatives_args, validate_dge_args, touch_ok
 from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge_clusters, \
-    locate_read_files
+    parse_gff3_ids, locate_read_files
 
 # Define functions
-def validate_args(args):
-    # Derive the locations of the FASTA files
-    args.fastaFiles = [
-        os.path.join(args.fastaDir, f)
-        for f in os.listdir(args.fastaDir)
-        if f.endswith(".nucl")
-    ]
-    if len(args.fastaFiles) == 0:
-        print(f"The -f directory does not contain any .nucl files.")
-        print("Ideally, the -f argument is the location where BINge was run.")
-        print("Please point me to a location containing .nucl files then try again.")
-        quit()
-    
-    # Validate BLAST file if relevant
-    if args.blastFile != None:
-        if not os.path.isfile(args.blastFile):
-            print(f'I am unable to locate the BLAST outfmt6 file ({args.blastFile})')
-            print('Make sure you\'ve typed the file name or location correctly and try again.')
-            quit()
-    
-    # Validate GFF3 / text file if relevant
-    if args.annotationFile != None:
-        if not os.path.isfile(args.annotationFile):
-            print(f'I am unable to locate the annotation GFF3/text file ({args.annotationFile})')
-            print('Make sure you\'ve typed the file name or location correctly and try again.')
-            quit()
-        # Check if we've received a text or GFF3 file
-        with open(args.annotationFile, "r") as fileIn:
-            for line in fileIn:
-                if line.startswith("#"):
-                    continue
-                else:
-                    l = line.rstrip("\r\n ")
-                    sl = l.split("\t")
-                    
-                    if len(sl) == 9:
-                        args.annotFileFormat = "gff3"
-                    elif len(sl) == 1 and " " not in sl[0]:
-                        args.annotFileFormat = "text"
-                    else:
-                        print(f"I was not able to determine the input file format of '{args.annotationFile}'")
-                        print(f"Specifically, look at the first non-comment line '{l}'")
-                        print("I expect it to have 9 tab-separated columns if a GFF3")
-                        print("Or, I expect it to have no tab separation and no white space if it's a text file")
-                        print("Make sure you have the right file in the right format, and try again.")
-                        quit()
-
-def parse_gff3_ids(gff3File):
-    '''
-    Simple function to iterate through a GFF3 file and hold onto any parent and
-    subfeature IDs. This process should encompass genes and mRNAs as well as any
-    other subfeature e.g., lnc_RNA, whilst skipping over exons and CDS'.
-    '''
-    # Setup for slim parsing of attributes
-    def _format_attributes(attributes):
-        "Code borrowed from ZS_GFF3IO"
-        SLIM_ATTRIBUTES = ["id", "parent"]
-        
-        splitAttributes = []
-        for a in attributes.split("="):
-            if ";" in a:
-                splitAttributes += a.rsplit(";", maxsplit=1)
-            else:
-                splitAttributes.append(a)
-        
-        attributesDict = {
-            splitAttributes[i]: splitAttributes[i+1]
-            for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2)
-            if splitAttributes[i].lower() in SLIM_ATTRIBUTES
-        }
-        return attributesDict
-    
-    parentIDs = set()
-    subIDs = set()
-    with open(gff3File, "r") as fileIn:
-        for line in fileIn:
-            sl = line.rstrip("\r\n ").split("\t")
-            
-            # Parse content lines
-            if not line.startswith("#") and len(sl) == 9:
-                featureType, attributes = sl[2], sl[8]
-                attributesDict = _format_attributes(attributes)
-                if featureType == "gene":
-                    parentIDs.add(attributesDict["ID"])
-                elif "Parent" in attributesDict and attributesDict["Parent"] in parentIDs:
-                    subIDs.add(attributesDict["ID"])
-    annotIDs = parentIDs.union(subIDs)
-    return annotIDs
-
-def parse_text_ids(textFile):
-    '''
-    Simply parses a text file for its sequence IDs. The input file is expected to be
-    a newline-delimited list of IDs with no header.
-    '''
-    annotIDs = set()
-    with open(textFile, "r") as fileIn:
-        for line in fileIn:
-            annotIDs.add(line.rstrip("\r\n "))
-    return annotIDs
-
-def parse_fasta_ids(fastaFiles):
-    '''
-    Simply parses one or more FASTA files for their sequence IDs. Returns a set
-    of said IDs.
-    '''
-    fastaIDs = []
-    for f in fastaFiles:
-        with open(f, "r") as fileIn:
-            for line in fileIn:
-                if line.startswith(">"):
-                    fastaIDs.append(line.rstrip("\r\n ").split(" ")[0])
-    return set(fastaIDs)
-
 def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
-                                     salmonCollection, salmonFileFormat):
+                                     quantCollection):
     '''
     Parses the sequence IDs out of the two cluster dictionaries, alongside a salmon
-    EquivalenceClassCollection or QuantCollection (with format indicated), and calculates
-    the nth percentile of read count values in the dataset.
+    QuantCollection, and calculates the nth percentile of read count values in the
+    dataset.
     
     Parameters:
         binnedClusterDict -- a dictionary with format like:
@@ -150,27 +37,23 @@ def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
                                  ...
                              }
         unbinnedClusterDict -- a dictionary with the same format as binnedClusterDict.
-        salmonCollection -- an EquivalenceClassCollection or QuantCollection.
-        salmonFileFormat -- a string == "ec" if the collection is an EquivalenceClassCollection,
-                            and "quant" if a QuantCollection
+        quantCollection -- a QuantCollection.
     '''
     # Get counts for each bin dictionary
     binnedCounts = [
-        np.mean(salmonCollection.get_transcript_count(seqID))
+        np.mean(quantCollection.get_transcript_count(seqID))
         
         for seqIDs in binnedClusterDict.values()
         for seqID in seqIDs
-        if (salmonFileFormat == "ec" and seqID in salmonCollection.ids)
-        or (salmonFileFormat == "quant" and seqID in salmonCollection.quant)
+        if seqID in quantCollection.quant
     ]
     
     unbinnedCounts = [
-        np.mean(salmonCollection.get_transcript_count(seqID))
+        np.mean(quantCollection.get_transcript_count(seqID))
         
         for seqIDs in unbinnedClusterDict.values()
         for seqID in seqIDs
-        if (salmonFileFormat == "ec" and seqID in salmonCollection.ids)
-        or (salmonFileFormat == "quant" and seqID in salmonCollection.quant)
+        if seqID in quantCollection.quant
     ]
     
     # If we have binnedCounts, derive a good cutoff from that
@@ -223,25 +106,23 @@ def merge_cluster_dicts(binnedDict, unbinnedDict, toDrop):
                        with a format like:
                        {
                            1: [ [seqid1, seqid2, ...], "binned" ],
-                           2: [ [...], "unbinned"],
-                           3: ...,
+                           3: [ [...], "unbinned"],
+                           12: ...,
                            ...
                        }
     '''
     clusterDict = {}
-    numClusters = 0
     for i in range(2):
         toFilterDict = [binnedDict, unbinnedDict][i]
         binType = "binned" if i == 0 else "unbinned"
         
         for clusterNum, seqIDs in toFilterDict.items():
             if not clusterNum in toDrop:
-                numClusters += 1
-                clusterDict[numClusters] = [seqIDs, binType]
+                clusterDict[clusterNum] = [seqIDs, binType]
     
     return clusterDict
 
-def determine_if_1x_filter(transcriptCounts, seqIDs, transcriptRecords, readLength, sequenceType):
+def determine_if_1x_filter(transcriptCounts, seqIDs, transcriptRecords, readLength, sequenceType="nucleotide"):
     '''
     Calculates if a cluster should be filtered on the basis of whether it has 1x
     coverage or not across all samples combined.
@@ -297,6 +178,23 @@ def concatenate_sequences(sequenceFiles, outputFileName):
                 if not line.endswith("\n"):
                     fileOut.write("\n")
         touch_ok(outputFileName)
+
+def format_representative(clusterNum, representativeID, representativeSeq):
+    '''
+    Generates a string representation of a FASTA record with features to indicate
+    the representative sequence.
+    
+    Parameters:
+        clusterNum -- an int or string digit identifying the cluster.
+        representativeID -- a string of the sequence ID of the representative of
+                            this cluster.
+        representativeSeq -- a string of the sequence itself for the representative
+                             of this cluster.
+    Returns:
+        fastaString -- a string of the representative sequence formatted for writing
+                       to file.
+    '''
+    return f">cluster-{clusterNum} representative={representativeID}\n{representativeSeq}\n"
 
 ## Main
 def main():
@@ -477,7 +375,8 @@ def main():
                          required=False,
                          action="store_true",
                          help="""Set this flag to keep clusters if they contain any
-                         sequences found within provided GFF3 annotations (-ig during 'initialise').""",
+                         sequences found within provided GFF3 annotations (-ig and/or
+                         -t during 'initialise').""",
                          default=False)
     fparser.add_argument("--useBLAST", dest="useBLAST",
                          required=False,
@@ -509,8 +408,8 @@ def main():
                          type=int,
                          help="""Specify the minimum length of an ORF (in amino acids) that must
                          be met for a cluster to pass filtration (if it hasn't passed any other
-                         filter checks already); default==0""",
-                         default=0)
+                         filter checks already); default==300 (bp)""",
+                         default=300)
     
     # Representatives-subparser arguments
     rparser.add_argument("--analysis", dest="analysisFolder",
@@ -523,7 +422,7 @@ def main():
                          required=False,
                          action="store_true",
                          help="""Set this flag to pick a representative if it comes from a GFF3
-                         annotation file (-ig during 'initialise').""",
+                         annotation file (-ig and/or -t during 'initialise').""",
                          default=False)
     rparser.add_argument("--useBLAST", dest="useBLAST",
                          required=False,
@@ -554,15 +453,15 @@ def main():
         bmain(args, locations)
     elif args.mode == "salmon":
         print("## BINge_post.py - Salmon read quantification ##")
-        locations = validate_salmon_args(args)
+        locations = validate_salmon_args(args) # sets args.sequenceFiles
         smain(args, locations)
     elif args.mode == "filter":
         print("## BINge_post.py - Filter clusters ##")
-        locations = validate_filter_args(args) # sets args.runDirName, args.bingeFile
+        locations = validate_filter_args(args) # sets args.sequenceFiles, args.runDirName, args.bingeFile, args.blastFile, args.gff3Files
         fmain(args, locations)
     elif args.mode == "representatives":
         print("## BINge_post.py - Representatives selection ##")
-        locations = validate_representatives_args(args) # sets args.runDirName, args.bingeFile
+        locations = validate_representatives_args(args) # sets args.sequenceFiles, args.runDirName, args.bingeFile, args.blastFile, args.gff3Files
         rmain(args, locations) # sets args.bingeFile
     elif args.mode == "dge":
         print("## BINge_post.py - DGE preparation ##")
@@ -627,9 +526,11 @@ def smain(args, locations):
     # Establish the salmon target database
     targetDB = ZS_MapIO.Salmon_DB(concatFileName, os.path.dirname(args.salmonExe),
                                   args.threads)
-    if not targetDB.index_exists():
+    salmonDBName = concatFileName + ".salmonDB"
+    if not os.path.exists(salmonDBName) and not os.path.exists(salmonDBName + ".ok"):
         print(f"# Indexing '{concatFileName}' for salmon read quantification...")
         targetDB.index()
+        touch_ok(salmonDBName)
     
     # Run salmon read quantification
     for i, sampleName in enumerate(sampleNames):
@@ -655,21 +556,22 @@ def smain(args, locations):
 
 def fmain(args, locations):
     # Set up filter directory for this run
-    filterDir = os.path.join(args.workingDirectory, "filtered")
-    os.makedirs(filterDir, exist_ok=True)
+    os.makedirs(locations.filterDir, exist_ok=True)
     
-    runDir = os.path.join(filterDir, args.runDirName)
-    os.makedirs(runDir, exist_ok=True)
+    filterRunName = os.path.basename(args.runDir)
+    filterRunDir = os.path.join(locations.filterDir, filterRunName)
+    os.makedirs(filterRunDir, exist_ok=True)
     
-    mostRecentDir = os.path.join(filterDir, "most_recent")
-    if os.path.exists(mostRecentDir):
+    mostRecentDir = os.path.join(locations.filterDir, "most_recent")
+    if os.path.exists(mostRecentDir) or os.path.islink(mostRecentDir):
         os.unlink(mostRecentDir)
-    os.symlink(runDir, mostRecentDir)
+    os.symlink(filterRunDir, mostRecentDir)
     
     # Figure out if we've already filtered this run and exit if so
-    outputFileName = os.path.join(runDir, f"BINge_clustering_result.filtered.tsv")
+    outputFileName = os.path.join(filterRunDir, locations.filteredClusterFile)
     if os.path.exists(outputFileName) and os.path.exists(outputFileName + ".ok"):
-        raise FileExistsError(f"A filtered BINge output file already exists within '{runDir}'; " +
+        raise FileExistsError(f"A filtered BINge output file '{locations.filteredClusterFile}' " +
+                              f"and its .ok file already exists within '{filterRunDir}'; " +
                               "this program will not overwrite an existing file. " +
                               "To resume or overwrite, move/rename/delete this file then try again.")
     
@@ -688,99 +590,77 @@ def fmain(args, locations):
             for clusterNum, seqIDs in binnedDict.items():
                 for seqID in seqIDs:
                     fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
+        touch_ok(outputFileName)
         return # exit the program here
     
-    # No testing done beyond this point yet
-    return
-    
     # Load transcripts into memory for quick access
-    transcriptRecords = FastaCollection(args.fastaFiles)
+    transcriptRecords = FastaCollection(args.sequenceFiles)
     
     # Parse BLAST results (if relevant)
-    if args.blastFile != None:
+    if args.useBLAST:
         blastResults = ZS_BlastIO.BLAST_Results(args.blastFile)
         blastResults.evalue = args.evalue
         blastResults.num_hits = 1 # only need to keep the best hit for each sequence
         blastResults.parse()
         blastDict = blastResults.results
-    else:
-        blastDict = {}
     
     # Parse annotation file (if relevant)
-    if args.annotationFile != None:
-        if args.annotFileFormat == "gff3":
-            annotIDs = parse_gff3_ids(args.annotationFile)
-        else:
-            annotIDs = parse_text_ids(args.annotationFile)
+    if args.useGFF3:
+        annotIDs = set()
+        for gff3File in args.gff3Files:
+            annotIDs = annotIDs.union(parse_gff3_ids(gff3File))
     else:
         annotIDs = set()
     
-    # Parse filter FASTA files (if relevant)
-    if args.filterFiles != []:
-        filterIDs = parse_fasta_ids(args.filterFiles)
-    else:
-        filterIDs = None
-    
-    # Parse salmon counts (if relevant)
-    if args.salmonFiles != []:
+    # Parse salmon quant (if relevant)
+    if args.useSalmon:
         sampleNames = [ f"{i}" for i in range(len(args.salmonFiles))] # sample names don't matter
-        
-        if args.salmonFileFormat == "ec":
-            salmonCollection = parse_equivalence_classes(args.salmonFiles, sampleNames)
-        else:
-            salmonCollection = parse_quants(args.salmonFiles, sampleNames)
-    else:
-        salmonCollection = None
+        quantCollection = parse_quants(args.salmonFiles, sampleNames)
     
-    # Get an appropriate read count value to use as a cut-off
-    """Note: we want this to be somewhat strict since each cut-off SAVES a sequence,
-    so if this is the only thing that passes on a cluster, we want to be confident
-    that it's actually good."""
-    countCutoff = get_counts_cutoff_by_percentiles(
-        binnedDict, unbinnedDict,
-        salmonCollection, args.salmonFileFormat
-    )
+        # Get an appropriate read count value to use as a cut-off
+        """Note: we want this to be somewhat strict since each cut-off SAVES a sequence,
+        so if this is the only thing that passes on a cluster, we want to be confident
+        that it's actually good."""
+        countCutoff = get_counts_cutoff_by_percentiles(
+            binnedDict, unbinnedDict,
+            quantCollection
+        )
     
     # Perform filtration of clusters with available evidence
-    toDrop = set()
+    toDropBinned = set()
+    toDropUnbinned = set()
     for index, toFilterDict in enumerate([binnedDict, unbinnedDict]):
         for clusterID, seqIDs in toFilterDict.items():
-            # Check 0: FILTER if it does not contain a filter ID
-            if args.filterFiles != []:
-                if not any([ seqID in filterIDs for seqID in seqIDs ]):
-                    toDrop.add(clusterID)
-                    continue # since we're filtering, we toDrop it then continue
-            
-            # Skip now if we don't want to filter binned clusters
+            # Skip unless we are filtering binned clusters
             if index == 0 and (not args.filterBinned):
                 continue
             
             # Check 1: Retain if it has a reference sequence
-            if any([ seqID in annotIDs for seqID in seqIDs ]):
-                continue
+            if args.useGFF3:
+                if any([ seqID in annotIDs for seqID in seqIDs ]):
+                    continue
             
             # Handle read alignment values
-            if salmonCollection != None:
+            if args.useSalmon:
                 transcriptCounts = [
-                    salmonCollection.get_transcript_count(seqID)
+                    quantCollection.get_transcript_count(seqID)
                     for seqID in seqIDs
-                    if (args.salmonFileFormat == "ec" and seqID in salmonCollection.ids)
-                    or (args.salmonFileFormat == "quant" and seqID in salmonCollection.quant)
+                    if seqID in quantCollection.quant
                 ]
                 
                 # Check 2: FILTER if it lacks 1x coverage
-                if args.require1x:
-                    has1x = determine_if_1x_filter(transcriptCounts, seqIDs,
-                                   transcriptRecords, args.readLength,
-                                   "protein" if args.sequenceFormat == "protein"
-                                   else "nucleotide")
-                    
-                    if not has1x:
-                        toDrop.add(clusterID)
-                        continue # since we're filtering, we toDrop it then continue
+                has1x = determine_if_1x_filter(transcriptCounts, seqIDs,
+                                               transcriptRecords, args.readLength)
+                
+                if not has1x:
+                    if index == 0:
+                        toDropBinned.add(clusterID)
+                    else:
+                        toDropUnbinned.add(clusterID)
+                    continue # since we're filtering, we toDrop it then continue
                 
                 # Check 3: Retain if any have good read alignment in >1 sample
-                if len(salmonCollection.samples) > 1:
+                if len(quantCollection.samples) > 1:
                     if any(
                     [
                         sum([ countValue > countCutoff for countValue in tc ]) > 1
@@ -798,42 +678,31 @@ def fmain(args, locations):
                         continue
             
             # Check 4: Retain if any have a significant E-value
-            if any([ seqID in blastDict for seqID in seqIDs ]): # if in blastDict, it has a good E-value
-                continue
+            if args.useBLAST:
+                if any([ seqID in blastDict for seqID in seqIDs ]): # dict is evalue filtered already
+                    continue
             
             # Check 5: Retain if the sequence is long enough
             "Note: we include stop codons in the length calculations here"
-            if args.sequenceFormat == "protein":
-                if any(
-                [
-                    len(str(transcriptRecords[seqID])) >= args.minimumLength
-                    for seqID in seqIDs
-                ]):
-                    continue
-            elif args.sequenceFormat == "cds":
-                if any(
-                [
-                    ( len(str(transcriptRecords[seqID])) / 3 ) >= args.minimumLength
-                    for seqID in seqIDs
-                ]):
-                    continue
-            else:
-                seqs = [ ZS_SeqIO.FastASeq("x", str(transcriptRecords[seqID])).get_translation(True)[0] for seqID in seqIDs ]
-                if any(
-                [
-                    len(seq[seq.find("M"):]) >= args.minimumLength
-                    for seq in seqs
-                ]):
-                    continue
+            if any(
+            [
+                ( len(str(transcriptRecords[seqID])) / 3 ) >= args.minimumLength
+                for seqID in seqIDs
+            ]):
+                continue
             
             # If we make it here, this cluster should be filtered
-            toDrop.add(clusterID)
+            if index == 0:
+                toDropBinned.add(clusterID)
+            else:
+                toDropUnbinned.add(clusterID)
     
     # Merge cluster dicts back together
+    toDrop = toDropBinned.union(toDropUnbinned)
     clusterDict = merge_cluster_dicts(binnedDict, unbinnedDict, toDrop)
     
     # Write filtered clusters to file
-    with open(args.outputFileName, "w") as fileOut:
+    with open(outputFileName, "w") as fileOut:
         # Write header
         fileOut.write("#BINge clustering information file\n")
         fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
@@ -843,56 +712,77 @@ def fmain(args, locations):
             clusterIDs, binType = value
             for seqID in clusterIDs:
                 fileOut.write(f"{clusterNum}\t{seqID}\t{binType}\n")
+        touch_ok(outputFileName)
     
     # Print some statistics for the user
     print("# BINge_post.py 'filter' statistics:")
-    print(f" > used 1x criteria to filter clusters = {args.require1x}")
-    print(f" > number of reads = {countCutoff} required for read count rescue")
-    print(f" > removed {len(toDrop)} clusters")
+    if args.useSalmon:
+        print(f"> A salmon quant value >= {countCutoff} resulted in cluster retention")
+    print(f"> Removed {len(toDropBinned)} binned clusters")
+    print(f"> Removed {len(toDropUnbinned)} unbinned clusters")
+    print(f"> Result contains {len(clusterDict)} clusters")
     
     print("Filtering complete!")
 
 def rmain(args, locations):
-    # Parse the BINge cluster file
-    clusterDict = parse_binge_clusters(
-        args.bingeFile,
-        "all" if args.onlyBinned == False else "binned"
-    )
+    # Set up representatives directory for this run
+    os.makedirs(locations.representativesDir, exist_ok=True)
     
-    # No testing done beyond this point yet
-    return
+    reprRunName = os.path.basename(os.path.dirname(args.bingeFile))
+    reprRunDir = os.path.join(locations.representativesDir, reprRunName)
+    os.makedirs(reprRunDir, exist_ok=True)
+    
+    mostRecentDir = os.path.join(locations.representativesDir, "most_recent")
+    if os.path.exists(mostRecentDir) or os.path.islink(mostRecentDir):
+        os.unlink(mostRecentDir)
+    os.symlink(reprRunDir, mostRecentDir)
+    
+    # Figure out if we've already gotten representatives for this run and exit if so
+    for fileName in [locations.representativeMRNA, locations.representativeCDS, locations.representativeAA]:
+        outputFileName = os.path.join(reprRunDir, fileName)
+        if os.path.exists(outputFileName) and os.path.exists(outputFileName + ".ok"):
+            raise FileExistsError(f"A BINge representative file '{fileName}' " +
+                                  f"and its .ok file already exists within '{reprRunDir}'; " +
+                                  "this program will not overwrite an existing file. " +
+                                  "To resume or overwrite, move/rename/delete this file then try again.")
+    
+    # Parse the BINge cluster file
+    clusterDict = parse_binge_clusters(args.bingeFile, "all")
     
     # Load transcripts into memory for quick access
-    transcriptRecords = FastaCollection(args.fastaFiles) # args.fastaFiles set by validate_args()
+    mrnaRecords = FastaCollection(args.mrnaSequenceFiles)
+    cdsRecords = FastaCollection(args.cdsSequenceFiles)
+    aaRecords = FastaCollection(args.aaSequenceFiles)
     
     # Parse BLAST results (if relevant)
-    if args.blastFile != None:
-        blastDict = parse_blast_outfmt6(args.blastFile, args.evalue)
+    if args.useBLAST:
+        blastResults = ZS_BlastIO.BLAST_Results(args.blastFile)
+        blastResults.evalue = args.evalue
+        blastResults.num_hits = 1 # only need to keep the best hit for each sequence
+        blastResults.parse()
+        blastDict = blastResults.results
     else:
         blastDict = {}
     
     # Parse annotation file (if relevant)
-    if args.annotationFile != None:
-        if args.annotFileFormat == "gff3":
-            annotIDs = parse_gff3_ids(args.annotationFile)
-        else:
-            annotIDs = parse_text_ids(args.annotationFile)
+    if args.useGFF3:
+        annotIDs = set()
+        for gff3File in args.gff3Files:
+            annotIDs = annotIDs.union(parse_gff3_ids(gff3File))
     else:
         annotIDs = set()
     
-    # Parse salmon counts (if relevant)
+    # Parse salmon quant (if relevant)
     if args.salmonFiles != []:
         sampleNames = [ f"{i}" for i in range(len(args.salmonFiles))] # sample names don't matter
-        
-        if args.salmonFileFormat == "ec":
-            salmonCollection = parse_equivalence_classes(args.salmonFiles, sampleNames)
-        else:
-            salmonCollection = parse_quants(args.salmonFiles, sampleNames)
+        quantCollection = parse_quants(args.salmonFiles, sampleNames)
     else:
-        salmonCollection = None
+        quantCollection = None
     
     # Write cluster representatives to file
-    with open(args.outputFileName, "w") as fileOut:
+    with open(os.path.join(reprRunDir, locations.representativeMRNA), "w") as mrnaOut, \
+    open(os.path.join(reprRunDir, locations.representativeCDS), "w") as cdsOut, \
+    open(os.path.join(reprRunDir, locations.representativeAA), "w") as aaOut:
         for clusterID, seqIDs in clusterDict.items():
             # Handle single sequence clusters (by just choosing the sequence)
             if len(seqIDs) == 1:
@@ -905,17 +795,10 @@ def rmain(args, locations):
                 # Store all forms of evidence we have at hand for each sequence member
                 numRepsInCluster = sum([ seqID in annotIDs for seqID in seqIDs ])
                 for seqID in seqIDs:
-                    # Tolerantly handle non-existing sequences
-                    """This is only allowed because bin seeding via GFF3 may lead to binned sequences
-                    which do not exist in the FASTA files. We can ignore these as their mRNA counterparts
-                    should have been binned here as well."""
-                    if not seqID in transcriptRecords:
-                        if args.beTolerant:
-                            continue
-                        else:
-                            print(f"Error: sequence ID '{seqID}' not found in any input FASTA files!")
-                            print("--be_tolerant was not specified so the program will end now.")
-                            quit()
+                    # Raise error for non-existing sequences
+                    if not seqID in cdsRecords:
+                        raise KeyError(f"'{seqID}' not found in any input FASTA files; have you modified " +
+                                       "any files after initialisation or clustering?")
                     
                     # Tolerantly handle counts that can be filtered by salmon
                     try:
@@ -934,28 +817,20 @@ def rmain(args, locations):
                     if numRepsInCluster <= 1:
                         thisEvidenceList = [
                             1 if seqID in annotIDs else 0,
-                            blastDict[seqID] if seqID in blastDict else 0, # stores bitscore
+                            blastDict[seqID][0][7] if seqID in blastDict else 0, # best hit is index 0
                             counts,
-                            len(str(transcriptRecords[seqID])),
+                            len(str(cdsRecords[seqID])),
                             seqID
                         ]
                     else:
                         thisEvidenceList = [
                             0,
-                            blastDict[seqID] if seqID in blastDict else 0, # stores bitscore
+                            blastDict[seqID][0][7] if seqID in blastDict else 0, # bitscore is index 7
                             counts,
-                            len(str(transcriptRecords[seqID])),
+                            len(str(cdsRecords[seqID])),
                             seqID
                         ]
                     evidenceLists.append(thisEvidenceList)
-                
-                # Raise error if we skipped all the IDs in this bin
-                if args.beTolerant and len(evidenceLists) == 0:
-                    print("--be_tolerant behaviour led to the discovery of an empty bin!")
-                    print("Currently I will not handle this situation. You should create " + 
-                          "extra FASTA(s) containing parent gene identifiers and use those as input.")
-                    print("Program will exit now.")
-                    quit()
                 
                 # Sort our evidence lists in a way where the first value is the best
                 evidenceLists.sort(
@@ -968,10 +843,21 @@ def rmain(args, locations):
                 seqID = evidenceLists[0][-1]
             
             # Write to file
-            seq = str(transcriptRecords[seqID])
-            fastaString = format_representative(clusterID, seqID, seq)
-            fileOut.write(fastaString)
-
+            ## mRNA
+            mrnaSeq = str(mrnaRecords[seqID])
+            mrnaString = format_representative(clusterID, seqID, mrnaSeq)
+            mrnaOut.write(mrnaString)
+            
+            ## CDS
+            cdsSeq = str(cdsRecords[seqID])
+            cdsString = format_representative(clusterID, seqID, cdsSeq)
+            cdsOut.write(cdsString)
+            
+            ## AA
+            aaSeq = str(aaRecords[seqID])
+            aaString = format_representative(clusterID, seqID, aaSeq)
+            aaOut.write(aaString)
+    
     print("Representative picking complete!")
 
 def dmain(args):
