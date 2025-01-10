@@ -192,10 +192,17 @@ class AnnotationExtractor:
             exonSeq -- a string representing the exon/transcript sequence.
             cdsSeq -- a string representing the CDS.
         '''
-        warnedOnce = False
+        warnedOnce1 = False
+        warnedOnce2 = False
         for mrnaID, contig, strand, exon, cds in self._gff3_iterator():
-            #if mrnaID == "AT1G01020.1":
-            #    STOP
+            # Skip if the CDS or exon lists are empty
+            "This can happen with 'transcript' biotypes that don't have CDS features"
+            if len(exon) == 0 or len(cds) == 0:
+                if not warnedOnce1:
+                    print(f"WARNING: '{mrnaID}' lacks exon and/or CDS features; " + 
+                          f"similar warnings for file '{self.gff3File}' will be suppressed.")
+                    warnedOnce1 = True
+                continue
             
             # Create sequence by piecing together exon / CDS bits
             contigSequence = str(self.fasta[contig].seq)
@@ -206,10 +213,10 @@ class AnnotationExtractor:
             
             # Warn if the protein sequence contains a stop codon
             if "*" in protSeq.strip("*"):
-                if not warnedOnce:
+                if not warnedOnce2:
                     print(f"WARNING: protein sequence for '{mrnaID}' contains an internal stop codon; " + 
-                          f"further warnings for file '{self.gff3File}' will be suppressed.")
-                    warnedOnce = True
+                          f"similar warnings for file '{self.gff3File}' will be suppressed.")
+                    warnedOnce2 = True
             
             # Yield products
             yield mrnaID, exonSeq, cdsSeq, protSeq
