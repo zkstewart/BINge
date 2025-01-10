@@ -10,6 +10,7 @@
 
 import os, argparse, sys
 import numpy as np
+from goatools import obo_parser
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Various_scripts.Function_packages import ZS_BlastIO, ZS_MapIO
@@ -18,7 +19,7 @@ from modules.locations import Locations
 from modules.fasta_handling import ZS_SeqIO, FastaCollection
 from modules.salmon import SalmonQC
 from modules.validation import validate_blast_args, validate_salmon_args, validate_filter_args, \
-    validate_representatives_args, validate_dge_args, touch_ok
+    validate_representatives_args, validate_dge_args, validate_annotate_args, touch_ok
 from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge_clusters, \
     parse_gff3_ids, locate_read_files
 
@@ -351,7 +352,10 @@ def main():
     to remove low-quality or unbinned clusters. This script will generate an R script which
     will load the necessary data for DGE analysis with DESeq2 at your own discretion."""
     
-    annotateDescription = """TBD"""
+    annotateDescription = """'annotate' aims to produce an annotation table using BLAST results
+    for the representative sequences of each cluster. BLAST must have been run on the sequences
+    with a UniRef database, and the 'idmapping_selected.tab' file from UniProtKB must be provided.
+    The output is a TSV file indicating BLAST results as well as GO terms."""
     
     mainDescription = """%(prog)s provides the ability to 'filter' clusters from a BINge
     clustering analysis, as well as pick 'representatives' for each cluster. Data required
@@ -474,7 +478,7 @@ def main():
     # Filter-subparser arguments
     fparser.add_argument("--analysis", dest="analysisFolder",
                          required=False,
-                         help="""Specify the analysis folder to view by its hash; if not provided,
+                         help="""Specify the analysis folder to filter; if not provided,
                          the most recent analysis folder will be viewed""",
                          default="most_recent")
     ## Optional (flags)
@@ -535,8 +539,8 @@ def main():
     # Representatives-subparser arguments
     rparser.add_argument("--analysis", dest="analysisFolder",
                          required=False,
-                         help="""Specify the analysis folder to view by its hash; if not provided,
-                         the most recent analysis folder will be viewed""",
+                         help="""Specify the analysis or filter folder to obtain representatives from;
+                         if not provided, the most recent analysis folder will be viewed""",
                          default="most_recent")
     ## Optional (flags)
     rparser.add_argument("--useGFF3", dest="useGFF3",
@@ -568,15 +572,21 @@ def main():
     # DGE-subparser arguments
     dparser.add_argument("--analysis", dest="analysisFolder",
                          required=False,
-                         help="""Specify the analysis folder to view by its hash; if not provided,
-                         the most recent analysis folder will be viewed""",
+                         help="""Specify the analysis or filter folder to run DGE on;
+                         if not provided, the most recent analysis folder will be viewed""",
                          default="most_recent")
     
     # Annotate-subparser arguments
+    aparser.add_argument("-id", dest="idmappingFile",
+                         required=True,
+                         help="""Specify the location of the 'idmapping_selected.tab' file""")
+    aparser.add_argument("-io", dest="oboFile",
+                         required=True,
+                         help="""Specify the location of a 'go.obo' file""")
     aparser.add_argument("--analysis", dest="analysisFolder",
                          required=False,
-                         help="""Specify the analysis folder to view by its hash; if not provided,
-                         the most recent analysis folder will be viewed""",
+                         help="""Specify the analysis or filter folder to annotate clusters for;
+                         if not provided, the most recent analysis folder will be viewed""",
                          default="most_recent")
     ## Optional (parameters)
     aparser.add_argument("--evalue", dest="evalue",
@@ -585,6 +595,19 @@ def main():
                          help="""Specify the E-value cut-off for BLAST hits
                          to be considered significant (default==1e-10).""",
                          default=1e-10)
+    aparser.add_argument("--numhits", dest="numHits",
+                         required=False,
+                         type=int,
+                         help="""Specify the number of hits to report for each sequence
+                         (default==10).""",
+                         default=10)
+    aparser.add_argument("--largeTable", dest="largeTable",
+                         required=False,
+                         action="store_true",
+                         help="""Set this flag to create a table with full outfmt6 fields
+                         (e.g., gap opens, query start, etc.) rather than just identity,
+                         E-value, and bitscore.""",
+                         default=False)
     
     args = subParentParser.parse_args()
     
@@ -611,7 +634,7 @@ def main():
         dmain(args, locations)
     elif args.mode == "annotate":
         print("## BINge_post.py - Cluster annotation ##")
-        locations = validate_annotate_args(args) # sets runDirName, bingeFile, blastFile
+        locations = validate_annotate_args(args) # sets runDirName, bingeFile, blastFile, targetFile, databaseTag
         amain(args, locations)
     
     # Print completion flag if we reach this point
@@ -623,6 +646,12 @@ def bmain(args, locations):
     
     tmpDir = os.path.join(locations.blastDir, "tmp")
     os.makedirs(tmpDir, exist_ok=True)
+    
+    # Symlink to target file
+    targetLink = os.path.join(locations.blastDir, locations.targetFile)
+    if os.path.exists(targetLink) or os.path.islink(targetLink):
+        os.unlink(targetLink)
+    os.symlink(args.targetFile, targetLink)
     
     # Figure out if we've already run BLAST and exit if so
     outputFileName = os.path.join(locations.blastDir, locations.blastFile)
@@ -643,7 +672,7 @@ def bmain(args, locations):
     queryDB.generate()
     queryDB.index()
     
-    targetDB = ZS_BlastIO.MM_DB(args.targetFile, os.path.dirname(args.mms2Exe), tmpDir,
+    targetDB = ZS_BlastIO.MM_DB(targetLink, os.path.dirname(args.mms2Exe), tmpDir,
                                 args.sequenceType, args.threads)
     targetDB.generate()
     targetDB.index()
@@ -673,7 +702,7 @@ def smain(args, locations):
     targetDB = ZS_MapIO.Salmon_DB(concatFileName, os.path.dirname(args.salmonExe),
                                   args.threads)
     salmonDBName = concatFileName + ".salmonDB"
-    if not os.path.exists(salmonDBName) and not os.path.exists(salmonDBName + ".ok"):
+    if not os.path.exists(salmonDBName) or not os.path.exists(salmonDBName + ".ok"):
         print(f"# Indexing '{concatFileName}' for salmon read quantification...")
         targetDB.index()
         touch_ok(salmonDBName)
@@ -1003,6 +1032,11 @@ def rmain(args, locations):
             aaSeq = str(aaRecords[seqID])
             aaString = format_representative(clusterID, seqID, aaSeq)
             aaOut.write(aaString)
+        
+        # Touch .ok files after writing all outputs
+        touch_ok(os.path.join(reprRunDir, locations.representativeMRNA))
+        touch_ok(os.path.join(reprRunDir, locations.representativeCDS))
+        touch_ok(os.path.join(reprRunDir, locations.representativeAA))
     
     print("Representative picking complete!")
 
@@ -1032,21 +1066,21 @@ def dmain(args, locations):
     # Derive the directories from the salmon files
     salmonDirs = [ os.path.dirname(salmonFile) for salmonFile in args.salmonFiles ]
     
-    # Tabulate salmon QC metrics
+    # Tabulate salmon QC metrics (if not already done)
     salmonQCFile = os.path.join(dgeRunName, locations.salmonQCFile)
     if not os.path.exists(salmonQCFile) or not os.path.exists(salmonQCFile + ".ok"):
         print(f"# Generating '{locations.salmonQCFile}' file for salmon QC assessment...")
         write_salmonQC(salmonDirs, salmonQCFile, clusterDict)
         touch_ok(salmonQCFile)
     
-    # Write list of samples for DGE analysis
+    # Write list of samples for DGE analysis (if not already done)
     sampleFile = os.path.join(dgeRunName, locations.salmonSampleFile)
     if not os.path.exists(sampleFile) or not os.path.exists(sampleFile + ".ok"):
         print(f"# Generating '{locations.salmonSampleFile}' file for sample name listing...")
         write_samples(salmonDirs, sampleFile)
         touch_ok(sampleFile)
     
-    # Generate R script for DGE analysis
+    # Generate R script for DGE analysis (if not already done)
     rScriptFile = os.path.join(dgeRunName, locations.rScriptFile)
     if not os.path.exists(rScriptFile) or not os.path.exists(rScriptFile + ".ok"):
         print(f"# Generating '{locations.rScriptFile}' file for DGE analysis...")
@@ -1068,8 +1102,47 @@ def amain(args, locations):
         os.unlink(mostRecentDir)
     os.symlink(annotateRunDir, mostRecentDir)
     
-    ## TBD ...
+    # Figure out if we've already annotated this run and exit if so
+    outputFileName = os.path.join(annotateRunDir, locations.annotationFile)
+    if os.path.exists(outputFileName) and os.path.exists(outputFileName + ".ok"):
+        raise FileExistsError(f"A BINge annotation file '{locations.annotationFile}' " +
+                              f"and its .ok file already exists within '{annotateRunDir}'; " +
+                              "this program will not overwrite an existing file. " +
+                              "To resume or overwrite, move/rename/delete this file then try again.")
     
+    # Validate representatives file
+    "Just use the .aa file since it will be the smallest"
+    representativesFasta = os.path.join(locations.representativesDir, annotateRunName,
+                                        locations.representativeAA)
+    if not os.path.exists(representativesFasta) or not os.path.exists(representativesFasta + ".ok"):
+        raise FileNotFoundError(f"Unable to locate '{representativesFasta}' or '{representativesFasta}.ok'; " +
+                                "have you run 'representatives' yet?")
+    
+    # Parse .obo file
+    "Parse early to error out if format is incorrect"
+    goObo = obo_parser.GODag(args.oboFile)
+    
+    # Step 1: initial parse of BLAST file to begin formatting the annotation table
+    step1File = os.path.join(annotateRunDir, "tmp.step1.tsv") # will overwrite if exists
+    hitMapDict = init_table(
+        args.blastFile, args.evalue, args.numHits,
+        step1File, args.databaseTag, args.largeTable)
+    
+    # Step 2: parse idmapping file
+    parse_idmap(args.idmappingFile, hitMapDict)
+    
+    # Step 3: pdate the annotation table with GOs
+    step3File = os.path.join(annotateRunDir,  "tmp.step3.tsv")
+    update_table_with_gos(step1File, step3File, hitMapDict, goObo)
+    os.unlink(step1File) # clean up first temporary file now that it has been used
+    
+    # Step 4: update the annotation table a final time to include sequence details
+    update_table_with_seq_details(step3File, outputFileName, hitMapDict,
+                                  representativesFasta, args.targetFile)
+    os.unlink(step3File) # now clean up the second temporary file
+    touch_ok(outputFileName)
+    
+    print("Annotation complete!")
 
 if __name__ == "__main__":
     main()

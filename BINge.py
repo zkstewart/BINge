@@ -638,7 +638,7 @@ def cmain(args, locations):
         unbinnedClusterDict = { 0: list(unbinnedIDs)[0] }
     elif len(unbinnedIDs) > 0:
         unbinnedClusterDict = cluster_unbinned_sequences(unbinnedIDs, transcriptRecords,
-                                                         args, locations.tmpDir)
+                                                         args, locations.tmpDir, runDir)
     else:
         unbinnedClusterDict = {} # blank to append nothing to output file
     

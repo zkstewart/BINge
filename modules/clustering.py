@@ -4,17 +4,22 @@ from .fasta_handling import ZS_SeqIO
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages import ZS_ClustIO, ZS_BlastIO
 
-def write_unbinned_fasta(unbinnedIDs, transcriptRecords):
+def write_unbinned_fasta(unbinnedIDs, transcriptRecords, tmpDir):
     '''
     A helper function which creates a temporary FASTA file containing all unbinned
     sequences. This file will be used for clustering, after which it can be deleted.
     
     Parameters:
-        unbinnedIDs -- a 
+        unbinnedIDs -- a set containg sequence IDs that exist in transcriptRecords
+                       which should be clustered with an external algorithm.
+        transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
+                             sequences.
+        tmpDir -- a string location for where this script should write temp files.
     '''
     # Generate a temporary FASTA file containing unbinned transcripts
-    tmpFileName = "tmp_BINge_unbinned_{0}.fasta".format(
+    tmpFileName = os.path.join(tmpDir, "tmp_BINge_unbinned_{0}.fasta".format(
         ZS_SeqIO.Conversion.get_hash_for_input_sequences(str(transcriptRecords))
+        )
     )
     with open(tmpFileName, "w") as fileOut:
         for seqID in unbinnedIDs:
@@ -23,16 +28,12 @@ def write_unbinned_fasta(unbinnedIDs, transcriptRecords):
     
     return tmpFileName
 
-def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args, tmpDir):
+def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args, tmpDir, bingeTmpDir):
     '''
-    Runs CD-HIT on the unbinned sequences in order to assign them to a cluster.
+    Runs MMSeqs2 or CD-HIT on the unbinned sequences in order to assign them to a cluster.
     It's not ideal, but the alternative is to exclude these sequences which may
     not be in line with the user's aims. By noting the source of clustering in
     the output file, they can decide if they'd like to exclude these or not.
-    
-    Note: the default CD-HIT parameter values have been derived from some limited
-    testing which suggests that these values may work optimally to cluster sequences
-    into "genes" or the closest thing we have to them without proper genomic evidence.
     
     Parameters:
         unbinnedIDs -- a set containg sequence IDs that exist in transcriptRecords
@@ -42,9 +43,11 @@ def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args, tmpDir):
         args -- an argparse ArgumentParser object with attributes as set by BINge's
                 main argument parsing process.
         tmpDir -- a string location for where MMseqs2 should write temp files.
+        bingeTmpDir -- a string location for where the main BINge run is happening
+                       and its temporary files should be written.
     '''
     # Generate a temporary FASTA file containing unbinned transcripts
-    tmpFileName = write_unbinned_fasta(unbinnedIDs, transcriptRecords)
+    tmpFileName = write_unbinned_fasta(unbinnedIDs, transcriptRecords, bingeTmpDir)
     
     # Cluster the unbinned transcripts depending on BINge parameters
     if args.unbinnedClusterer in ["mmseqs-cascade", "mmseqs-linclust"]:
@@ -127,10 +130,6 @@ def cdhit_clustering(fastaFile, cdhitDir, threads, mem,
     It's not ideal, but the alternative is to exclude these sequences which may
     not be in line with the user's aims. By noting the source of clustering in
     the output file, they can decide if they'd like to exclude these or not.
-    
-    Note: the default CD-HIT parameter values have been derived from some limited
-    testing which suggests that these values may work optimally to cluster sequences
-    into "genes" or the closest thing we have to them without proper genomic evidence.
     
     Parameters:
         fastaFile -- a FASTA file containing nucleotide sequences for clustering.

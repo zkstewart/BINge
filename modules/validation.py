@@ -371,13 +371,42 @@ def validate_annotate_args(args):
     # Validate that analysis directory exists
     args.runDir = locations.resolve_runName(locations.analysisDir)
     
+    # Validate numeric parameters
+    if args.evalue < 0:
+        raise ValueError("--evalue must be a positive float value >= 0")
+    if args.numHits < 1:
+        raise ValueError("--numhits must be a positive integer value >= 1")
+    
     # Validate BLAST file 
     args.blastFile = os.path.join(locations.blastDir, locations.blastFile)
     if not os.path.isfile(args.blastFile) or not os.path.exists(args.blastFile + ".ok"):
         raise FileNotFoundError(f"Unable to locate '{locations.blastFile}' or " + 
-                                f"'{locations.blastFile}.ok' within '{locations.blastDir}'")
+                                f"'{locations.blastFile}.ok' within '{locations.blastDir}'; " +
+                                "have you run 'blast' yet?")
     
-    ## TBD
+    # Validate idmapping_selected.tab file
+    if not os.path.isfile(args.idmappingFile):
+        raise FileNotFoundError(f"Unable to locate the -id file '{args.idmappingFile}'")
+    
+    # Validate go.obo file
+    if not os.path.isfile(args.oboFile):
+        raise FileNotFoundError(f"Unable to locate the -io file '{args.oboFile}'")
+    
+    # Validate that original target for BLAST search was a UniRef file
+    args.targetFile = os.path.join(locations.blastDir, locations.targetFile)
+    if not os.path.isfile(args.targetFile):
+        raise FileNotFoundError(f"Unable to locate the target file for BLAST search '{locations.targetFile}'; " +
+                                "have you moved the file this should symlink to?")
+    else:
+        with open(args.targetFile, "r") as fileIn:
+            firstLine = fileIn.readline()
+            if not firstLine.startswith(">UniRef"):
+                raise ValueError(f"The target file for BLAST search '{locations.targetFile}' does not appear " + 
+                                 "to be a UniRef file; I expect it to start with '>UniRef'")
+            else:
+                args.databaseTag = firstLine.split("_")[0][1:] # remove the '>'
+    
+    return locations
 
 def _locate_raw_or_filtered_results(args, locations):
     rawRunDir = os.path.join(locations.analysisDir, locations.runName)

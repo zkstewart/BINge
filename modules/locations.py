@@ -16,7 +16,7 @@ class Locations:
     def workingDirectory(self, value):
         value = os.path.abspath(value)
         if not os.path.isdir(value):
-            raise FileNotFoundError(f"Unable to locate the working directory '{args.workingDirectory}'")
+            raise FileNotFoundError(f"Unable to locate the working directory '{value}'")
         self._workingDirectory = value
     
     # Naive directory properties
@@ -70,7 +70,7 @@ class Locations:
     
     @property
     def annotateDir(self):
-        return os.path.join(self.workingDirectory, "annotation")
+        return os.path.join(self.workingDirectory, "annotate")
     
     # Naive file properties
     @property
@@ -94,6 +94,10 @@ class Locations:
         return ".binge.pkl"
     
     @property
+    def targetFile(self):
+        return "targetFile.fasta"
+    
+    @property
     def blastFile(self):
         return "MMseqs2_results.tsv"
     
@@ -108,6 +112,10 @@ class Locations:
     @property
     def salmonSampleFile(self):
         return "salmon_samples.txt"
+    
+    @property
+    def annotationFile(self):
+        return "BINge_annotation.tsv"
     
     @property
     def representativeMRNA(self):
