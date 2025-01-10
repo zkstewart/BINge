@@ -71,6 +71,10 @@ def validate_init_args(args):
             if not os.path.isfile(inputFile):
                 raise ValueError(f"Unable to locate the file '{inputFile})' from the -ix argument '{inputArgument}'")
     
+    # Validate that at least one value was given to -ig or -ix
+    if len(args.inputGff3Files) == 0 and len(args.inputTxomeFiles) == 0:
+        raise ValueError("You must specify at least one -ig or -ix argument")
+    
     # Validate -t file locations
     for inputArgument in args.targetGenomeFiles:
         if not inputArgument.count(",") <= 1:

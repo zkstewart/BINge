@@ -340,12 +340,14 @@ def main():
                          required=False,
                          nargs="+",
                          help="""Input annotation GFF3(s) paired to their genome file
-                         with ',' separator""")
+                         with ',' separator""",
+                         default=[])
     iparser.add_argument("-ix", dest="inputTxomeFiles",
                          required=False,
                          nargs="+",
                          help="""Input transcriptome FASTA(s) as individual files or as triplicates
-                         of mRNA/CDS/protein files with ',' separator""")
+                         of mRNA/CDS/protein files with ',' separator""",
+                         default=[])
     iparser.add_argument("-t", dest="targetGenomeFiles",
                          required=True,
                          nargs="+",
