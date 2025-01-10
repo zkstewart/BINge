@@ -379,7 +379,7 @@ def main():
     bparser = subparsers.add_parser("blast",
                                     parents=[p],
                                     add_help=False,
-                                    help="Run BLAST/MMseqs2 query against a database",
+                                    help="Run MMseqs2 query against a database",
                                     description=blastDescription)
     bparser.set_defaults(func=bmain)
     

@@ -126,9 +126,9 @@ def validate_cluster_args(args):
         if not os.path.isdir(args.mmseqsDir):
             raise FileNotFoundError(f"Unable to locate the MMseqs2 directory '{args.mmseqsDir}'")
         if args.mmseqsEvalue < 0:
-            raise ValueError("--mmseqs_evalue must be greater than or equal to 0")
+            raise ValueError("--mmseqsEvalue must be greater than or equal to 0")
         if not 0 <= args.mmseqsCoverage <= 1.0:
-            raise ValueError("--mmseqs_cov must be a float in the range 0.0 -> 1.0")
+            raise ValueError("--mmseqsCov must be a float in the range 0.0 -> 1.0")
         "--mode is controlled by argparse choices"
         
         # Validate "MMS-CASCADE" parameters
@@ -138,7 +138,7 @@ def validate_cluster_args(args):
             args.mmseqsSensitivity = int(args.mmseqsSensitivity)
         
         if args.mmseqsSteps < 1:
-            raise ValueError("--mmseqs_steps must be greater than or equal to 1")
+            raise ValueError("--mmseqsSteps must be greater than or equal to 1")
     
     # Validate optional CD-HIT parameters
     if args.unbinnedClusterer == "cd-hit":
@@ -153,11 +153,11 @@ def validate_cluster_args(args):
         if not os.path.isdir(args.cdhitDir):
             raise FileNotFoundError(f"Unable to locate the CD-HIT directory '{args.cdhitDir}'")
         if not 0.0 <= args.cdhitShortCov <= 1.0:
-            raise ValueError("--cdhit_shortcov should be given a value in the range of 0 -> 1 (inclusive)")
+            raise ValueError("--cdhitShortCov should be given a value in the range of 0 -> 1 (inclusive)")
         if not 0.0 <= args.cdhitLongCov <= 1.0:
-            raise ValueError("--cdhit_longcov should be given a value in the range of 0 -> 1 (inclusive)")
+            raise ValueError("--cdhitLongCov should be given a value in the range of 0 -> 1 (inclusive)")
         if not args.cdhitMem >= 100:
-            raise ValueError("--cdhit_mem should be given a value at least greater than 100 (megabytes)")
+            raise ValueError("--cdhitMem should be given a value at least greater than 100 (megabytes)")
     
     return locations
 

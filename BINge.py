@@ -368,7 +368,7 @@ def main():
     iparser.add_argument("--gmapDir", dest="gmapDir",
                          required=False,
                          help="""If GMAP is not discoverable in your PATH, specify the directory
-                         containing the mmseqs executable""")
+                         containing the 'gmap' and 'gmap_build' executables""")
     
     # Cluster-subparser arguments
     ## Optional (shown)
@@ -381,7 +381,7 @@ def main():
     cparser.add_argument("--gmapDir", dest="gmapDir",
                          required=False,
                          help="""If GMAP is not discoverable in your PATH, specify the directory
-                         containing the mmseqs executable""")
+                         containing the 'gmap' and 'gmap_build' executables""")
     cparser.add_argument("--clusterer", dest="unbinnedClusterer",
                          required=False,
                          choices=["mmseqs-cascade", "mmseqs-linclust", "cd-hit"],
@@ -441,46 +441,46 @@ def main():
                          same genus alignment, and least strict for different genus alignments"""),
                          default=0.95)
     ### MMseqs2
-    cparser.add_argument("--mmseqs_evalue", dest="mmseqsEvalue",
+    cparser.add_argument("--mmseqsEvalue", dest="mmseqsEvalue",
                          required=False,
                          type=float,
                          help=hide("MMSEQS: Specify the evalue threshold for clustering (default==1e-3)"),
                          default=1e-3)
-    cparser.add_argument("--mmseqs_cov", dest="mmseqsCoverage",
+    cparser.add_argument("--mmseqsCov", dest="mmseqsCoverage",
                          required=False,
                          type=float,
                          help=hide("MMSEQS: Specify the coverage ratio for clustering (default==0.4)"),
                          default=0.4)
-    cparser.add_argument("--mmseqs_mode", dest="mmseqsMode",
+    cparser.add_argument("--mmseqsMode", dest="mmseqsMode",
                          required=False,
                          choices=["set-cover", "connected-component", "greedy"],
                          help=hide("MMSEQS: Specify the clustering mode (default=='connected-component')"),
                          default="connected-component")
-    cparser.add_argument("--mmseqs_sens", dest="mmseqsSensitivity",
+    cparser.add_argument("--mmseqsSens", dest="mmseqsSensitivity",
                          required=False,
                          choices=["4","5","5.7","6","7","7.5"],
                          help=hide("MMSEQS-CASCADE: Specify the sensitivity value (default==5.7)"),
                          default="5.7")
-    cparser.add_argument("--mmseqs_steps", dest="mmseqsSteps",
+    cparser.add_argument("--mmseqsSteps", dest="mmseqsSteps",
                          required=False,
                          type=int,
                          help=hide("""MMSEQS-CASCADE: Specify the number of cascaded clustering steps 
                          (default==3)"""),
                          default=3)
     ### CD-HIT
-    cparser.add_argument("--cdhit_shortcov", dest="cdhitShortCov",
+    cparser.add_argument("--cdhitShortCov", dest="cdhitShortCov",
                          required=False,
                          type=float,
                          help=hide("""CDHIT: Specify what -aS parameter to provide
                          CD-HIT (default==0.4)"""),
                          default=0.4)
-    cparser.add_argument("--cdhit_longcov", dest="cdhitLongCov",
+    cparser.add_argument("--cdhitLongCov", dest="cdhitLongCov",
                          required=False,
                          type=float,
                          help=hide("""CDHIT: Specify what -aL parameter to provide
                          CD-HIT (default==0.4)"""),
                          default=0.4)
-    cparser.add_argument("--cdhit_mem", dest="cdhitMem",
+    cparser.add_argument("--cdhitMem", dest="cdhitMem",
                          required=False,
                          type=int,
                          help=hide("""CDHIT: Specify how many megabytes of memory to
