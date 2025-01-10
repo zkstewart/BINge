@@ -356,7 +356,28 @@ def validate_dge_args(args):
         raise ValueError(f"The file '{args.bingeFile}' does not appear to be a BINge cluster file; " + 
                          "has this been corrupted somehow?")
     
+    # Validate salmon files
+    args.salmonFiles = locations.salmonFiles
+    
     return locations
+
+def validate_annotate_args(args):
+    # Validate working directory
+    locations = Locations(args.workingDirectory)
+    
+    # Derive the analysis directory name (without following symlink yet)
+    locations.runName = args.analysisFolder
+    
+    # Validate that analysis directory exists
+    args.runDir = locations.resolve_runName(locations.analysisDir)
+    
+    # Validate BLAST file 
+    args.blastFile = os.path.join(locations.blastDir, locations.blastFile)
+    if not os.path.isfile(args.blastFile) or not os.path.exists(args.blastFile + ".ok"):
+        raise FileNotFoundError(f"Unable to locate '{locations.blastFile}' or " + 
+                                f"'{locations.blastFile}.ok' within '{locations.blastDir}'")
+    
+    ## TBD
 
 def _locate_raw_or_filtered_results(args, locations):
     rawRunDir = os.path.join(locations.analysisDir, locations.runName)

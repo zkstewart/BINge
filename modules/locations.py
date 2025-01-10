@@ -64,6 +64,14 @@ class Locations:
     def representativesDir(self):
         return os.path.join(self.workingDirectory, "representatives")
     
+    @property
+    def dgeDir(self):
+        return os.path.join(self.workingDirectory, "dge")
+    
+    @property
+    def annotateDir(self):
+        return os.path.join(self.workingDirectory, "annotation")
+    
     # Naive file properties
     @property
     def clusterFile(self):
@@ -72,6 +80,10 @@ class Locations:
     @property
     def filteredClusterFile(self):
         return "BINge_clustering_result.filtered.tsv"
+    
+    @property
+    def rScriptFile(self):
+        return "BINge_DGE.R"
     
     @property
     def parametersFile(self):
@@ -84,6 +96,18 @@ class Locations:
     @property
     def blastFile(self):
         return "MMseqs2_results.tsv"
+    
+    @property
+    def tx2geneFile(self):
+        return "tx2gene.tsv"
+    
+    @property
+    def salmonQCFile(self):
+        return "salmon_qc_statistics.tsv"
+    
+    @property
+    def salmonSampleFile(self):
+        return "salmon_samples.txt"
     
     @property
     def representativeMRNA(self):

@@ -239,3 +239,134 @@ class DGEQuantCollection():
         return "<DGEQuantCollection object;num_samples={0};num_transcripts={1}>".format(
             len(self.samples), self.numTranscripts
         )
+
+class SalmonQC():
+    '''
+    Parses salmon output directories for log files to extract QC information.
+    '''
+    def __init__(self, salmonDirs):
+        self.numReads = {} # read counts from quant files
+        self.totalReads = {} # total read counts from quant files
+        self.mapPct = {} # mapping percentages from log files
+        
+        self.salmonDirs = salmonDirs
+    
+    @property
+    def salmonDirs(self):
+        return self._salmonDirs
+    
+    @salmonDirs.setter
+    def salmonDirs(self, salmonDirs):
+        # Validate input parameters
+        assert isinstance(salmonDirs, list), \
+            f"salmonDirs must be a list of directory paths!"
+        
+        # Parse the files
+        for salmonDir in salmonDirs:
+            self.parse_salmon_dir(salmonDir)
+    
+    def parse_quant_file(self, quantFile, sample):
+        # Validate input parameters
+        assert os.path.isfile(quantFile), \
+            f"Cannot parse '{quantFile}' as file does not exist!"
+        assert isinstance(sample, str) and not sample in self.numReads, \
+            f"Sample name must be a string value that uniquely identifies this sample!"
+        self.numReads[sample] = {}
+        
+        # Parse the file
+        firstLine = True
+        total = 0
+        with open(quantFile, "r") as fileIn:
+            for line in fileIn:
+                sl = line.rstrip("\r\n ").split("\t")
+                
+                if firstLine == True:
+                    firstLine = False
+                else:
+                    name, _, _, _, numReads = sl
+                    numReads = float(numReads)
+                    self.numReads[sample][name] = numReads
+                    total += numReads
+        self.totalReads[sample] = total
+    
+    def parse_log_file(self, logFile, sample):
+        # Validate input parameters
+        assert os.path.isfile(logFile), \
+            f"Cannot parse '{logFile}' as file does not exist!"
+        assert isinstance(sample, str) and not sample in self.mapPct, \
+            f"Sample name must be a string value that uniquely identifies this sample!"
+        
+        # Parse the file
+        mappingRate = None
+        with open(logFile, "r") as fileIn:
+            for line in fileIn:
+                if "[info] Mapping rate =" in line:
+                    mappingRate = line.rstrip("\r\n ").split(" = ")[1].rstrip("%")
+                    foundMappingRate = True
+                    break
+        if mappingRate == None:
+            raise ValueError(f"Cannot locate mapping rate in '{logFile}'!")
+        
+        # Store the mapping rate
+        self.mapPct[sample] = float(mappingRate)
+    
+    def parse_salmon_dir(self, salmonDir):
+        # Validate input parameters
+        assert os.path.isdir(salmonDir), \
+            f"Cannot parse '{salmonDir}' as directory does not exist!"
+        
+        # Derive sample name from directory
+        sample = os.path.basename(salmonDir)
+        
+        # Locate quant and log files
+        quantFile = os.path.join(salmonDir, "quant.sf")
+        if not os.path.isfile(quantFile):
+            raise FileNotFoundError(f"Cannot locate quant file in '{salmonDir}'!")
+        
+        logFile = os.path.join(salmonDir, "logs", "salmon_quant.log")
+        if not os.path.isfile(logFile):
+            raise FileNotFoundError(f"Cannot locate log file in '{salmonDir}'!")
+        
+        # Parse quant and log files
+        self.parse_quant_file(quantFile, sample)
+        self.parse_log_file(logFile, sample)
+    
+    def get_clustered_qc(self, clusterDict):
+        '''
+        Computes the percentage of reads that are represented in the clustered sequences
+        for each sample, and then adjusts the total mapping percentage on this basis.
+        
+        Parameters:
+            clusterDict -- a dictionary with format like:
+                           { 0: [ [seqid1, seqid2, ...], "binned" ],
+                             3: [ [...], "unbinned"],
+                             12: ...,
+                             ...
+                           }
+        '''
+        adjustedQC = {}
+        for sample, numReads in self.totalReads.items():
+            # Get the number of reads that clustered for this sample
+            clusteredNumReads = 0
+            for clusterNum, seqIDs in clusterDict.items():
+                for seqID in seqIDs:
+                    if seqID in self.numReads[sample]:
+                        clusteredNumReads += self.numReads[sample][seqID]
+                    else:
+                        continue # salmon can sometimes omit transcripts from quant.sf files
+            
+            # Get the percentage of reads that clustered out of the amount that mapped initially
+            retainedPct = (clusteredNumReads / numReads) * 100
+            
+            # Adjust the mapped percentage according to the original mapping percentage
+            clusteredPct = self.mapPct[sample] * (retainedPct / 100)
+            
+            # Store the adjusted QC value
+            adjustedQC[sample] = [retainedPct, clusteredPct]
+        
+        return adjustedQC
+    
+    def __repr__(self):
+        return "<SalmonQC object;num_samples={0}>".format(
+            len(self.mapPct)
+        )

@@ -16,6 +16,7 @@ from Various_scripts.Function_packages import ZS_BlastIO, ZS_MapIO
 
 from modules.locations import Locations
 from modules.fasta_handling import ZS_SeqIO, FastaCollection
+from modules.salmon import SalmonQC
 from modules.validation import validate_blast_args, validate_salmon_args, validate_filter_args, \
     validate_representatives_args, validate_dge_args, touch_ok
 from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge_clusters, \
@@ -196,6 +197,113 @@ def format_representative(clusterNum, representativeID, representativeSeq):
     '''
     return f">cluster-{clusterNum} representative={representativeID}\n{representativeSeq}\n"
 
+def write_tx2gene(tx2geneFile, clusterDict):
+    '''
+    Generates a tx2gene file for summarisation of salmon counts to gene/cluster level
+    from mapping done to individual transcripts/sequences.
+    
+    Parameters:
+        tx2geneFile -- a string indicating the location of the output file.
+        clusterDict -- a dictionary with format like:
+                       {
+                           1: [ seqid1, seqid2, ... ],
+                           2: [ ... ],
+                           ...
+                       }
+    '''
+    with open(tx2geneFile, "w") as fileOut:
+        fileOut.write("TXNAME\tGENEID\n")
+        for clusterNum, seqIDs in clusterDict.items():
+            for seqID in seqIDs:
+                fileOut.write(f"{seqID}\tcluster-{clusterNum}\n")
+
+def write_salmonQC(salmonDirs, salmonQCFile, clusterDict):
+    '''
+    Generates a salmonQC file for summarisation of salmon counts to gene/cluster level
+    from mapping done to individual transcripts/sequences.
+    
+    Parameters:
+        salmonDirs -- a list of strings indicating the locations of the salmon output directories.
+        salmonQCFile -- a string indicating the location of the output file.
+        clusterDict -- a dictionary with format like:
+                       {
+                           1: [ seqid1, seqid2, ... ],
+                           2: [ ... ],
+                           ...
+                       }
+    '''
+    # Generate the SalmonQC object
+    salmonQC = SalmonQC(salmonDirs)
+    
+    # Calculate adjusted mapping percentages
+    adjustedQCDict = salmonQC.get_clustered_qc(clusterDict)
+    
+    # Write output
+    with open(salmonQCFile, "w") as fileOut:
+        fileOut.write("sample\traw_mapping_percent\tfiltered_mapping_percent\n")
+        for sample, rawMapPct in salmonQC.mapPct.items():
+            _, filteredMapPct = adjustedQCDict[sample] # drop the retainedPct
+            fileOut.write(f"{sample}\t{rawMapPct}\t{filteredMapPct:.4f}\n")
+
+def write_samples(salmonDirs, sampleFile):
+    '''
+    Generates a file which simply lists the samples used in the salmon quantification.
+    
+    Parameters:
+        salmonDirs -- a list of strings indicating the locations of the salmon output directories.
+        sampleFile -- a string indicating the location of the output file.
+    '''
+    # Get sample names from the salmon directories
+    sampleNames = [ os.path.basename(salmonDir) for salmonDir in salmonDirs ]
+    
+    # Write output
+    with open(sampleFile, "w") as fileOut:
+        fileOut.write("sample\n")
+        for sample in sampleNames:
+            fileOut.write(f"{sample}\n")
+
+def write_r_script(salmonFolder, sampleFile, tx2geneFile, rScriptFile):
+    '''
+    Prints ( / presents) instructions for how to load in the resulting files
+    from this program into R.
+    
+    Parameters:
+        salmonFolder -- a string indicating the location of the salmon output directories.
+        sampleFile -- a string indicating the location of the samples file which lists
+                       each sample name (which should match the salmon output directories).
+        tx2geneFile -- a string indicating the location of the tx2gene file.
+        rScriptFile -- a string indicating the location of the output R script.
+    '''
+    # Format text of R script
+    rScriptText = f'''library(DESeq2)
+library(tximport)
+library(readr)
+
+# Locate files
+QUANT_FOLDER <- "{salmonFolder}"
+SAMPLES_FILE <- "{sampleFile}"
+TX2GENE_FILE <- "{tx2geneFile}"
+
+# Parse sample names
+samples <- read.table(file=SAMPLES_FILE, header = TRUE)[,1]
+
+# Locate salmon quant files
+quantFiles <- file.path(QUANT_FOLDER, samples, "quant.sf")
+names(quantFiles) <- samples
+
+# Parse tx2gene file
+tx2gene <- read_delim(Tx2GENE_FILE, delim="\\t")
+
+# tximport data
+txi <- tximport(quantFiles, type="salmon", tx2gene=tx2gene)
+
+# Load into DESeqDataSet object
+# dds <- DESeqDataSetFromTximport(txi = txi, colData = < ... >, design = < ~ ... >)
+'''
+    # Write to file
+    with open(rScriptFile, "w") as fileOut:
+        fileOut.write(rScriptText)
+
 ## Main
 def main():
     blastDescription = """'blast' aims to query the sequences used during BINge clustering
@@ -237,7 +345,13 @@ def main():
     The ID for each sequence follows a format like '>Cluster-1 representative=transcript_92'.
     """
     
-    dgeDescription = """TBD"""
+    dgeDescription = """'dge' aims to streamline the preparation of data for downstream
+    differential gene expression (DGE) analysis. You must have already performed clustering
+    and 'salmon' herein to use this script, although you probably should also use 'filter'
+    to remove low-quality or unbinned clusters. This script will generate an R script which
+    will load the necessary data for DGE analysis with DESeq2 at your own discretion."""
+    
+    annotateDescription = """TBD"""
     
     mainDescription = """%(prog)s provides the ability to 'filter' clusters from a BINge
     clustering analysis, as well as pick 'representatives' for each cluster. Data required
@@ -292,6 +406,13 @@ def main():
                                     help="Format inputs for downstream DGE analysis",
                                     description=dgeDescription)
     dparser.set_defaults(func=dmain)
+    
+    aparser = subparsers.add_parser("annotate",
+                                    parents=[p],
+                                    add_help=False,
+                                    help="Produce an annotation table for clusters",
+                                    description=annotateDescription)
+    aparser.set_defaults(func=dmain)
     
     # BLAST-subparser arguments
     bparser.add_argument("-t", dest="targetFile",
@@ -444,29 +565,54 @@ def main():
                          to be considered significant (default==1e-10).""",
                          default=1e-10)
     
+    # DGE-subparser arguments
+    dparser.add_argument("--analysis", dest="analysisFolder",
+                         required=False,
+                         help="""Specify the analysis folder to view by its hash; if not provided,
+                         the most recent analysis folder will be viewed""",
+                         default="most_recent")
+    
+    # Annotate-subparser arguments
+    aparser.add_argument("--analysis", dest="analysisFolder",
+                         required=False,
+                         help="""Specify the analysis folder to view by its hash; if not provided,
+                         the most recent analysis folder will be viewed""",
+                         default="most_recent")
+    ## Optional (parameters)
+    aparser.add_argument("--evalue", dest="evalue",
+                         required=False,
+                         type=float,
+                         help="""Specify the E-value cut-off for BLAST hits
+                         to be considered significant (default==1e-10).""",
+                         default=1e-10)
+    
     args = subParentParser.parse_args()
     
     # Split into mode-specific functions
     if args.mode == "blast":
         print("## BINge_post.py - MMseqs2 query ##")
-        locations = validate_blast_args(args) # sets args.sequenceFiles
+        locations = validate_blast_args(args) # sets sequenceFiles
         bmain(args, locations)
     elif args.mode == "salmon":
         print("## BINge_post.py - Salmon read quantification ##")
-        locations = validate_salmon_args(args) # sets args.sequenceFiles
+        locations = validate_salmon_args(args) # sets sequenceFiles
         smain(args, locations)
     elif args.mode == "filter":
         print("## BINge_post.py - Filter clusters ##")
-        locations = validate_filter_args(args) # sets args.sequenceFiles, args.runDirName, args.bingeFile, args.blastFile, args.gff3Files
+        locations = validate_filter_args(args) # sets sequenceFiles, runDirName, bingeFile, blastFile, gff3Files, salmonFiles
         fmain(args, locations)
     elif args.mode == "representatives":
         print("## BINge_post.py - Representatives selection ##")
-        locations = validate_representatives_args(args) # sets args.sequenceFiles, args.runDirName, args.bingeFile, args.blastFile, args.gff3Files
+        locations = validate_representatives_args(args) # sets sequenceFiles, runDirName, bingeFile, blastFile, gff3Files, salmonFiles
         rmain(args, locations) # sets args.bingeFile
     elif args.mode == "dge":
         print("## BINge_post.py - DGE preparation ##")
-        locations = validate_dge_args(args) # sets args.runDirName, args.bingeFile
+        locations = validate_dge_args(args) # sets runDirName, bingeFile, salmonFiles
         dmain(args, locations)
+    elif args.mode == "annotate":
+        print("## BINge_post.py - Cluster annotation ##")
+        locations = validate_annotate_args(args) # sets runDirName, bingeFile, blastFile
+        amain(args, locations)
     
     # Print completion flag if we reach this point
     print("Program completed successfully!")
@@ -860,8 +1006,70 @@ def rmain(args, locations):
     
     print("Representative picking complete!")
 
-def dmain(args):
-    pass
+def dmain(args, locations):
+    # Set up DGE directory for this run
+    os.makedirs(locations.dgeDir, exist_ok=True)
+    
+    dgeRunName = os.path.basename(os.path.dirname(args.bingeFile))
+    dgeRunName = os.path.join(locations.dgeDir, dgeRunName)
+    os.makedirs(dgeRunName, exist_ok=True)
+    
+    mostRecentDir = os.path.join(locations.dgeDir, "most_recent")
+    if os.path.exists(mostRecentDir) or os.path.islink(mostRecentDir):
+        os.unlink(mostRecentDir)
+    os.symlink(dgeRunName, mostRecentDir)
+    
+    # Parse the BINge cluster file
+    clusterDict = parse_binge_clusters(args.bingeFile, "all")
+    
+    # Generate tx2gene file (if not already done)
+    tx2geneFile = os.path.join(dgeRunName, locations.tx2geneFile)
+    if not os.path.exists(tx2geneFile) or not os.path.exists(tx2geneFile + ".ok"):
+        print(f"# Generating '{locations.tx2geneFile}' file for cluster count summarisation...")
+        write_tx2gene(tx2geneFile, clusterDict)
+        touch_ok(tx2geneFile)
+    
+    # Derive the directories from the salmon files
+    salmonDirs = [ os.path.dirname(salmonFile) for salmonFile in args.salmonFiles ]
+    
+    # Tabulate salmon QC metrics
+    salmonQCFile = os.path.join(dgeRunName, locations.salmonQCFile)
+    if not os.path.exists(salmonQCFile) or not os.path.exists(salmonQCFile + ".ok"):
+        print(f"# Generating '{locations.salmonQCFile}' file for salmon QC assessment...")
+        write_salmonQC(salmonDirs, salmonQCFile, clusterDict)
+        touch_ok(salmonQCFile)
+    
+    # Write list of samples for DGE analysis
+    sampleFile = os.path.join(dgeRunName, locations.salmonSampleFile)
+    if not os.path.exists(sampleFile) or not os.path.exists(sampleFile + ".ok"):
+        print(f"# Generating '{locations.salmonSampleFile}' file for sample name listing...")
+        write_samples(salmonDirs, sampleFile)
+        touch_ok(sampleFile)
+    
+    # Generate R script for DGE analysis
+    rScriptFile = os.path.join(dgeRunName, locations.rScriptFile)
+    if not os.path.exists(rScriptFile) or not os.path.exists(rScriptFile + ".ok"):
+        print(f"# Generating '{locations.rScriptFile}' file for DGE analysis...")
+        write_r_script(locations.salmonDir, sampleFile, tx2geneFile, rScriptFile)
+        touch_ok(rScriptFile)
+    
+    print("DGE preparation complete!")
+
+def amain(args, locations):
+    # Set up annotate directory for this run
+    os.makedirs(locations.annotateDir, exist_ok=True)
+    
+    annotateRunName = os.path.basename(args.runDir)
+    annotateRunDir = os.path.join(locations.annotateDir, annotateRunName)
+    os.makedirs(annotateRunDir, exist_ok=True)
+    
+    mostRecentDir = os.path.join(locations.annotateDir, "most_recent")
+    if os.path.exists(mostRecentDir) or os.path.islink(mostRecentDir):
+        os.unlink(mostRecentDir)
+    os.symlink(annotateRunDir, mostRecentDir)
+    
+    ## TBD ...
+    
 
 if __name__ == "__main__":
     main()
