@@ -5,7 +5,7 @@ from goatools import obo_parser
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages import ZS_GO
 
-def init_table(blastFile, evalueCutoff, numHits, outputFileName,
+def init_table(repToClust, repToClust, blastFile, evalueCutoff, numHits, outputFileName,
                databaseTag=".", largeTable=False):
     '''
     Parses an outfmt6 file, initialising our output annotation table with the BLAST
@@ -18,6 +18,10 @@ def init_table(blastFile, evalueCutoff, numHits, outputFileName,
     values to be set when parsing the idmapping_selected.tab file.
     
     Parameters:
+        repToClust -- a dictionary with representative sequence IDs as keys and cluster IDs
+                      as values.
+        repToClust -- a dictionary with representative sequence IDs as keys and cluster IDs
+                      as values.
         blastFile -- a string indicating the location of a BLAST result file in
                      outfmt6 format.
         evalueCutoff -- a float indicating the maximum allowed E-value for a hit to be
@@ -58,6 +62,10 @@ def init_table(blastFile, evalueCutoff, numHits, outputFileName,
         
         # Continue iterating through the blast file
         for queryID, value in groupby(fileIn, grouper):
+            # Skip if this sequence isn't a representative sequence
+            if queryID not in repToClust:
+                continue
+            
             # Get the values in sorted order
             value = sorted(
                 [ v.rstrip("\r\n ").split("\t") for v in value ],
@@ -123,7 +131,8 @@ def init_table(blastFile, evalueCutoff, numHits, outputFileName,
                     hitTag = databaseTag
             
             # Write to file
-            fileOut.write("{0}\t{1}\t{2}\n".format(queryID, hitTag,"\t".join(formattedList)))
+            clusterID = repToClust[queryID] # substitute queryID (representative sequence) with cluster ID
+            fileOut.write("{0}\t{1}\t{2}\n".format(clusterID, hitTag,"\t".join(formattedList)))
             
             # Store values in our hitMapDict
             for hit in bestHits:

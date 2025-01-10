@@ -21,7 +21,7 @@ from modules.salmon import SalmonQC
 from modules.validation import validate_blast_args, validate_salmon_args, validate_filter_args, \
     validate_representatives_args, validate_dge_args, validate_annotate_args, touch_ok
 from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge_clusters, \
-    parse_gff3_ids, locate_read_files
+    parse_gff3_ids, locate_read_files, parse_binge_representatives
 
 # Define functions
 def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
@@ -1093,8 +1093,8 @@ def amain(args, locations):
     # Set up annotate directory for this run
     os.makedirs(locations.annotateDir, exist_ok=True)
     
-    annotateRunName = os.path.basename(args.runDir)
-    annotateRunDir = os.path.join(locations.annotateDir, annotateRunName)
+    annotateRunName = os.path.basename(os.path.dirname(args.bingeFile))
+    annotateRunDir = os.path.join(locations.dgeDir, annotateRunDir)
     os.makedirs(annotateRunDir, exist_ok=True)
     
     mostRecentDir = os.path.join(locations.annotateDir, "most_recent")
@@ -1111,12 +1111,15 @@ def amain(args, locations):
                               "To resume or overwrite, move/rename/delete this file then try again.")
     
     # Validate representatives file
-    "Just use the .aa file since it will be the smallest"
+    "Just use the .aa file since it will be the smallest and IDs are the same across all files"
     representativesFasta = os.path.join(locations.representativesDir, annotateRunName,
                                         locations.representativeAA)
     if not os.path.exists(representativesFasta) or not os.path.exists(representativesFasta + ".ok"):
         raise FileNotFoundError(f"Unable to locate '{representativesFasta}' or '{representativesFasta}.ok'; " +
                                 "have you run 'representatives' yet?")
+    
+    # Parse the representatives file to find the sequences we need
+    clustToRep, repToClust = parse_binge_representatives(representativesFasta)
     
     # Parse .obo file
     "Parse early to error out if format is incorrect"
@@ -1125,13 +1128,14 @@ def amain(args, locations):
     # Step 1: initial parse of BLAST file to begin formatting the annotation table
     step1File = os.path.join(annotateRunDir, "tmp.step1.tsv") # will overwrite if exists
     hitMapDict = init_table(
+        clustToRep, repToClust,
         args.blastFile, args.evalue, args.numHits,
         step1File, args.databaseTag, args.largeTable)
     
     # Step 2: parse idmapping file
     parse_idmap(args.idmappingFile, hitMapDict)
     
-    # Step 3: pdate the annotation table with GOs
+    # Step 3: update the annotation table with GOs
     step3File = os.path.join(annotateRunDir,  "tmp.step3.tsv")
     update_table_with_gos(step1File, step3File, hitMapDict, goObo)
     os.unlink(step1File) # clean up first temporary file now that it has been used

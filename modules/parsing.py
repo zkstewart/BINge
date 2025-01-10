@@ -242,3 +242,29 @@ def locate_read_files(readsDir, readsSuffix, isSingleEnd):
     
     # Return files
     return forwardReads, reverseReads if reverseReads != [] else None, sampleNames
+
+def parse_binge_representatives(representativesFasta):
+    '''
+    Reads in the output file of BINge 'representatives' to associate cluster IDs to
+    their representative sequence ID.
+    
+    Parameters:
+        representativesFasta -- a string pointing to the location of a BINge representatives
+                                FASTA file.
+    Returns:
+        clustToRep -- a dictionary with cluster IDs as keys and representative sequence IDs
+                      as values.
+        repToClust -- a dictionary with representative sequence IDs as keys and cluster IDs
+                      as values.
+    '''
+    clustToRep = {}
+    repToClust = {}
+    with open(representativesFasta, "r") as fileIn:
+        for line in fileIn:
+            if line.startswith(">"):
+                clusterID, repID = line[1:].rstrip("\r\n").split(" ", maxsplit=1)
+                repID = repID.split("=", maxsplit=1)[1]
+                
+                clustToRep[clusterID] = repID
+                repToClust[repID] = clusterID
+    return clustToRep, repToClust

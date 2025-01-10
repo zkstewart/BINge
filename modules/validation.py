@@ -306,7 +306,7 @@ def validate_representatives_args(args):
     # Derive the analysis directory name (without following symlink yet)
     locations.runName = args.analysisFolder
     
-    # Locate which analysis directory to use
+    # Locate the cluster file we'll preferentially use
     args.bingeFile = _locate_raw_or_filtered_results(args, locations)
     
     # Validate cluster file format
@@ -351,7 +351,7 @@ def validate_dge_args(args):
     # Derive the analysis directory name (without following symlink yet)
     locations.runName = args.analysisFolder
     
-    # Locate which analysis directory to use
+    # Locate the cluster file we'll preferentially use
     args.bingeFile = _locate_raw_or_filtered_results(args, locations)
     
     # Validate cluster file format
@@ -372,8 +372,14 @@ def validate_annotate_args(args):
     # Derive the analysis directory name (without following symlink yet)
     locations.runName = args.analysisFolder
     
-    # Validate that analysis directory exists
-    args.runDir = locations.resolve_runName(locations.analysisDir)
+    # Locate the cluster file we'll preferentially use
+    args.bingeFile = _locate_raw_or_filtered_results(args, locations)
+    
+    # Validate cluster file format
+    isBinge = validate_cluster_file(args.bingeFile)
+    if not isBinge:
+        raise ValueError(f"The file '{args.bingeFile}' does not appear to be a BINge cluster file; " + 
+                         "has this been corrupted somehow?")
     
     # Validate numeric parameters
     if args.evalue < 0:
