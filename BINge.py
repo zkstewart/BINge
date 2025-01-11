@@ -362,10 +362,10 @@ def main():
     iparser.add_argument("--microbial", dest="isMicrobial",
                          required=False,
                          action="store_true",
-                         help=hide("""Optionally provide this argument if you are providing a GFF3
+                         help="""Optionally provide this argument if you are providing a GFF3
                          file from a bacteria, archaea, or just any organism in which the GFF3
                          does not contain mRNA and exon features; in this case, I expect the GFF3
-                         feature to have 'gene' and 'CDS' features."""),
+                         feature to have 'gene' and 'CDS' features.""",
                          default=False)
     iparser.add_argument("--gmapDir", dest="gmapDir",
                          required=False,
@@ -413,10 +413,10 @@ def main():
     cparser.add_argument("--microbial", dest="isMicrobial",
                          required=False,
                          action="store_true",
-                         help=hide("""Optionally provide this argument if you are providing a GFF3
+                         help="""Optionally provide this argument if you are providing a GFF3
                          file from a bacteria, archaea, or just any organism in which the GFF3
                          does not contain mRNA and exon features; in this case, I expect the GFF3
-                         feature to have 'gene' and 'CDS' features."""),
+                         feature to have 'gene' and 'CDS' features.""",
                          default=False)
     cparser.add_argument("--identity", dest="identity",
                          required=False,

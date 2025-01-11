@@ -59,7 +59,7 @@ def validate_init_args(args):
         
         for inputFile in inputArgument.split(","):
             if not os.path.isfile(inputFile):
-                raise ValueError(f"Unable to locate the file '{inputFile})' from the -ig argument '{inputArgument}'")
+                raise ValueError(f"Unable to locate the file '{inputFile}' from the -ig argument '{inputArgument}'")
     
     # Validate -ix file locations
     for inputArgument in args.inputTxomeFiles:
@@ -69,7 +69,7 @@ def validate_init_args(args):
         
         for inputFile in inputArgument.split(","):
             if not os.path.isfile(inputFile):
-                raise ValueError(f"Unable to locate the file '{inputFile})' from the -ix argument '{inputArgument}'")
+                raise ValueError(f"Unable to locate the file '{inputFile}' from the -ix argument '{inputArgument}'")
     
     # Validate that at least one value was given to -ig or -ix
     if len(args.inputGff3Files) == 0 and len(args.inputTxomeFiles) == 0:
