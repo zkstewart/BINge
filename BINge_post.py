@@ -948,7 +948,7 @@ def rmain(args, locations):
         annotIDs = set()
     
     # Parse salmon quant (if relevant)
-    if args.salmonFiles != []:
+    if args.useSalmon:
         sampleNames = [ f"{i}" for i in range(len(args.salmonFiles))] # sample names don't matter
         quantCollection = parse_quants(args.salmonFiles, sampleNames)
     else:
