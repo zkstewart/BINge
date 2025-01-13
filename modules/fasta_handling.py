@@ -239,7 +239,7 @@ class ORFPredictionProcess(BasicProcess):
         # Produce the CDS and protein sequence files
         with open(cdsFileOut, "w") as cdsOut, open(protFileOut, "w") as protOut:
             for mrnaID, protSeq, cdsSeq in orfFinder.process():
-                if protSeqs == "-" or cdsSeq == "-": # '-' is a blank from ORF_Find
+                if protSeq == "-" or cdsSeq == "-": # '-' is a blank from ORF_Find
                     continue
                 
                 cdsOut.write(f">{mrnaID}\n{cdsSeq}\n")
