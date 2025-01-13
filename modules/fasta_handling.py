@@ -234,10 +234,15 @@ class ORFPredictionProcess(BasicProcess):
         # Establish the finder object
         orfFinder = ZS_ORF.ORF_Find(mrnaFileIn)
         orfFinder.hitsToPull = 1
+        orfFinder.minProLen = 1 # we need a hit for _every_ sequence to prevent errors downstream
+        orfFinder.unresolvedCodon = 5 # allow some codons to be unresolved
         
         # Produce the CDS and protein sequence files
         with open(cdsFileOut, "w") as cdsOut, open(protFileOut, "w") as protOut:
             for mrnaID, protSeq, cdsSeq in orfFinder.process():
+                if protSeqs == "-" or cdsSeq == "-": # '-' is a blank from ORF_Find
+                    continue
+                
                 cdsOut.write(f">{mrnaID}\n{cdsSeq}\n")
                 protOut.write(f">{mrnaID}\n{protSeq}\n")
         
