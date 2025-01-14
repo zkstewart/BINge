@@ -240,7 +240,7 @@ class Locations:
         ]
         if sequenceFiles == []:
             raise FileNotFoundError(f"Unable to locate any '{sequenceSuffix}' files within '{self.sequencesDir}' " +
-                                    f"or '{self.sequencesDir}'; have you run the initialisation step yet?")
+                                    f"or '{self.genomesDir}'; have you run the initialisation step yet?")
         else:
             for sequenceFile in sequenceFiles:
                 if not os.path.isfile(sequenceFile + ".ok"):

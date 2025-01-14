@@ -99,22 +99,13 @@ def auto_gmapping(locations, gmapDir, threads):
         raise FileNotFoundError(f"auto_gmapping failed because '{locations.genomesDir}' is empty somehow?")
     
     # Locate all sequence files for alignment query
-    queryFiles = [
-        [ os.path.join(locations.sequencesDir, f), f.split(".cds", maxsplit=1)[0] ]
-        for f in os.listdir(locations.sequencesDir)
-        if f.endswith(".cds")
-    ] + [
-        [ os.path.join(locations.genomesDir, f), f.split(".cds", maxsplit=1)[0] ]
-        for f in os.listdir(locations.genomesDir)
-        if f.endswith(".cds")
-    ]
-    
-    if not len(queryFiles) > 0:
-       raise FileNotFoundError(f"auto_gmapping failed because '{locations.sequencesDir}' contains no query files somehow?")
+    queryFiles = locations.get_sequenceFiles(".cds")
     
     # Iteratively perform GMAP search for all combinations
     notifiedOnce = False
-    for queryFile, queryPrefix in queryFiles:
+    for queryFile in queryFiles:
+        queryPrefix = os.path.basename(queryFile).split(".cds", maxsplit=1)[0]
+        
         originalQuery = queryFile # remember what the original query file was if we end up using tmp files
         tmpQueryFile = f"{originalQuery}.tmp" # temporary file for problem sequences
         

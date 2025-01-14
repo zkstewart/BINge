@@ -71,18 +71,20 @@ def validate_init_args(args):
             if not os.path.isfile(inputFile):
                 raise ValueError(f"Unable to locate the file '{inputFile}' from the -ix argument '{inputArgument}'")
     
-    # Validate that at least one value was given to -ig or -ix
-    if len(args.inputGff3Files) == 0 and len(args.inputTxomeFiles) == 0:
-        raise ValueError("You must specify at least one -ig or -ix argument")
-    
     # Validate -t file locations
+    hasGFF3 = False
     for inputArgument in args.targetGenomeFiles:
         if not inputArgument.count(",") <= 1:
             raise ValueError(f"-t value '{inputArgument}' must have 0 or one comma in it (comma would separate GFF3,genome files)")
         
+        hasGFF3 = True if inputArgument.count(",") == 1 else hasGFF3
         for inputFile in inputArgument.split(","):
             if not os.path.isfile(inputFile):
                 raise FileNotFoundError(f"Unable to locate the -t input file '{inputFile}'")
+    
+    # Validate that at least one value was given to -ig or -ix or -t has a GFF3 file
+    if len(args.inputGff3Files) == 0 and len(args.inputTxomeFiles) == 0 and not hasGFF3:
+        raise ValueError("You must specify at least one -ig, -ix, or -t (with a GFF3) argument")
     
     # Validate numeric parameters
     if args.threads < 1:
@@ -181,7 +183,7 @@ def validate_blast_args(args):
     
     # Validate that sequences directory exists
     if not os.path.isdir(locations.sequencesDir):
-        raise FileNotFoundError(f"Unable to locate '{args.workingDirectory}'; " +
+        raise FileNotFoundError(f"Unable to locate '{locations.sequencesDir}'; " +
                                 "have you run the initialisation step yet?")
     
     # Locate and validate that sequences exist in the sequences directory
@@ -216,7 +218,7 @@ def validate_salmon_args(args):
     
     # Validate that sequences directory exists
     if not os.path.isdir(locations.sequencesDir):
-        raise FileNotFoundError(f"Unable to locate '{args.workingDirectory}'; " +
+        raise FileNotFoundError(f"Unable to locate '{locations.sequencesDir}'; " +
                                 "have you run the initialisation step yet?")
     
     # Validate that reads directory exists
