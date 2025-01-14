@@ -3,10 +3,6 @@ from .validation import touch_ok
 from .fasta_handling import AnnotationExtractor
 from .thread_workers import BasicProcess
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_GFF3IO
-from ZS_GFF3IO import GFF3
-
 # Multithreaded functions and classes
 class GFF3ExtractionProcess(BasicProcess):
     '''
