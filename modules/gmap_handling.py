@@ -103,7 +103,12 @@ def auto_gmapping(locations, gmapDir, threads):
         [ os.path.join(locations.sequencesDir, f), f.split(".cds", maxsplit=1)[0] ]
         for f in os.listdir(locations.sequencesDir)
         if f.endswith(".cds")
+    ] + [
+        [ os.path.join(locations.genomesDir, f), f.split(".cds", maxsplit=1)[0] ]
+        for f in os.listdir(locations.genomesDir)
+        if f.endswith(".cds")
     ]
+    
     if not len(queryFiles) > 0:
        raise FileNotFoundError(f"auto_gmapping failed because '{locations.sequencesDir}' contains no query files somehow?")
     

@@ -319,7 +319,7 @@ def populate_bin_collections(genomesDir, collectionList, gmapFiles,
         thisGenomeIndex = os.path.join(genomesDir, f"{genomePrefix}.fasta.lengths.pkl")
         
         # Get all GMAP files associated with this genome
-        thisGmapFiles = [ gmFile for gmFile in gmapFiles if f"{genomePrefix}_" in gmFile]
+        thisGmapFiles = [ gmFile for gmFile in gmapFiles if f"to_{genomePrefix}_" in gmFile]
         
         # Get other data structures for this genome
         thisBinCollection = collectionList[genomeIndex]
