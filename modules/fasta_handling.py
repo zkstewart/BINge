@@ -31,19 +31,34 @@ class FastaCollection:
     def __init__(self, fastaFiles):
         self.fastaFiles = fastaFiles
         self.records = []
+        self.pipePrefixes = []
         
         self._parse_fastas()
     
     def _parse_fastas(self):
         for fastaFile in self.fastaFiles:
             self.records.append(Fasta(fastaFile))
+            # Extract pipe prefixes from FASTA titles
+            pipePrefixes = set()
+            with open(fastaFile, "r") as fileIn:
+                for line in fileIn:
+                    if line.startswith(">"):
+                        seqPrefix = line[1:].split(None, 1)[0]
+                        if "|" in seqPrefix:
+                            pipePrefix = seqPrefix.split("|")[0] + "|"
+                            pipePrefixes.add(pipePrefix)
+            self.pipePrefixes.append(pipePrefixes)
     
     def __getitem__(self, key):
-        for records in self.records:
+        for i, records in enumerate(self.records):
             try:
                 return records[key]
             except:
-                pass
+                for pipePrefix in self.pipePrefixes[i]:
+                    try:
+                        return records[pipePrefix + key]
+                    except:
+                        pass
         raise KeyError(f"'{key}' not found in collection")
     
     def __contains__(self, key):
