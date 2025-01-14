@@ -19,10 +19,10 @@ class GFF3ExtractionProcess(BasicProcess):
         isMicrobial -- a boolean indicating whether the organism is a microbe and hence GFF3
                        has gene -> CDS features, rather than gene -> mRNA -> CDS/exon.
     '''
-    def task(self, gff3FileIn, fastaFileIn, mrnaFileOut, cdsFileOut, protFileOut, isMicrobial):
+    def task(self, gff3FileIn, fastaFileIn, mrnaFileOut, cdsFileOut, protFileOut, isMicrobial, translationTable):
         # Generate sequences
         with open(mrnaFileOut, "w") as mrnaOut, open(cdsFileOut, "w") as cdsOut, open(protFileOut, "w") as protOut:
-            seqGenerator = AnnotationExtractor(gff3FileIn, fastaFileIn, isMicrobial)
+            seqGenerator = AnnotationExtractor(gff3FileIn, fastaFileIn, isMicrobial, translationTable)
             for mrnaID, exonSeq, cdsSeq, protSeq in seqGenerator.iter_sequences():
                 mrnaOut.write(f">{mrnaID}\n{exonSeq}\n")
                 cdsOut.write(f">{mrnaID}\n{cdsSeq}\n")
@@ -106,7 +106,7 @@ def iterate_gmap_gff3(gff3File):
         raise Exception(f"'{gff3File}' does not appear to be a valid GFF3 file!")
     yield dataDict
 
-def extract_annotations_from_gff3(inputDir, outputDir, outputPrefix, isMicrobial, threads):
+def extract_annotations_from_gff3(inputDir, outputDir, outputPrefix, threads, isMicrobial, translationTable):
     '''
     Will take the files within the inputDir location and produce sequence files from them
     which are written to the outputDir location.
@@ -115,9 +115,11 @@ def extract_annotations_from_gff3(inputDir, outputDir, outputPrefix, isMicrobial
         inputDir -- a string indicating the location of a directory containing GFF3/FASTA files.
         outputDir -- a string indicating the location to write the output sequence files to.
         outputPrefix -- a string indicating the prefix to use for the output sequence files.
+        threads -- an integer indicating the number of threads to use for processing.
         isMicrobial -- a boolean indicating whether the organism is a microbe and hence GFF3
                        has gene -> CDS features, rather than gene -> mRNA -> CDS/exon.
-        threads -- an integer indicating the number of threads to use for processing.
+        translationTable -- an integer indicating the translation table to use for protein sequences;
+                            should be an integer corresponding to the NCBI translation table numbering.
     '''
     suffixRegex = re.compile(r"(\d+)\.gff3$")
     
@@ -163,7 +165,8 @@ def extract_annotations_from_gff3(inputDir, outputDir, outputPrefix, isMicrobial
                     gff3File, fastaFile, (mrnaFileName, cdsFileName, protFileName) = filteredPrediction[i+x]
                     
                     extractionWorkerThread = GFF3ExtractionProcess(gff3File, fastaFile, mrnaFileName,
-                                                                   cdsFileName, protFileName, isMicrobial)
+                                                                   cdsFileName, protFileName,
+                                                                   isMicrobial, translationTable)
                     extractionWorkerThread.start()
                     processing.append(extractionWorkerThread)
             

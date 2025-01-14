@@ -1,8 +1,51 @@
 import os, sys
-from .fasta_handling import ZS_SeqIO
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages import ZS_ClustIO, ZS_BlastIO
+
+def get_hash_for_input_sequences(inObject, randomHash=True, maxLength=20):
+    '''
+    The function can be guaranteed to produce a truly random hash, or produce something
+    consistent. Randomness is good for truly temporary files; consistency can be useful
+    for dealing with files that might persist.
+    
+    Function has been copied from the original in ZS_SeqIO.Conversion to avoid importing
+    ZS_SeqIO just for this function.
+    
+    Parameters:
+        inObject -- a FASTA, FastASeq, SeqRecord, or string pointing to an existing FASTA format file
+        randomHash -- a boolean indicating whether we want the hash to be consistent when
+                    qt is the same (True), or produce truly randomised results always (False)
+        maxLength -- an integer for the maximum length of the hash string you want returned
+    '''
+    assert isinstance(randomHash, bool), \
+        "randomHash value must be True or False"
+    assert isinstance(maxLength, int) and maxLength > 0, \
+        "maxLength must be an integer greater than zero"
+    
+    # Get a string for hash building
+    if isinstance(inObject, str):
+        strForHash = inObject
+    elif type(inObject).__name__ == "SeqRecord":
+        strForHash = inObject.id + str(inObject.seq)[0:1000]
+    elif hasattr(inObject, "isFASTA") and inObject.isFASTA is True:
+        strForHash = ""
+        for FastASeq_obj in inObject:
+            strForHash += FastASeq_obj.id
+            strForHash += FastASeq_obj.seq[0:1000]
+            strForHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
+    elif hasattr(inObject, "isFastASeq") and inObject.isFastASeq is True:
+        strForHash = inObject.id + inObject.seq[0:1000]
+    else:
+        raise ValueError("get_hash_for_input_sequences can't handle the given object type")
+    
+    # Get the hash in a randomised or non-randomised way
+    if randomHash is True:
+        tmpHash = sha256(bytes(strForHash + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+    else:
+        tmpHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
+    
+    return tmpHash[0:maxLength]
 
 def write_unbinned_fasta(unbinnedIDs, transcriptRecords, tmpDir):
     '''
@@ -18,7 +61,7 @@ def write_unbinned_fasta(unbinnedIDs, transcriptRecords, tmpDir):
     '''
     # Generate a temporary FASTA file containing unbinned transcripts
     tmpFileName = os.path.join(tmpDir, "tmp_BINge_unbinned_{0}.fasta".format(
-        ZS_SeqIO.Conversion.get_hash_for_input_sequences(str(transcriptRecords))
+        get_hash_for_input_sequences(str(transcriptRecords))
         )
     )
     with open(tmpFileName, "w") as fileOut:
@@ -107,9 +150,7 @@ def mmseqs_clustering(fastaFile, algorithm, mmseqsDir, tmpDir, threads, evalue, 
     clusterer.cluster()
     
     # Generate the tabular output
-    tmpFileName = "tmp_BINge_mms2clusttable_{0}.tsv".format(
-        ZS_SeqIO.Conversion.get_hash_for_input_sequences(fastaFile)
-    )
+    tmpFileName = "tmp_BINge_mms2clusttable_{0}.tsv".format(get_hash_for_input_sequences(fastaFile))
     clusterer.tabulate(tmpFileName)
     
     # Parse it into a form that BINge can use

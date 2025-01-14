@@ -5,9 +5,10 @@ from Bio.SeqIO.FastaIO import SimpleFastaParser
 
 from .thread_workers import BasicProcess
 from .validation import handle_symlink_change, touch_ok
+from .translate import get_reverse_complement, dna_to_protein
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_SeqIO, ZS_ORF
+from Various_scripts.Function_packages import ZS_ORF
 
 # Define classes
 class FastaParser:
@@ -83,12 +84,23 @@ class AnnotationExtractor:
     sequences for mRNA features. It is designed for use with BINge as a (hopefully) light
     weight actor.
     '''
-    def __init__(self, gff3File, fastaFile, isMicrobial=False):
+    def __init__(self, gff3File, fastaFile, isMicrobial=False, translationTable=1):
         self.gff3File = gff3File
         self.isMicrobial = isMicrobial
+        self.translationTable = translationTable
         self._fastaFile = fastaFile
         
         self.fasta = SeqIO.to_dict(SeqIO.parse(fastaFile, "fasta"))
+    
+    @property
+    def translationTable(self):
+        return self._translationTable
+    
+    @translationTable.setter
+    def translationTable(self, value):
+        assert isinstance(value, int)
+        assert value > 0, "translationTable must be greater than 0"
+        self._translationTable = value
     
     def _gff3_iterator(self):
         '''
@@ -191,7 +203,7 @@ class AnnotationExtractor:
         
         # Reverse complement if necessary
         if strand == "-":
-            sequence = ZS_SeqIO.FastASeq.get_reverse_complement(self=None, staticSeq=sequence)
+            sequence = get_reverse_complement(sequence)
         
         # Trim the sequence to the correct frame
         sequence = sequence[startingFrame:]
@@ -224,7 +236,7 @@ class AnnotationExtractor:
             
             exonSeq = AnnotationExtractor.assemble_sequence(exon, strand, contigSequence)
             cdsSeq = AnnotationExtractor.assemble_sequence(cds, strand, contigSequence)
-            protSeq = ZS_SeqIO.FastASeq.dna_to_protein(cdsSeq)
+            protSeq = dna_to_protein(cdsSeq, self.translationTable)
             
             # Warn if the protein sequence contains a stop codon
             if "*" in protSeq.strip("*"):
@@ -245,11 +257,12 @@ class ORFPredictionProcess(BasicProcess):
         cdsFileOut -- a string indicating the location to write the CDS sequences to.
         protFileOut -- a string indicating the location to write the protein sequences to.
     '''
-    def task(self, mrnaFileIn, cdsFileOut, protFileOut):
+    def task(self, mrnaFileIn, cdsFileOut, protFileOut, translationTable):
         # Establish the finder object
         orfFinder = ZS_ORF.ORF_Find(mrnaFileIn)
         orfFinder.hitsToPull = 1
         orfFinder.unresolvedCodon = 5 # allow some codons to be unresolved
+        orfFinder.translationTable = translationTable
         
         # Produce the CDS and protein sequence files
         with open(cdsFileOut, "w") as cdsOut, open(protFileOut, "w") as protOut:
@@ -328,7 +341,7 @@ def remove_sequence_from_fasta(fastaFile, sequenceIDs, outputFile, force=False):
         raise Exception(("remove_sequence_from_fasta() failed because no sequences " +
                          "remained after removing the provided sequence IDs!"))
 
-def process_transcripts(locations, threads):
+def process_transcripts(locations, threads, translationTable=1):
     '''
     Will take the files within the 'transcripts' subdirectory of workingDirectory and
     produce sequence files from them where appropriate.
@@ -336,6 +349,8 @@ def process_transcripts(locations, threads):
     Parameters:
         locations -- a Locations object with attributes for directory locations.
         threads -- an integer indicating the number of threads to use for ORF prediction.
+        translationTable -- an integer indicating the translation table to use for ORF prediction;
+                            defaults to 1 which is the standard table.
     '''
     # Locate all transcript files / triplets
     needsSymlink = []
@@ -411,7 +426,7 @@ def process_transcripts(locations, threads):
                 if i+x < len(filteredPrediction): # parent loop may excess if n > the number of files needing indexing
                     mrnaFile, (cdsFile, protFile) = filteredPrediction[i+x]
                     
-                    predictionWorkerThread = ORFPredictionProcess(mrnaFile, cdsFile, protFile)
+                    predictionWorkerThread = ORFPredictionProcess(mrnaFile, cdsFile, protFile, translationTable)
                     predictionWorkerThread.start()
                     processing.append(predictionWorkerThread)
             

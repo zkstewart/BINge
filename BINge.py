@@ -16,7 +16,6 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from modules.locations import Locations
 from modules.bins import BinBundle
 from modules.bin_handling import generate_bin_collections, populate_bin_collections
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
@@ -26,7 +25,7 @@ from modules.parsing import parse_binge_clusters
 from modules.validation import initialise_working_directory, validate_init_args, \
     validate_cluster_args, validate_view_args, \
     validate_fasta, handle_symlink_change, touch_ok
-from modules.fasta_handling import AnnotationExtractor, FastaCollection, \
+from modules.fasta_handling import FastaCollection, \
     generate_sequence_length_index, process_transcripts
 
 HASHING_PARAMS = ["gmapIdentity", "clusterVoteThreshold"]
@@ -359,6 +358,10 @@ def main():
                          help="""Optionally, specify how many threads to run when multithreading
                          is available (default==1)""",
                          default=1)
+    iparser.add_argument("--gmapDir", dest="gmapDir",
+                         required=False,
+                         help="""If GMAP is not discoverable in your PATH, specify the directory
+                         containing the 'gmap' and 'gmap_build' executables""")
     iparser.add_argument("--microbial", dest="isMicrobial",
                          required=False,
                          action="store_true",
@@ -367,10 +370,13 @@ def main():
                          does not contain mRNA and exon features; in this case, I expect the GFF3
                          feature to have 'gene' and 'CDS' features.""",
                          default=False)
-    iparser.add_argument("--gmapDir", dest="gmapDir",
+    iparser.add_argument("--translation", dest="translationTable",
                          required=False,
-                         help="""If GMAP is not discoverable in your PATH, specify the directory
-                         containing the 'gmap' and 'gmap_build' executables""")
+                         type=int,
+                         help="""Optionally provide this argument if you have provided individual files in
+                         -ix which will be translated; default is 1 (standard code); indicate the NCBI
+                         translation table number if your organisms have a different genetic code""",
+                         default=1)
     
     # Cluster-subparser arguments
     ## Optional (shown)
@@ -523,14 +529,16 @@ def imain(args, locations):
     
     # Extract sequences from any -ig files
     extract_annotations_from_gff3(locations.gff3Dir, locations.sequencesDir,
-                                  "annotations", args.isMicrobial, args.threads)
+                                  "annotations", args.threads,
+                                  args.isMicrobial, args.translationTable)
     
     # Extract sequences from any -t files
     extract_annotations_from_gff3(locations.genomesDir, locations.genomesDir,
-                                  "genome", args.isMicrobial, args.threads)
+                                  "genome", args.threads,
+                                  args.isMicrobial, args.translationTable,)
     
     # Extract CDS/proteins from any input transcript FASTAs
-    process_transcripts(locations, args.threads)
+    process_transcripts(locations, args.threads, args.translationTable)
     
     # Establish GMAP indexes
     setup_gmap_indices(locations, args.gmapDir, args.threads)

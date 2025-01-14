@@ -89,6 +89,18 @@ def validate_init_args(args):
     # Validate numeric parameters
     if args.threads < 1:
         raise ValueError("--threads should be given a value >= 1")
+    if args.translationTable < 0:
+        raise ValueError("--translationTable should be given a value >= 0")
+    if args.translationTable in [7, 8, 17, 18, 19, 20]:
+        raise ValueError(f"--translationTable {args.translationTable} is not a valid NCBI table")
+    if args.translationTable > 33:
+        raise ValueError("--translationTable was given a value > 33; this is not a valid NCBI table")
+    
+    # Give warning if translation table is 1 when --microbial is indicated
+    if args.isMicrobial and args.translationTable == 1:
+        print("WARNING: You've indicated --microbial and --translationTable 1; " + 
+              "this is the standard table for Eukaryotes, not Prokaryotes. Your " + 
+              "results may be incorrect.")
     
     # Validate GMAP location
     _validate_gmap(args)
