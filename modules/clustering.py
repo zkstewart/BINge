@@ -1,4 +1,5 @@
-import os, sys
+import os, sys, random, time
+from hashlib import sha256
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages import ZS_ClustIO, ZS_BlastIO
