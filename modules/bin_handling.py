@@ -1,7 +1,7 @@
 import os
 from .thread_workers import ReturningProcess
 from .parsing import load_sequence_length_index
-from .gff3_handling import GFF3, iterate_gmap_gff3
+from .gff3_handling import gff3_iterator, iterate_gmap_gff3
 from .bins import Bin, BinCollection
 
 # Multithreaded functions and classes
@@ -21,29 +21,13 @@ class CollectionSeedProcess(ReturningProcess):
         
         # Seed bin collection if GFF3 is available
         if gff3File != None:
-            gff3Obj = GFF3(gff3File, strict_parse=False)
-            for geneFeature in gff3Obj.types["gene"]:
-                
+            for mrnaID, contig, strand, exon, cds in gff3_iterator(gff3File, isMicrobial):
                 # Create a bin for each exon feature
                 exonBins = []
-                if not isMicrobial:
-                    try:
-                        for mrnaFeature in geneFeature.mRNA:
-                            for exonFeature in mrnaFeature.exon:
-                                exonBin = Bin(exonFeature.contig, exonFeature.start, exonFeature.end)
-                                exonBin.add(mrnaFeature.ID)
-                                exonBins.append(exonBin)
-                    except:
-                        "This exception occurs if a gene feature has non-mRNA children e.g., ncRNAs"
-                        continue
-                else:
-                    try:
-                        exonBin = Bin(geneFeature.contig, geneFeature.start, geneFeature.end)
-                        exonBin.add(geneFeature.ID)
-                        exonBins.append(exonBin)
-                    except:
-                        "This exception occurs if a gene feature has unusual children types e.g., rRNA"
-                        continue
+                for exonStart, exonEnd, _ in exon:
+                    exonBin = Bin(contig, exonStart, exonEnd)
+                    exonBin.add(mrnaID)
+                    exonBins.append(exonBin)
                 
                 # Iteratively handle exon bins
                 for exonBin in exonBins:

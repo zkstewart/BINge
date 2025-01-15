@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Various_scripts.Function_packages import ZS_BlastIO, ZS_MapIO
 
 from modules.locations import Locations
-from modules.fasta_handling import ZS_SeqIO, FastaCollection
+from modules.fasta_handling import FastaCollection
 from modules.salmon import SalmonQC
 from modules.validation import validate_blast_args, validate_salmon_args, validate_filter_args, \
     validate_representatives_args, validate_dge_args, validate_annotate_args, touch_ok
