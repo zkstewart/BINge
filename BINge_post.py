@@ -416,7 +416,7 @@ def main():
                                     add_help=False,
                                     help="Produce an annotation table for clusters",
                                     description=annotateDescription)
-    aparser.set_defaults(func=dmain)
+    aparser.set_defaults(func=amain)
     
     # BLAST-subparser arguments
     bparser.add_argument("-t", dest="targetFile",
