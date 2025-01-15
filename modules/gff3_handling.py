@@ -1,4 +1,6 @@
 import os, sys, re
+from Bio import SeqIO
+
 from .validation import touch_ok
 from .thread_workers import BasicProcess
 
