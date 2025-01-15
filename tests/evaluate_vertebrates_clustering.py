@@ -14,7 +14,8 @@ from sklearn.metrics.cluster import adjusted_rand_score, rand_score, \
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.validation import validate_cluster_file
 from modules.parsing import parse_binge_clusters
-from utilities.evaluate_clustering import validate_cluster_tsv_file, parse_mmseqs_clusters
+from utilities.evaluate_clustering import validate_cluster_tsv_file, \
+    parse_mmseqs_clusters, parse_orthofinder_clusters
 
 # Define functions
 def validate_args(args):
@@ -42,16 +43,17 @@ def validate_args(args):
         quit()
     
     # Validate input file format
-    try:
+    if args.clusterer == "binge":
         isBinge = validate_cluster_file(args.clusterFile)
         if not isBinge:
-            raise ValueError("The input file was not validated as a BINge or MMSeqs2 file!")
-        return isBinge
-    except:
+            raise ValueError("The input file was not validated as a BINge file!")
+    elif args.clusterer == "mmseqs":
         isTSV = validate_cluster_tsv_file(args.clusterFile)
-        if not isTSV:
-            raise ValueError("The input file was not validated as a BINge or MMSeqs2 file!")
-        return False # it's not a BINge file so return False to indicate that
+    elif args.clusterer == "orthofinder":
+        if args.orthofinderName is None:
+            raise ValueError("You must specify --orthofinderName when using '-p orthofinder'")
+    else:
+        raise NotImplementedError()
 
 def parse_gff3_geneids(refseqGFF3Files):
     '''
@@ -192,6 +194,10 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for text results")
+    p.add_argument("-p", dest="clusterer",
+                   required=True,
+                   choices=["binge", "mmseqs", "orthofinder"],
+                   help="Specify which clusterer's results you are providing.")
     # Optional
     p.add_argument("--beTolerant", dest="beTolerant",
                    required=False,
@@ -202,15 +208,24 @@ def main():
                    to differences between the GFF3 and cluster file. You should only do this
                    if you find that the errors are not significant!""",
                    default=False)
+    p.add_argument("--orthofinderName", dest="orthofinderName",
+                   required=False,
+                   help="""Optionally, if you are using OrthoFinder, specify the name of the
+                   species you are evaluating; this should be a column header in the
+                   OrthoFinder.tsv file.""")
     
     args = p.parse_args()
     isBinge = validate_args(args)
     
     # Parse the cluster file
-    if isBinge:
+    if args.clusterer == "binge":
         testDict = parse_binge_clusters(args.clusterFile)
-    else:
+    elif args.clusterer == "mmseqs":
         testDict = parse_mmseqs_clusters(args.clusterFile)
+    elif args.clusterer == "orthofinder":
+        testDict = parse_orthofinder_clusters(args.clusterFile, args.orthofinderName)
+    else:
+        raise NotImplementedError()
     
     # Parse the RefSeq GFF3 files
     idMappingDict = parse_gff3_geneids(args.annotationGFF3)
