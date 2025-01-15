@@ -3,6 +3,7 @@ from Bio import SeqIO
 
 from .validation import touch_ok
 from .thread_workers import BasicProcess
+from .translate import get_reverse_complement, dna_to_protein
 
 # Define classes
 class AnnotationExtractor:

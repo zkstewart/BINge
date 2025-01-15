@@ -5,7 +5,6 @@ from Bio.SeqIO.FastaIO import SimpleFastaParser
 
 from .thread_workers import BasicProcess
 from .validation import handle_symlink_change, touch_ok
-from .translate import get_reverse_complement, dna_to_protein
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages import ZS_ORF
