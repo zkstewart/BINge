@@ -41,6 +41,9 @@ def validate_args(args):
             raise ValueError("The input file was not validated as a CD-HIT file!")
     elif args.clusterer == "corset" or args.clusterer == "mmseqs":
         isTSV = validate_cluster_tsv_file(args.clusterFile)
+    elif args.clusterer == "orthofinder":
+        if args.orthofinderName is None:
+            raise ValueError("You must specify --orthofinderName when using '-p orthofinder'")
     else:
         raise NotImplementedError()
     
@@ -110,7 +113,7 @@ def parse_mmseqs_clusters(fileName):
     right column being the member sequence ID.
     
     Parameters:
-        fileName -- a string indicating the location of the Corset TSV file for parsing.
+        fileName -- a string indicating the location of the MMseqs TSV file for parsing.
     Returns:
         clusterDict -- a dictionary with structure like:
                        {
@@ -133,6 +136,38 @@ def parse_mmseqs_clusters(fileName):
                 
                 clusterDict.setdefault(clusterNum, [])
                 clusterDict[clusterNum].append(seqID)
+    return clusterDict
+
+def parse_orthofinder_clusters(fileName, columnName):
+    '''
+    Parameters:
+        fileName -- a string indicating the location of the Corset TSV file for parsing.
+        columnName -- a string indicating the name of the species to parse from the OrthoFinder file.
+    Returns:
+        clusterDict -- a dictionary with structure like:
+                       {
+                           0: ['seqID1', 'seqID2'],
+                           1: ['seqID3'],
+                           ...
+                       }
+    '''
+    clusterDict = {}
+    clusterNum = 0
+    with open(fileName, "r") as fileIn:
+        firstLine = True
+        for line in fileIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            if firstLine:
+                columnIndex = sl.index(columnName)
+                firstLine = False
+            else:
+                clustID = sl[0]
+                seqIDs = sl[columnIndex].split(", ")
+                if seqIDs != [] and seqIDs != [""]:
+                    clusterDict[clusterNum] = []
+                    for seqID in seqIDs:
+                        clusterDict[clusterNum].append(seqID)
+                    clusterNum += 1
     return clusterDict
 
 ## Main
@@ -174,7 +209,7 @@ def main():
                    help="Output file name for text results")
     p.add_argument("-p", dest="clusterer",
                    required=True,
-                   choices=["binge", "cdhit", "corset", "mmseqs"],
+                   choices=["binge", "cdhit", "corset", "mmseqs", "orthofinder"],
                    help="Specify which clusterer's results you are providing.")
     # Optional
     p.add_argument("--seq_prefix", dest="seqPrefix",
@@ -202,6 +237,11 @@ def main():
                    feature. Specify this flag to allow for that behaviour ONLY if you are
                    looking at one of these organisms.""",
                    default=False)
+    p.add_argument("--orthofinderName", dest="orthofinderName",
+                   required=False,
+                   help="""Optionally, if you are using OrthoFinder, specify the name of the
+                   species you are evaluating; this should be a column header in the
+                   OrthoFinder.tsv file.""")
     
     args = p.parse_args()
     validate_args(args)
@@ -230,6 +270,8 @@ def main():
         testDict = parse_corset_clusters(args.clusterFile)
     elif args.clusterer == "mmseqs":
         testDict = parse_mmseqs_clusters(args.clusterFile)
+    elif args.clusterer == "orthofinder":
+        testDict = parse_orthofinder_clusters(args.clusterFile, args.orthofinderName)
     else:
         raise NotImplementedError()
     
