@@ -171,6 +171,40 @@ def parse_orthofinder_clusters(fileName, columnNames):
                     clusterNum += 1
     return clusterDict
 
+def parse_sonicparanoid_clusters(fileName, columnNames):
+    '''
+    Parameters:
+        fileName -- a string indicating the location of the SonicParanoid2
+                    TSV file for parsing.
+        columnNames -- a list of strings indicating the name of the species
+                       to parse from the OrthoFinder file.
+    Returns:
+        clusterDict -- a dictionary with structure like:
+                       {
+                           0: ['seqID1', 'seqID2'],
+                           1: ['seqID3'],
+                           ...
+                       }
+    '''
+    clusterDict = {}
+    clusterNum = 0
+    with open(fileName, "r") as fileIn:
+        firstLine = True
+        for line in fileIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            if firstLine:
+                columnIndices = [ sl.index(x) for x in columnNames ]
+                firstLine = False
+            else:
+                clustID = sl[0]
+                seqIDs = [ x for i in columnIndices for x in sl[i].split(",") if x != "" ]
+                if seqIDs != [] and seqIDs != [""]:
+                    clusterDict[clusterNum] = []
+                    for seqID in seqIDs:
+                        clusterDict[clusterNum].append(seqID)
+                    clusterNum += 1
+    return clusterDict
+
 ## Main
 def main():
     # User input
@@ -210,7 +244,8 @@ def main():
                    help="Output file name for text results")
     p.add_argument("-p", dest="clusterer",
                    required=True,
-                   choices=["binge", "cdhit", "corset", "mmseqs", "orthofinder"],
+                   choices=["binge", "cdhit", "corset",
+                            "mmseqs", "orthofinder", "sonicparanoid"],
                    help="Specify which clusterer's results you are providing.")
     # Optional
     p.add_argument("--seq_prefix", dest="seqPrefix",
@@ -241,9 +276,9 @@ def main():
     p.add_argument("--orthofinderName", dest="orthofinderName",
                    required=False,
                    nargs="+",
-                   help="""Optionally, if you are using OrthoFinder, specify one or more
-                   names of the species you are evaluating; these should be column
-                   headers in the OrthoFinder.tsv file.""")
+                   help="""Optionally, if you are using OrthoFinder or SonicParanoid2,
+                   specify one or more names of the species you are evaluating;
+                   these should be column headers in the OrthoFinder.tsv file.""")
     
     args = p.parse_args()
     validate_args(args)
@@ -274,6 +309,8 @@ def main():
         testDict = parse_mmseqs_clusters(args.clusterFile)
     elif args.clusterer == "orthofinder":
         testDict = parse_orthofinder_clusters(args.clusterFile, args.orthofinderName)
+    elif args.clusterer == "sonicparanoid":
+        testDict = parse_sonicparanoid_clusters(args.clusterFile, args.orthofinderName)
     else:
         raise NotImplementedError()
     

@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.validation import validate_cluster_file
 from modules.parsing import parse_binge_clusters
 from utilities.evaluate_clustering import validate_cluster_tsv_file, \
-    parse_mmseqs_clusters, parse_orthofinder_clusters
+    parse_mmseqs_clusters, parse_orthofinder_clusters, parse_sonicparanoid_clusters
 
 # Define functions
 def validate_args(args):
@@ -196,7 +196,7 @@ def main():
                    help="Output file name for text results")
     p.add_argument("-p", dest="clusterer",
                    required=True,
-                   choices=["binge", "mmseqs", "orthofinder"],
+                   choices=["binge", "mmseqs", "orthofinder", "sonicparanoid"],
                    help="Specify which clusterer's results you are providing.")
     # Optional
     p.add_argument("--beTolerant", dest="beTolerant",
@@ -211,9 +211,9 @@ def main():
     p.add_argument("--orthofinderName", dest="orthofinderName",
                    required=False,
                    nargs="+",
-                   help="""Optionally, if you are using OrthoFinder, specify one or more
-                   names of the species you are evaluating; these should be column
-                   headers in the OrthoFinder.tsv file.""")
+                   help="""Optionally, if you are using OrthoFinder or SonicParanoid2,
+                   specify one or more names of the species you are evaluating;
+                   these should be column headers in the OrthoFinder.tsv file.""")
     
     args = p.parse_args()
     isBinge = validate_args(args)
@@ -225,6 +225,8 @@ def main():
         testDict = parse_mmseqs_clusters(args.clusterFile)
     elif args.clusterer == "orthofinder":
         testDict = parse_orthofinder_clusters(args.clusterFile, args.orthofinderName)
+    elif args.clusterer == "sonicparanoid":
+        testDict = parse_sonicparanoid_clusters(args.clusterFile, args.orthofinderName)
     else:
         raise NotImplementedError()
     
