@@ -42,7 +42,7 @@ def validate_args(args):
     elif args.clusterer == "corset" or args.clusterer == "mmseqs":
         isTSV = validate_cluster_tsv_file(args.clusterFile)
     elif args.clusterer == "orthofinder":
-        if args.orthofinderName is None:
+        if args.orthofinderName is None or args.orthofinderName == []:
             raise ValueError("You must specify --orthofinderName when using '-p orthofinder'")
     else:
         raise NotImplementedError()
@@ -138,11 +138,12 @@ def parse_mmseqs_clusters(fileName):
                 clusterDict[clusterNum].append(seqID)
     return clusterDict
 
-def parse_orthofinder_clusters(fileName, columnName):
+def parse_orthofinder_clusters(fileName, columnNames):
     '''
     Parameters:
         fileName -- a string indicating the location of the Corset TSV file for parsing.
-        columnName -- a string indicating the name of the species to parse from the OrthoFinder file.
+        columnNames -- a list of strings indicating the name of the species to parse
+                       from the OrthoFinder file.
     Returns:
         clusterDict -- a dictionary with structure like:
                        {
@@ -158,11 +159,11 @@ def parse_orthofinder_clusters(fileName, columnName):
         for line in fileIn:
             sl = line.rstrip("\r\n ").split("\t")
             if firstLine:
-                columnIndex = sl.index(columnName)
+                columnIndices = [ sl.index(x) for x in columnNames ]
                 firstLine = False
             else:
                 clustID = sl[0]
-                seqIDs = sl[columnIndex].split(", ")
+                seqIDs = [ x for i in columnIndices for x in sl[i].split(", ") if x != "" ]
                 if seqIDs != [] and seqIDs != [""]:
                     clusterDict[clusterNum] = []
                     for seqID in seqIDs:
@@ -239,9 +240,10 @@ def main():
                    default=False)
     p.add_argument("--orthofinderName", dest="orthofinderName",
                    required=False,
-                   help="""Optionally, if you are using OrthoFinder, specify the name of the
-                   species you are evaluating; this should be a column header in the
-                   OrthoFinder.tsv file.""")
+                   nargs="+",
+                   help="""Optionally, if you are using OrthoFinder, specify one or more
+                   names of the species you are evaluating; these should be column
+                   headers in the OrthoFinder.tsv file.""")
     
     args = p.parse_args()
     validate_args(args)

@@ -50,7 +50,7 @@ def validate_args(args):
     elif args.clusterer == "mmseqs":
         isTSV = validate_cluster_tsv_file(args.clusterFile)
     elif args.clusterer == "orthofinder":
-        if args.orthofinderName is None:
+        if args.orthofinderName is None or args.orthofinderName == []:
             raise ValueError("You must specify --orthofinderName when using '-p orthofinder'")
     else:
         raise NotImplementedError()
@@ -210,9 +210,10 @@ def main():
                    default=False)
     p.add_argument("--orthofinderName", dest="orthofinderName",
                    required=False,
-                   help="""Optionally, if you are using OrthoFinder, specify the name of the
-                   species you are evaluating; this should be a column header in the
-                   OrthoFinder.tsv file.""")
+                   nargs="+",
+                   help="""Optionally, if you are using OrthoFinder, specify one or more
+                   names of the species you are evaluating; these should be column
+                   headers in the OrthoFinder.tsv file.""")
     
     args = p.parse_args()
     isBinge = validate_args(args)
