@@ -41,9 +41,9 @@ def validate_args(args):
             raise ValueError("The input file was not validated as a CD-HIT file!")
     elif args.clusterer == "corset" or args.clusterer == "mmseqs":
         isTSV = validate_cluster_tsv_file(args.clusterFile)
-    elif args.clusterer == "orthofinder":
+    elif args.clusterer == "orthofinder" or args.clusterer == "sonicparanoid":
         if args.orthofinderName is None or args.orthofinderName == []:
-            raise ValueError("You must specify --orthofinderName when using '-p orthofinder'")
+            raise ValueError("You must specify --orthofinderName when using '-p orthofinder' or '-p sonicparanoid'")
     else:
         raise NotImplementedError()
     
