@@ -22,6 +22,8 @@ from modules.validation import validate_blast_args, validate_salmon_args, valida
     validate_representatives_args, validate_dge_args, validate_annotate_args, touch_ok
 from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge_clusters, \
     parse_gff3_ids, locate_read_files, parse_binge_representatives
+from modules.annotation import init_table, parse_idmap, update_table_with_gos, \
+    update_table_with_seq_details
 
 # Define functions
 def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
