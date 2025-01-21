@@ -45,10 +45,8 @@ class GmapBinProcess(ReturningProcess):
         binCollection -- an existing BinCollection object to add GMAP alignments to.
         indexFileName -- a string indicating the location of a pickled dictionary
                          linking sequence IDs (key) to lengths (value).
-        minIdentity -- (optional) a float fraction indicating what identity value is
-                       minimally required for us to use a GMAP alignment; default=0.95.
     '''
-    def task(self, gmapFiles, binCollection, indexFileName, minIdentity=0.95):
+    def task(self, gmapFiles, binCollection, indexFileName):
         # Behavioural parameters (static for now, may change later)
         "These statics are for filtering GMAP alignments that are poor quality"
         OKAY_COVERAGE = 96.5
@@ -113,7 +111,6 @@ class GmapBinProcess(ReturningProcess):
                     
                     # Skip processing if the alignment sucks
                     isGoodAlignment = (True if beLenient else coverage >= OKAY_COVERAGE) \
-                                    and identity >= minIdentity \
                                     and indelProportion <= OKAY_INDEL_PROPORTION
                     if not isGoodAlignment:
                         continue
@@ -271,7 +268,7 @@ def generate_bin_collections(genomesDir, threads, isMicrobial):
     return collectionList
 
 def populate_bin_collections(genomesDir, collectionList, gmapFiles,
-                             threads, gmapIdentity):
+                             threads):
     '''
     Receives a list of BinCollection objects, alongside a list of GMAP GFF3 file
     locations, and uses multiple threads to parse the GMAP files and add them into
@@ -286,8 +283,6 @@ def populate_bin_collections(genomesDir, collectionList, gmapFiles,
         threads -- an integer indicating how many threads to run at a time; this code is
                    parallelised in terms of processing multiple GMAP files at a time,
                    if you have only 1 GMAP file then only 1 thread can be used.
-        gmapIdentity -- a float indicating what identity value a GMAP alignment
-                        must have for it to be considered for binning.
     Returns:
         collectionList -- a list of BinCollections, each BinCollection containing
                           Bins populated with GMAP alignments.
@@ -320,7 +315,7 @@ def populate_bin_collections(genomesDir, collectionList, gmapFiles,
                 thisGmapFiles, thisBinCollection, thisGenomeIndex = threadData[i+x]
                 
                 populateWorkerThread = GmapBinProcess(thisGmapFiles, thisBinCollection,
-                                                      thisGenomeIndex, gmapIdentity)
+                                                      thisGenomeIndex)
                 populateWorkerThread.start()
                 processing.append(populateWorkerThread)
         

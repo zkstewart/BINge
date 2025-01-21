@@ -28,7 +28,7 @@ from modules.validation import initialise_working_directory, validate_init_args,
 from modules.fasta_handling import FastaCollection, \
     generate_sequence_length_index, process_transcripts
 
-HASHING_PARAMS = ["gmapIdentity", "clusterVoteThreshold"]
+HASHING_PARAMS = ["identity", "clusterVoteThreshold"]
 
 # Define functions
 def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations):
@@ -267,10 +267,11 @@ def main():
     choice. You can use Linclust (also okay, trades some accuracy for some speed) or CD-HIT
     (potentially slow and possibly least accurate) if wanted.
     ###
-    Note 3: The --gmapIdentity parameter should be set in the range of 0.90 to 0.99 depending
+    Note 3: The --identity parameter should be set in the range of 0.92 to 0.98 depending
     on the evolutionary distance between your input files and the genomes you're aligning
-    against. For same species, use 0.98 or 0.99. If you're aligning against a different species
-    in the same genus, use 0.95. If you're aligning against a different genus, consider 0.90.
+    against. For same species, use 0.98. For species in the same genus, use 0.95.
+    If you're aligning against a different genus, consider 0.92. This setting is to make sure
+    that MMseqs2 clustering of unbinned sequences occurs optimally.
     ###
     Note 4: The --clusterVoteThreshold, based on objective evidence, should be set to 0.5 or
     0.66. Using a lower value will group more sequences together into fewer clusters, and a higher
@@ -428,8 +429,8 @@ def main():
                          required=False,
                          type=float,
                          help=hide("""ALL CLUSTERERS: Specify the identity threshold for clustering
-                         (default==0.98); this value should be strict unless you are clustering
-                         multiple species' together for a DGE analysis"""),
+                         (default==0.98); refer to --help-long information for help with choosing an
+                         appropriate value"""),
                          default=0.98)
     cparser.add_argument("--debug", dest="debug",
                          required=False,
@@ -437,17 +438,6 @@ def main():
                          help=hide("""Optionally provide this argument if you want to generate detailed
                          logging information along the way to help with debugging."""),
                          default=False)
-    ### GMAP
-    cparser.add_argument("--gmapIdentity", dest="gmapIdentity",
-                         required=False,
-                         type=float,
-                         help=hide("""GMAP: Specify the identity threshold for accepting a GMAP
-                         alignment (default==0.95); note that this value operates independently
-                         of --identity and its strictness should depend on the largest evolutionary
-                         distance you have between a file given to -i and a genome given to -g e.g.,
-                         this should be strict for same species only alignment, less strict for
-                         same genus alignment, and least strict for different genus alignments"""),
-                         default=0.95)
     ### MMseqs2
     cparser.add_argument("--mmseqsEvalue", dest="mmseqsEvalue",
                          required=False,
@@ -608,7 +598,7 @@ def cmain(args, locations):
         # Parse GMAP alignments into our bin collection with multiple threads
         collectionList = populate_bin_collections(locations.genomesDir,
                                                   collectionList, gmapFiles,
-                                                  args.threads, args.gmapIdentity)
+                                                  args.threads)
         if args.debug:
             print(f"# Populated collections based on GMAP alignments")
             for index, _cl in enumerate(collectionList):

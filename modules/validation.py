@@ -117,9 +117,6 @@ def validate_cluster_args(args):
     if not 0.0 < args.identity <= 1.0:
         raise ValueError("--identity should be given a value greater than zero, and equal to " + 
                          "or less than 1")
-    if not 0.0 < args.gmapIdentity <= 1.0:
-        raise ValueError("--gmapIdentity should be given a value greater than zero, and equal to " + 
-                         "or less than 1")
     if not 0.0 < args.clusterVoteThreshold <= 1.0:
         raise ValueError("--clusterVoteThreshold should be given a value greater than zero, and equal to " + 
                          "or less than 1")
