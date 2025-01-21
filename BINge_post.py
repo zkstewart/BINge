@@ -293,7 +293,7 @@ quantFiles <- file.path(QUANT_FOLDER, samples, "quant.sf")
 names(quantFiles) <- samples
 
 # Parse tx2gene file
-tx2gene <- read_delim(Tx2GENE_FILE, delim="\\t")
+tx2gene <- read_delim(TX2GENE_FILE, delim="\\t")
 
 # tximport data
 txi <- tximport(quantFiles, type="salmon", tx2gene=tx2gene)
