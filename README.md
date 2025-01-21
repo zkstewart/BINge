@@ -4,18 +4,19 @@
   - [Reason for BINge existing](#reason-for-binge-existing)
   - [What does BINge actually do?](#what-does-binge-actually-do)
 - [Installation](#installation)
-- [How to use](#how-to-use)
-  - [Input sequences to cluster](#input-sequences-to-cluster)
-  - [Input genomes to use as targets](#input-genomes-to-use-as-targets)
-  - [Configurable parameters](#configurable-parameters)
+  - [Prerequisites](#prerequisites)
+  - [Installation suggestions](#installation-suggestions)
+- [How to cluster](#how-to-cluster)
+  - ['initialise' a working directory](#initialise-a-working-directory)
+  - ['cluster' a working directory](#cluster-a-working-directory)
   - [Interpreting results](#interpreting-results)
-- [Filtering results](#filtering-results)
-- [Picking representative sequences](#picking-representative-sequences)
-- [Using results for differential gene expression](#using-results-for-differential-gene-expression)
-- [Other utilities provided with BINge](#other-utilities-provided-with-binge)
-  - [generate_annotation_table.py](#generate_annotation_tablepy)
-  - [tabulate_salmon_qc.py](#tabulate_salmon_qcpy)
-- [A typical analysis pipeline](#a-typical-analysis-pipeline)
+- [Downstream processing of clustering results](#downstream-processing-of-clustering-results)
+  - ['blast' a working directory](#blast-a-working-directory)
+  - [use 'salmon' on a working directory](#use-salmon-on-a-working-directory)
+  - ['filter' clustering results in a working directory](#filter-clustering-results-in-a-working-directory)
+  - [pick 'representatives' from clustering results in a working directory](#pick-representatives-from-clustering-results-in-a-working-directory)
+  - ['dge' analysis of a working directory](#dge-analysis-of-a-working-directory)
+  - ['annotate' a working directory](#annotate-a-working-directory)
 - [How to cite](#how-to-cite)
 
 # Getting started
@@ -67,8 +68,6 @@ python BINge_post representatives -d /location/of/working/directory \
 python BINge_post.py annotate -d /location/of/working/directory \
     -id /location/of/idmapping_selected.tab \ # UniProtKB download file
     -io /location/of/go.obo # gene ontology in OBO format
-
-# 
 ```
 
 # Introduction
@@ -94,7 +93,7 @@ Because BINge aligns each input sequence against many positions in each genome, 
 in bins. Hence, these sequences get clustered together.
 
 # Installation
-## Overview
+## Prerequisites
 BINge is written in Python and requires a modern version 3 [note: development occurred using >= 3.9, and I'm not sure how far backwards its compatibility goes].
 
 BINge and its associated utility scripts makes use of several other Python packages which include:
@@ -164,7 +163,7 @@ If you specified `--microbial` during 'initialise' you should do so again.
 BINge will run everything within the specified `-d` working directory, and produce a result file with the name `BINge_clustering_result.tsv` within a run folder identified by
 a hash of its parameters. An example directory structure might be like:
 
-`./binge_working_dir/analysis/run_55f3403b67b7371cb2eb/BINge_clustering_result.tsv`
+`/location/of/working/directory/analysis/run_55f3403b67b7371cb2eb/BINge_clustering_result.tsv`
 
 The output file is tab separated into three columns with a format like:
 
@@ -233,7 +232,7 @@ After running 'filter', any downstream use of 'representatives' or 'dge' will au
 by using the `--analysis` argument to specifically indicate which run folder you want to use. Otherwise, we default to 1) using filtered results over raw results, and 2) using the most recent
 results.
 
-You will find the resulting files at `/location/of/working/directory/filter/run_<hash>` or `/location/of/working/directory/filter/most_recent` if you have not run any other 'filter' analyses.
+You will find the resulting file `BINge_clustering_result.filtered.tsv` at `/location/of/working/directory/filter/run_<hash>` or `/location/of/working/directory/filter/most_recent` if you have not run any other 'filter' analyses.
 
 ## pick 'representatives' from clustering results in a working directory
 Since each cluster represents a putative locus, you may want just one sequence from each cluster which you can take as being *representative* of all the other sequences in that cluster.
@@ -247,6 +246,7 @@ This could enable completeness analysis of clustering results using BUSCO/comple
 - You can use `--useGFF3` to select representatives that show up in a reference annotation. These sequences may have identifiers which make it easier to relate them to other datasets.
 
 You will find the resulting files at `/location/of/working/directory/representatives/run_<hash>` or `/location/of/working/directory/representatives/most_recent` if you have not run any other 'representatives' analyses.
+Three files should exist, starting with the prefix `BINge_clustering_representatives` and ending with a file suffix where `.aa` contains protein sequences, `.cds` contains CDS, and `.mrna` contains the mRNA transcripts.
 
 ## 'dge' analysis of a working directory
 After running 'salmon', BINge will help you to make use of these read counts alongside the most recent 'filter' analysis or, if no filtering has been done, the most recent raw clustering result.
@@ -274,7 +274,7 @@ a `go.obo` file as found from [the Gene Ontology downloads site](https://geneont
 
 You can also provide the `--largeTable` option if you'd like the resulting table file to contain the full outfmt6 details rather than just the percentage identity, E-value, and bitscore of hits.
 
-You will find the resulting file at `/location/of/working/directory/annotate/run_<hash>/BINge_annotation.tsv` or `/location/of/working/directory/annotate/most_recent/BINge_annotation.tsv` if you have not run any other 'annotate' analyses.
+You will find the resulting file `BINge_annotation.tsv` at `/location/of/working/directory/annotate/run_<hash>` or `/location/of/working/directory/annotate/most_recent` if you have not run any other 'annotate' analyses.
 The file contains a header to help with interpretation. Note however that the `Best_mapped_GOs_+_parents` column contains the same values as `Best_mapped_GOs` in addition to all their parent/ancestor terms. You should use
 the `Best_mapped_GOs_+_parents` GO terms in any subsequent enrichment analyses.
 
