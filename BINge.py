@@ -49,7 +49,7 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
     os.makedirs(locations.txDir, exist_ok=True)
     os.makedirs(locations.genomesDir, exist_ok=True)
     
-    # Link to the -ig GFF3,genome values
+    # Link to the --ig GFF3,genome values
     numIG = 0    
     for file in gff3Files:
         numIG += 1
@@ -60,7 +60,7 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
         # Check that FASTA is a FASTA
         isFASTA = validate_fasta(fasta)
         if not isFASTA:
-            raise ValueError(f"-ig value '{file}' after the ',' is not a FASTA file")
+            raise ValueError(f"--ig value '{file}' after the ',' is not a FASTA file")
         
         # Symlink files to GFF3s subdirectory if not aleady existing
         linkedGFF3 = os.path.join(locations.gff3Dir, f"annotations{numIG}.gff3")
@@ -75,7 +75,7 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
         else:
             os.symlink(fasta, linkedFASTA)
     
-    # Link to the -t transcript FASTA files
+    # Link to the --ix transcript FASTA files
     numTX = 0
     for file in txomeFiles:
         numTX += 1
@@ -87,7 +87,7 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
         for i, f in enumerate(files):
             isFASTA = validate_fasta(f)
             if not isFASTA:
-                raise ValueError(f"-ix value '{f}' is not a FASTA file")
+                raise ValueError(f"--ix value '{f}' is not a FASTA file")
             
             # Symlink to main working directory if not already existing
             suffix = "mrna" if i == 0 else "cds" if i == 1 else "aa"
@@ -97,7 +97,7 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
             else:
                 os.symlink(f, linkedTranscriptome)
     
-    # Link to the -g targetGenomeFiles values
+    # Link to the -i targetGenomeFiles values
     numGenomes = 0
     for file in targetGenomeFiles:
         numGenomes += 1
@@ -108,8 +108,8 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
             # Check that FASTA is a FASTA
             isFASTA = validate_fasta(fasta)
             if not isFASTA:
-                print(f"-g value '{fasta}' value after the ',' is not a FASTA file")
-                print("Make sure you specify the file order as GFF3:FASTA then try again.")
+                print(f"-i value '{fasta}' value after the ',' is not a FASTA file")
+                print("Make sure you specify the file order as 'GFF3,FASTA' then try again.")
                 quit()
             
             # Symlink files to genomes subdirectory if not aleady existing
@@ -132,7 +132,7 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
             # Check that FASTA is a FASTA
             isFASTA = validate_fasta(fasta)
             if not isFASTA:
-                print(f"-g value '{fasta}' is not a FASTA file")
+                print(f"-i value '{fasta}' is not a FASTA file")
                 print("Make sure you specify the right file and/or location then try again.")
                 quit()
             
@@ -214,37 +214,34 @@ def main():
     
     # Help messages
     initShort = """Quick notes for the use of BINge 'initialise':
-    1) if providing GFF3 as input (-ig), only protein-coding mRNA features will be handled; input
-    FASTA file(s) given to -ix are similarly expected to be nucleotide CDS or mRNA sequences.
-    2) when providing GFF3 as input, you must also specify the genome FASTA it's associated
-    with; you can do that with the format 'file.gff3,file.fasta'
-    3) provide as many genome files as are relevant to your analysis, alongside their
+    1) if providing GFF3 as input (--ig), only protein-coding mRNA features will be handled; input
+    FASTA file(s) given to --ix are similarly expected to be nucleotide CDS or mRNA sequences.
+    2) when providing GFF3 as input to -i or --ig, you must also specify the genome FASTA it's associated
+    with; you can do that with the format 'file.gff3,file.fasta' and in that order.
+    3) provide as many genome files as are relevant to your analysis alongside their
     annotations (if available and high quality) in the same style e.g., 
-    'annotation.gff3,genome.fasta'
+    'genome.gff3,genome.fasta'.
     """
     
-    initLong = """BINge operates by aligning all input files (-ig, -ix) against all genomes (-g). In
-    doing so, synteny will be implicitly inferred for sequences based on their best alignment
+    initLong = """BINge operates by aligning all input files (--ig, --ix) against all genomes (-i). In
+    doing so, orthology will be implicitly inferred for sequences based on their best alignment
     position across the input genomes with overlapping sequences clustering together.
     ###
-    Note 1: You should try to provide a genome file for each species you've used in the -ig/-ix
+    Note 1: You should try to provide a genome file for each species you've used in the --ig/--ix
     arguments or, minimally, provide the most closely related genome for each one. This isn't
     strictly necessary but you should try to do this if possible.
     ###
-    Note 2: If you provide a GFF3 in the -ig argument, you must indicate the genome FASTA it
+    Note 2: If you provide a GFF3 in the --ig argument, you must indicate the genome FASTA it
     is associated with by linking the files together as a single string. For example you might
-    provide inputs like '-ig annotation.gff3,reference.fasta'
+    provide inputs like '--ig annotation.gff3,reference.fasta'
     ###
-    Note 3: If you provide transcriptome FASTAs in the -ix argument, you should provide them
+    Note 3: If you provide transcriptome FASTAs in the --ix argument, you should provide them
     as individual mRNA/CDS sequences or as triplicates of mRNA/CDS/protein files with ',' separator.
-    For example you might provide inputs like '-ix mRNA1.fasta mRNA2.fasta mRNA3.fasta'
-    ; as indicated,
-    a standlone FASTA is okay, but a GFF3 must be paired with its genome file via the 
-    ',' character and in the order indicated i.e., annotation GFF3 then reference FASTA.
+    For example you might provide inputs like '--ix mRNA.fasta,CDS.fasta,protein.fasta'
     ###
-    Note 4: Similarly, for genome FASTAs given in the -g argument, you should either provide the
+    Note 4: Similarly, for genome FASTAs given in the -i argument, you should either provide the
     genome on its own, or alongside its annotation GFF3. For example here you might provide inputs
-    like '-g genome1.fasta annotation2.gff3,genome2.fasta'; by providing a GFF3 alongside the
+    like '-i genome1.fasta genome2.gff3,genome2.fasta'; by providing a GFF3 alongside the
     genome it will pre-seed the bins along this genome based on the annotation. If the annotation
     is of a reasonable standard this is expected to make BINge perform better.
     ###
@@ -336,22 +333,23 @@ def main():
     
     # Init-subparser arguments
     ## Required
-    iparser.add_argument("-ig", dest="inputGff3Files",
-                         required=False,
-                         nargs="+",
-                         help="""Input annotation GFF3(s) paired to their genome file
-                         with ',' separator""",
-                         default=[])
-    iparser.add_argument("-ix", dest="inputTxomeFiles",
-                         required=False,
-                         nargs="+",
-                         help="""Input transcriptome FASTA(s) as individual files or as triplicates
-                         of mRNA/CDS/protein files with ',' separator""",
-                         default=[])
-    iparser.add_argument("-t", dest="targetGenomeFiles",
+    iparser.add_argument("-i", dest="targetGenomeFiles",
                          required=True,
                          nargs="+",
-                         help="Input genome FASTA(s) to align against")
+                         help="""Input genome FASTA(s) to align against as individual files or
+                         as 'file.gff3,file.fasta' pairs""")
+    iparser.add_argument("--ig", dest="inputGff3Files",
+                         required=False,
+                         nargs="+",
+                         help="""Optionally, input annotation GFF3(s) paired to their genome file
+                         with ',' separator""",
+                         default=[])
+    iparser.add_argument("--ix", dest="inputTxomeFiles",
+                         required=False,
+                         nargs="+",
+                         help="""Optionally, input transcriptome FASTA(s) as individual files or as triplicates
+                         of mRNA/CDS/protein files with ',' separator""",
+                         default=[])
     ## Optional (shown)
     iparser.add_argument("--threads", dest="threads",
                          required=False,
@@ -375,7 +373,7 @@ def main():
                          required=False,
                          type=int,
                          help="""Optionally provide this argument if you have provided individual files in
-                         -ix which will be translated; default is 1 (standard code); indicate the NCBI
+                         --ix which will be translated; default is 1 (standard code); indicate the NCBI
                          translation table number if your organisms have a different genetic code""",
                          default=1)
     
@@ -517,12 +515,12 @@ def imain(args, locations):
     setup_working_directory(args.inputGff3Files, args.inputTxomeFiles,
                             args.targetGenomeFiles, locations)
     
-    # Extract sequences from any -ig files
+    # Extract sequences from any --ig files
     extract_annotations_from_gff3(locations.gff3Dir, locations.sequencesDir,
                                   "annotations", args.threads,
                                   args.isMicrobial, args.translationTable)
     
-    # Extract sequences from any -t files
+    # Extract sequences from any --ix files
     extract_annotations_from_gff3(locations.genomesDir, locations.genomesDir,
                                   "genome", args.threads,
                                   args.isMicrobial, args.translationTable,)
