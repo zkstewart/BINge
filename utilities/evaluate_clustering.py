@@ -44,6 +44,8 @@ def validate_args(args):
     elif args.clusterer == "orthofinder" or args.clusterer == "sonicparanoid":
         if args.orthofinderName is None or args.orthofinderName == []:
             raise ValueError("You must specify --orthofinderName when using '-p orthofinder' or '-p sonicparanoid'")
+    elif args.clusterer == "pantools":
+        pass # do nothing, hopefully the file is valid
     else:
         raise NotImplementedError()
     
@@ -205,6 +207,32 @@ def parse_sonicparanoid_clusters(fileName, columnNames):
                     clusterNum += 1
     return clusterDict
 
+def parse_pantools_clusters(fileName):
+    '''
+    Parameters:
+        fileName -- a string indicating the location of the Corset TSV file for parsing.
+    Returns:
+        clusterDict -- a dictionary with structure like:
+                       {
+                           0: ['seqID1', 'seqID2'],
+                           1: ['seqID3'],
+                           ...
+                       }
+    '''
+    clusterDict = {}
+    clusterNum = 0
+    with open(fileName, "r") as fileIn:
+        firstLine = True
+        for line in fileIn:
+            l = line.rstrip("\r\n ")
+            if firstLine:
+                firstLine = False
+            elif l != "":
+                clustID, seqIDs = line.rstrip("\r\n ").split(": ")
+                clusterDict[clusterNum] = [ x.rsplit("#", maxsplit=1)[0] for x in seqIDs.split(" ") if x != "" ]
+                clusterNum += 1
+    return clusterDict
+
 ## Main
 def main():
     # User input
@@ -244,7 +272,7 @@ def main():
                    help="Output file name for text results")
     p.add_argument("-p", dest="clusterer",
                    required=True,
-                   choices=["binge", "cdhit", "corset",
+                   choices=["binge", "cdhit", "corset", "pantools",
                             "mmseqs", "orthofinder", "sonicparanoid"],
                    help="Specify which clusterer's results you are providing.")
     # Optional
@@ -311,6 +339,8 @@ def main():
         testDict = parse_orthofinder_clusters(args.clusterFile, args.orthofinderName)
     elif args.clusterer == "sonicparanoid":
         testDict = parse_sonicparanoid_clusters(args.clusterFile, args.orthofinderName)
+    elif args.clusterer == "pantools":
+        testDict = parse_pantools_clusters(args.clusterFile)
     else:
         raise NotImplementedError()
     
