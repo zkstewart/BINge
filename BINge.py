@@ -395,7 +395,7 @@ def main():
                          help="""Specify which algorithm to use for clustering of unbinned sequences
                          (default=='mmseqs-cascade')""",
                          default="mmseqs-cascade")
-    cparser.add_argument("--mmseqs", dest="mmseqsDir",
+    cparser.add_argument("--mmseqsDir", dest="mmseqsDir",
                          required=False,
                          help="""If using MMseqs2-based clustering and 'mmseqs' is not discoverable
                          in your path, specify the directory containing the mmseqs executable""")
