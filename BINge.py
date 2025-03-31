@@ -27,6 +27,7 @@ from modules.validation import initialise_working_directory, validate_init_args,
     validate_fasta, handle_symlink_change, touch_ok
 from modules.fasta_handling import FastaCollection, \
     generate_sequence_length_index, process_transcripts
+from _version import __version__
 
 HASHING_PARAMS = ["identity", "clusterVoteThreshold"]
 
@@ -303,9 +304,16 @@ def main():
     p.add_argument("-d", dest="workingDirectory",
                    required=True,
                    help="Specify the location where the analysis is or will be performed")
+    p.add_argument("-v", "--version",
+                   action="version",
+                   version="BINge.py {version}".format(version=__version__))
     
     # Establish subparsers
     subParentParser = argparse.ArgumentParser(description=mainDescription)
+    subParentParser.add_argument("-v", "--version",
+                                 action="version",
+                                 version="BINge.py {version}".format(version=__version__))
+    
     subparsers = subParentParser.add_subparsers(dest="mode",
                                                 required=True)
     

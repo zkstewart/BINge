@@ -1,6 +1,7 @@
 # Table of Contents
 - [Getting started](#getting-started)
 - [Installation](#installation)
+  - [Obtaining BINge](#obtaining-binge)
   - [Prerequisites](#prerequisites)
   - [Installation suggestions](#installation-suggestions)
 - [How to use BINge](#how-to-use-binge)
@@ -58,6 +59,15 @@ python BINge_post.py annotate -d /location/of/working/directory \
 ```
 
 # Installation
+## Obtaining BINge
+Download BINge by cloning the repository and initialising the 'Various_scripts' submodule as below; the submodule contains a few libraries that BINge relies upon.
+
+```
+git clone https://github.com/zkstewart/BINge.git
+cd BINge
+git submodule update --init --recursive
+```
+
 ## Prerequisites
 BINge is written in Python and requires a modern version 3 [note: development occurred using >= 3.9, and I'm not sure how far backwards its compatibility goes].
 

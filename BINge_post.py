@@ -24,6 +24,7 @@ from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge
     parse_gff3_ids, locate_read_files, parse_binge_representatives
 from modules.annotation import init_table, parse_idmap, update_table_with_gos, \
     update_table_with_seq_details
+from _version import __version__
 
 # Define functions
 def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
@@ -372,11 +373,17 @@ def main():
     p.add_argument("-d", dest="workingDirectory",
                    required=True,
                    help="Specify the location where clustering has been performed")
+    p.add_argument("-v", "--version",
+                   action="version",
+                   version="BINge_post.py {version}".format(version=__version__))
     
     # Establish subparsers
     subParentParser = argparse.ArgumentParser(description=mainDescription)
     subparsers = subParentParser.add_subparsers(dest="mode",
                                                 required=True)
+    subParentParser.add_argument("-v", "--version",
+                                 action="version",
+                                 version="BINge_post.py {version}".format(version=__version__))
     
     bparser = subparsers.add_parser("blast",
                                     parents=[p],
