@@ -502,8 +502,8 @@ def main():
                          required=False,
                          action="store_true",
                          help="""Set this flag to keep clusters if they contain any
-                         sequences found within provided GFF3 annotations (-ig and/or
-                         -t during 'initialise').""",
+                         sequences found within provided GFF3 annotations (--ig and/or
+                         -i during 'initialise').""",
                          default=False)
     fparser.add_argument("--useBLAST", dest="useBLAST",
                          required=False,
@@ -549,7 +549,7 @@ def main():
                          required=False,
                          action="store_true",
                          help="""Set this flag to pick a representative if it comes from a GFF3
-                         annotation file (-ig and/or -t during 'initialise').""",
+                         annotation file (--ig and/or -i during 'initialise').""",
                          default=False)
     rparser.add_argument("--useBLAST", dest="useBLAST",
                          required=False,

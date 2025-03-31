@@ -15,9 +15,9 @@ git submodule update --init --recursive
 
 # Initialise a directory with query files and target genomes for clustering
 python BINge.py initialise -d /location/of/working/directory \
-    -ix /location/of/transcriptome1.fasta \ # mRNA or CDS
-    -ig /location/of/annotation1.gff3,/location/of/annotation1.fasta \ # extracts mRNA/CDS/protein sequences automatically
-    -t /location/of/genome1.gff3,/location/of/genome1.fasta \ # .gff3 file optional for 'pre-seeding'
+    -i /location/of/genome1.gff3,/location/of/genome1.fasta \ # .gff3 file optional for 'pre-seeding'
+    --ix /location/of/transcriptome1.fasta \ # mRNA or CDS
+    --ig /location/of/annotation1.gff3,/location/of/annotation1.fasta \ # extracts mRNA/CDS/protein sequences
     --threads 8
 
 # Cluster all sequences within the initialised directory
