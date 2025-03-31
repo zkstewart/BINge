@@ -690,6 +690,7 @@ def bmain(args, locations):
     mms2 = ZS_BlastIO.MMseqs(queryDB, targetDB, os.path.dirname(args.mms2Exe), tmpDir)
     mms2.threads = args.threads
     mms2.evalue = 1 # weak threshold, leave it to 'filter' to decide on a good one
+    mms2.isSetup = True
     mms2.mmseqs(outputFileName, force=True) # force=True to overwrite any existing file if '.ok' is missing
     touch_ok(outputFileName)
     
