@@ -5,7 +5,7 @@ from goatools import obo_parser
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Various_scripts.Function_packages import ZS_GO
 
-def init_table(repToClust, repToClust, blastFile, evalueCutoff, numHits, outputFileName,
+def init_table(repToClust, blastFile, evalueCutoff, numHits, outputFileName,
                databaseTag=".", largeTable=False):
     '''
     Parses an outfmt6 file, initialising our output annotation table with the BLAST
@@ -18,8 +18,6 @@ def init_table(repToClust, repToClust, blastFile, evalueCutoff, numHits, outputF
     values to be set when parsing the idmapping_selected.tab file.
     
     Parameters:
-        repToClust -- a dictionary with representative sequence IDs as keys and cluster IDs
-                      as values.
         repToClust -- a dictionary with representative sequence IDs as keys and cluster IDs
                       as values.
         blastFile -- a string indicating the location of a BLAST result file in

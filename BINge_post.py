@@ -1121,7 +1121,7 @@ def amain(args, locations):
                                 "have you run 'representatives' yet?")
     
     # Parse the representatives file to find the sequences we need
-    clustToRep, repToClust = parse_binge_representatives(representativesFasta)
+    _, repToClust = parse_binge_representatives(representativesFasta)
     
     # Parse .obo file
     "Parse early to error out if format is incorrect"
@@ -1130,7 +1130,7 @@ def amain(args, locations):
     # Step 1: initial parse of BLAST file to begin formatting the annotation table
     step1File = os.path.join(annotateRunDir, "tmp.step1.tsv") # will overwrite if exists
     hitMapDict = init_table(
-        clustToRep, repToClust,
+        repToClust,
         args.blastFile, args.evalue, args.numHits,
         step1File, args.databaseTag, args.largeTable)
     
