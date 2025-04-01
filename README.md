@@ -46,7 +46,7 @@ python BINge_post filter -d /location/of/working/directory \
 
 # Pick representative sequences for each cluster
 python BINge_post representatives -d /location/of/working/directory \
-    --useGFF3 \ # optional, prioritises sequences in a GFF3 given to -ig or -t
+    --useGFF3 \ # optional, prioritises sequences in a GFF3 given to -i or --ig
     --useBLAST --useSalmon # optional, only if you ran the BINge_post.py functions
 
 # Generate R script to streamline data loading and subsequent DESeq2 DGE analysis
