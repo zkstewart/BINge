@@ -415,15 +415,16 @@ def validate_annotate_args(args):
     
     # Validate that original target for BLAST search was a UniRef file
     args.targetFile = os.path.join(locations.blastDir, locations.targetFile)
-    if not os.path.isfile(args.targetFile):
-        raise FileNotFoundError(f"Unable to locate the target file for BLAST search '{locations.targetFile}'; " +
-                                "have you moved the file this should symlink to?")
+    targetFileResolved = str(Path(args.targetFile).resolve())
+    if not os.path.isfile(args.targetFile) and not os.path.isfile(targetFileResolved):
+        raise FileNotFoundError(f"Unable to locate the target file for BLAST search '{locations.targetFile}' -> '{targetFileResolved}'; " +
+                                "have you moved the symlink or the original file it points to?")
     else:
         with open(args.targetFile, "r") as fileIn:
             firstLine = fileIn.readline()
             if not firstLine.startswith(">UniRef"):
-                raise ValueError(f"The target file for BLAST search '{locations.targetFile}' does not appear " + 
-                                 "to be a UniRef file; I expect it to start with '>UniRef'")
+                raise ValueError(f"The target file for BLAST search '{locations.targetFile}' -> '{targetFileResolved}' " +
+                                 "does not appear to be a UniRef file; I expect it to start with '>UniRef'")
             else:
                 args.databaseTag = firstLine.split("_")[0][1:] # remove the '>'
     
