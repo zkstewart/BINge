@@ -1104,7 +1104,7 @@ def amain(args, locations):
     os.makedirs(locations.annotateDir, exist_ok=True)
     
     annotateRunName = os.path.basename(os.path.dirname(args.bingeFile))
-    annotateRunDir = os.path.join(locations.dgeDir, annotateRunDir)
+    annotateRunDir = os.path.join(locations.dgeDir, annotateRunName)
     os.makedirs(annotateRunDir, exist_ok=True)
     
     mostRecentDir = os.path.join(locations.annotateDir, "most_recent")
