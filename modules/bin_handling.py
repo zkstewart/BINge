@@ -46,19 +46,93 @@ class GmapBinProcess(ReturningProcess):
         indexFileName -- a string indicating the location of a pickled dictionary
                          linking sequence IDs (key) to lengths (value).
     '''
-    def task(self, gmapFiles, binCollection, indexFileName):
-        # Behavioural parameters (static for now, may change later)
+    @staticmethod
+    def process_block(thisBlockData, seqLenDict, binCollection):
+        '''
+        Decides whether any of the GMAP alignments for this gene ("block") are
+        good enough to be added to the bin collection. Called by the task()
+        method of this class.
+        
+        Note that this function uses a lot of static parameters which have been
+        hand tuned to work well based on test data. However, this represents
+        a potential area for improvement in the future, as these parameters
+        may not be as optimal as possible.
+        
+        Parameters:
+            thisBlockData -- a list of dictionaries, one for each GMAP alignment
+            seqLenDict -- a dictionary linking sequence IDs (key) to lengths (value).
+            binCollection -- an existing BinCollection object to add sequence IDs to
+                             as new bins or added into existing bins.
+        '''
+        
+        # Static behavioural parameters (static for now, may change later)
         "These statics are for filtering GMAP alignments that are poor quality"
-        OKAY_COVERAGE = 96.5
-        OKAY_INDEL_PROPORTION = 0.01
+        OKAY_COVERAGE = 96.5 # an orthologous alignment should be > 95% coverage
+        OKAY_INDEL_PROPORTION = 0.01 # an orthologous alignment should have < 1% indels
         ##
         "These statics prevent a gene mapping to multiple locations when it has a clear best"
-        ALLOWED_COV_DIFF = 1
-        ALLOWED_IDENT_DIFF = 0.1
+        ALLOWED_COV_DIFF = 1 # this is the difference in coverage between the best and second best alignment
+        ALLOWED_IDENT_DIFF = 0.1 # this is the difference in identity between the best and second best alignment
         ##
         "This static allows coverage to be lower if the alignment is close to the contig's edge"
         LENIENT_BOUNDARY_LENGTH = 1000
         
+        # Sort the data dicts by their quality
+        "Higher coverage -> higher identity -> lower indels"
+        thisBlockData.sort(key = lambda x: (-x["coverage"], -x["identity"], x["indels"]))
+        
+        # Process the data dicts
+        bestCov, bestIdent = None, None
+        for blockDataDict in thisBlockData:
+            # Get alignment statistics
+            coverage, identity = blockDataDict["coverage"], blockDataDict["identity"]
+            exonLength = sum([
+                end - start + 1
+                for start, end in blockDataDict["exons"]
+            ])
+            indelProportion = blockDataDict["indels"] / exonLength
+            
+            # Apply leniency if the alignment is close to the contig's boundaries
+            """This helps to deal with fragmented genes aligning well to a contig's
+            edge, but the full length model not being binned because its coverage is
+            too low."""
+            beLenient = False
+            if coverage < OKAY_COVERAGE:
+                contigLength = seqLenDict[blockDataDict["contig"]]
+                alignmentStart = min(min(blockDataDict["exons"]))
+                alignmentEnd = max(max(blockDataDict["exons"]))
+                
+                if (alignmentStart < LENIENT_BOUNDARY_LENGTH) \
+                    or (alignmentEnd + LENIENT_BOUNDARY_LENGTH) > contigLength:
+                    beLenient = True
+            
+            # Skip processing if the alignment sucks
+            isGoodAlignment = (True if beLenient else coverage >= OKAY_COVERAGE) \
+                            and indelProportion <= OKAY_INDEL_PROPORTION
+            if not isGoodAlignment:
+                continue
+            
+            # See if this path should be skipped because another better one was processed
+            if bestCov != None:
+                if (coverage + ALLOWED_COV_DIFF) < bestCov \
+                    or (identity + ALLOWED_IDENT_DIFF) < bestIdent:
+                    continue
+            else:
+                bestCov, bestIdent = coverage, identity # set if this is the 'best'
+            
+            # Iteratively handle exon features
+            for exonStart, exonEnd in blockDataDict["exons"]:
+                # Create a bin for each exon feature
+                exonBin = Bin(blockDataDict["contig"], exonStart, exonEnd)
+                exonBin.add(blockDataDict["Name"])
+                
+                # See if this overlaps an existing bin
+                binOverlap = find_overlapping_bins(binCollection, exonBin)
+                
+                # Add a new bin, or merge any bins as appropriate
+                add_bin_to_collection(binCollection, binOverlap, exonBin)
+    
+    def task(self, gmapFiles, binCollection, indexFileName):
         # Load in the lengths index
         seqLenDict = load_sequence_length_index(indexFileName)
         
@@ -78,65 +152,15 @@ class GmapBinProcess(ReturningProcess):
                 # Store data if this is from the same sequence
                 if dataDict["Name"] == thisBlockID:
                     thisBlockData.append(dataDict)
-                    continue
-                
-                # Otherwise, sort the data dicts by their quality
-                "Higher coverage -> higher identity -> lower indels"
-                thisBlockData.sort(key = lambda x: (-x["coverage"], -x["identity"], x["indels"]))
-                
-                # Iterate through data dicts
-                bestCov, bestIdent = None, None
-                for blockDataDict in thisBlockData:
-                    # Get alignment statistics
-                    coverage, identity = blockDataDict["coverage"], blockDataDict["identity"]
-                    exonLength = sum([
-                        end - start + 1
-                        for start, end in blockDataDict["exons"]
-                    ])
-                    indelProportion = blockDataDict["indels"] / exonLength
+                # Otherwise, process the block of data
+                else:
+                    GmapBinProcess.process_block(thisBlockData, seqLenDict, binCollection)
                     
-                    # Apply leniency if the alignment is close to the contig's boundaries
-                    """This helps to deal with fragmented genes aligning well to a contig's
-                    edge, but the full length model not being binned because its coverage is
-                    too low."""
-                    beLenient = False
-                    if coverage < OKAY_COVERAGE:
-                        contigLength = seqLenDict[blockDataDict["contig"]]
-                        alignmentStart = min(min(blockDataDict["exons"]))
-                        alignmentEnd = max(max(blockDataDict["exons"]))
-                        
-                        if (alignmentStart < LENIENT_BOUNDARY_LENGTH) \
-                            or (alignmentEnd + LENIENT_BOUNDARY_LENGTH) > contigLength:
-                            beLenient = True
-                    
-                    # Skip processing if the alignment sucks
-                    isGoodAlignment = (True if beLenient else coverage >= OKAY_COVERAGE) \
-                                    and indelProportion <= OKAY_INDEL_PROPORTION
-                    if not isGoodAlignment:
-                        continue
-                    
-                    # See if this path should be skipped because another better one was processed
-                    if bestCov != None:
-                        if (coverage + ALLOWED_COV_DIFF) < bestCov \
-                            or (identity + ALLOWED_IDENT_DIFF) < bestIdent:
-                            continue
-                    else:
-                        bestCov, bestIdent = coverage, identity # set if this is the 'best'
-                    
-                    # Iteratively handle exon features
-                    for exonStart, exonEnd in blockDataDict["exons"]:
-                        # Create a bin for each exon feature
-                        exonBin = Bin(blockDataDict["contig"], exonStart, exonEnd)
-                        exonBin.add(blockDataDict["Name"])
-                        
-                        # See if this overlaps an existing bin
-                        binOverlap = find_overlapping_bins(binCollection, exonBin)
-                        
-                        # Add a new bin, or merge any bins as appropriate
-                        add_bin_to_collection(binCollection, binOverlap, exonBin)
-                
-                # Reset for next iteration
-                thisBlockID, thisBlockData = dataDict["Name"], [dataDict]
+                    # Reset for next iteration
+                    thisBlockID, thisBlockData = dataDict["Name"], [dataDict]
+            
+            # Process the last block of data
+            GmapBinProcess.process_block(thisBlockData, seqLenDict, binCollection)
         
         return binCollection
 
