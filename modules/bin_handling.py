@@ -208,6 +208,8 @@ def generate_bin_collections(genomesDir, threads, isMicrobial):
         collectionList -- a list containing BinCollections in numerical order of the genome
                           files.
     '''
+    FILE_PREFIX = "genome"
+    
     # Locate subdirectory containing files
     if not os.path.isdir(genomesDir):
         raise FileNotFoundError(f"generate_bin_collections failed because '{genomesDir}' doesn't exist or isn't a directory.")
@@ -216,12 +218,12 @@ def generate_bin_collections(genomesDir, threads, isMicrobial):
     filePairs = []
     for file in os.listdir(genomesDir):
         if file.endswith(".fasta"):
-            if not file.startswith("genome"):
-                raise ValueError(f"FASTA file '{file}' in '{genomesDir}' does not start with 'genome' as expected.")
+            if not file.startswith(FILE_PREFIX):
+                raise ValueError(f"FASTA file '{file}' in '{genomesDir}' does not start with '{FILE_PREFIX}' as expected.")
             
             # Extract file prefix/suffix components
             filePrefix = file.split(".fasta")[0]
-            suffixNum = filePrefix.split("genome")[1]
+            suffixNum = filePrefix.split(FILE_PREFIX)[1]
             if not suffixNum.isdigit():
                 raise ValueError(f"FASTA file '{file}' in '{genomesDir}' does not have a number suffix as expected.")
             
@@ -229,7 +231,7 @@ def generate_bin_collections(genomesDir, threads, isMicrobial):
             filePairs.append([None, suffixNum])
             
             # Add any corresponding GFF3 file if one exists
-            gff3File = f"annotation{suffixNum}.gff3"
+            gff3File = f"{FILE_PREFIX}{suffixNum}.gff3"
             if os.path.exists(os.path.join(genomesDir, gff3File)):
                 filePairs[-1][0] = os.path.join(genomesDir, gff3File)
     
