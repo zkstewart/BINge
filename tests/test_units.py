@@ -4,15 +4,13 @@ import os, sys, unittest, time
 import networkx as nx
 from multiprocessing import Queue
 
-os.chdir("/mnt/c/git/BINge/tests")
-#sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath("/mnt/c/git/BINge/tests/test_units.py"))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
 from modules.bins import BinCollection, Bin, BinBundle
 from modules.gff3_handling import iterate_gmap_gff3
 from modules.bin_handling import GmapBinProcess, CollectionSeedProcess, \
-    find_overlapping_bins, add_bin_to_collection#, generate_bin_collections
+    find_overlapping_bins, add_bin_to_collection
 
 # Specify data locations
 dataDir = os.path.join(os.getcwd(), "data")
