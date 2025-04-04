@@ -8,20 +8,18 @@
 # and 4) extract representative sequences for each cluster also based on
 # these results.
 
-import os, argparse, sys
+import os, argparse
 import numpy as np
 from goatools import obo_parser
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from Various_scripts.Function_packages import ZS_BlastIO, ZS_MapIO
-
 from modules.locations import Locations
 from modules.fasta_handling import FastaCollection
-from modules.salmon import SalmonQC
+from modules.salmon import Salmon_DB, Salmon, SalmonQC
+from modules.mmseqs import MM_DB, MMseqs
 from modules.validation import validate_blast_args, validate_salmon_args, validate_filter_args, \
     validate_representatives_args, validate_dge_args, validate_annotate_args, touch_ok
 from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge_clusters, \
-    parse_gff3_ids, locate_read_files, parse_binge_representatives
+    parse_gff3_ids, locate_read_files, parse_binge_representatives, BLAST_Results
 from modules.annotation import init_table, parse_idmap, update_table_with_gos, \
     update_table_with_seq_details
 from _version import __version__
@@ -676,18 +674,18 @@ def bmain(args, locations):
     concatenate_sequences(args.sequenceFiles, concatFileName)
     
     # Establish the MMseqs2 query and target databases
-    queryDB = ZS_BlastIO.MM_DB(concatFileName, os.path.dirname(args.mms2Exe), locations.tmpDir,
+    queryDB = MM_DB(concatFileName, os.path.dirname(args.mms2Exe), locations.tmpDir,
                                args.sequenceType, args.threads)
     queryDB.generate()
     queryDB.index()
     
-    targetDB = ZS_BlastIO.MM_DB(targetLink, os.path.dirname(args.mms2Exe), tmpDir,
+    targetDB = MM_DB(targetLink, os.path.dirname(args.mms2Exe), tmpDir,
                                 args.sequenceType, args.threads)
     targetDB.generate()
     targetDB.index()
     
     # Run MMseqs2 search
-    mms2 = ZS_BlastIO.MMseqs(queryDB, targetDB, os.path.dirname(args.mms2Exe), tmpDir)
+    mms2 = MMseqs(queryDB, targetDB, os.path.dirname(args.mms2Exe), tmpDir)
     mms2.threads = args.threads
     mms2.evalue = 1 # weak threshold, leave it to 'filter' to decide on a good one
     mms2.isSetup = True
@@ -709,7 +707,7 @@ def smain(args, locations):
     concatenate_sequences(args.sequenceFiles, concatFileName)
     
     # Establish the salmon target database
-    targetDB = ZS_MapIO.Salmon_DB(concatFileName, os.path.dirname(args.salmonExe),
+    targetDB = Salmon_DB(concatFileName, os.path.dirname(args.salmonExe),
                                   args.threads)
     salmonDBName = concatFileName + ".salmonDB"
     if not os.path.exists(salmonDBName) or not os.path.exists(salmonDBName + ".ok"):
@@ -721,10 +719,10 @@ def smain(args, locations):
     for i, sampleName in enumerate(sampleNames):
         # Establish the salmon object
         if args.singleEnd:
-            salmon = ZS_MapIO.Salmon([forwardReads[i]], targetDB, os.path.dirname(args.salmonExe),
+            salmon = Salmon([forwardReads[i]], targetDB, os.path.dirname(args.salmonExe),
                                      args.threads)
         else:
-            salmon = ZS_MapIO.Salmon([forwardReads[i], reverseReads[i]], targetDB, os.path.dirname(args.salmonExe),
+            salmon = Salmon([forwardReads[i], reverseReads[i]], targetDB, os.path.dirname(args.salmonExe),
                                      args.threads)
         
         # Set up sample directory
@@ -783,7 +781,7 @@ def fmain(args, locations):
     
     # Parse BLAST results (if relevant)
     if args.useBLAST:
-        blastResults = ZS_BlastIO.BLAST_Results(args.blastFile)
+        blastResults = BLAST_Results(args.blastFile)
         blastResults.evalue = args.evalue
         blastResults.num_hits = 1 # only need to keep the best hit for each sequence
         blastResults.parse()
@@ -941,7 +939,7 @@ def rmain(args, locations):
     
     # Parse BLAST results (if relevant)
     if args.useBLAST:
-        blastResults = ZS_BlastIO.BLAST_Results(args.blastFile)
+        blastResults = BLAST_Results(args.blastFile)
         blastResults.evalue = args.evalue
         blastResults.num_hits = 1 # only need to keep the best hit for each sequence
         blastResults.parse()
