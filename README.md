@@ -11,8 +11,6 @@
 ```
 # Download this repository [making sure you have prerequisite Python packages]
 git clone https://github.com/zkstewart/BINge.git
-cd BINge
-git submodule update --init --recursive
 
 # Initialise a directory with query files and target genomes for clustering
 python BINge.py initialise -d /location/of/working/directory \
@@ -96,6 +94,8 @@ If you are interested in running BINge, you should ideally set up an Anaconda or
 
 The external programs can be installed through the bioconda channel, or you may opt to install them yourself by following any instructions detailed at the provided websites.
 
+See the [Installing BINge wiki page](https://github.com/zkstewart/BINge/wiki/Installing-BINge) for more information.
+
 # How to use BINge
 On the command line, you can always ask BINge.py to provide help information for its submodules by doing:
 
@@ -110,7 +110,7 @@ For the 'cluster' submodule only, many parameters are hidden since their default
 
 `python /location/of/BINge.py cluster --help-long`
 
-Otherwise, refer to the BINge [wiki](https://github.com/zkstewart/BINge/wiki) for more detailed information on the program. The wiki also contains a tutorial guiding you through a full replication of one part of the BINge study which can be easily applied to your own dataset.
+Otherwise, refer to the [BINge wiki](https://github.com/zkstewart/BINge/wiki) for more detailed information on the program. The wiki also contains a tutorial guiding you through a full replication of one part of the BINge study which can be easily applied to your own dataset.
 
 # How to cite
 A publication is hopefully forthcoming which can be referred to when using this program. Until then, you can link to this repository.
