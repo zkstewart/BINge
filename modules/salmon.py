@@ -228,7 +228,7 @@ class Salmon_DB:
             raise FileExistsError("salmon index already exists!")
         
         # Specify file locations
-        fasta = os.path.abspath(fasta)
+        fasta = os.path.abspath(self.fasta)
         
         # Format command
         cmd = [
