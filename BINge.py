@@ -523,17 +523,17 @@ def imain(args, locations):
     setup_working_directory(args.inputGff3Files, args.inputTxomeFiles,
                             args.targetGenomeFiles, locations)
     
-    # Extract sequences from any --ig files
+    # Extract sequences from any -i files
     extract_annotations_from_gff3(locations.gff3Dir, locations.sequencesDir,
                                   "annotations", args.threads,
                                   args.isMicrobial, args.translationTable)
     
-    # Extract sequences from any --ix files
+    # Extract sequences from any --ig files
     extract_annotations_from_gff3(locations.genomesDir, locations.genomesDir,
                                   "genome", args.threads,
                                   args.isMicrobial, args.translationTable,)
     
-    # Extract CDS/proteins from any input transcript FASTAs
+    # Extract CDS/proteins from any --ix files
     process_transcripts(locations, args.threads, args.translationTable)
     
     # Establish GMAP indexes

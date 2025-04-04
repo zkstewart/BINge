@@ -127,14 +127,13 @@ class MM_DB:
         
         # Skip if db already exists
         if os.path.isfile(dbname):
-            logString = f"# Skipping '{dbname}' DB generation..."
-            return logString
+            return
         
         # Format command
         cmd = [self.mmseqsExe, "createdb", fasta, dbname]
         
         # DB generation
-        logString = "# DB generation with: " + " ".join(cmd)
+        print("# DB generation with: " + " ".join(cmd))
         if platform.system() != "Windows":
             run_makedb = subprocess.Popen(" ".join(cmd), shell = True,
                                          stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -145,8 +144,6 @@ class MM_DB:
         if makedberr.decode("utf-8") != '':
             raise Exception('Make MMseqs2 query db error text below\n' +
                             makedberr.decode("utf-8"))
-        
-        return logString
     
     def index(self):
         '''
@@ -158,8 +155,7 @@ class MM_DB:
         
         # Skip if index already exists
         if MM_DB.mms2_index_exists(os.path.basename(dbname), os.path.dirname(dbname)):
-            logString = f"# Skipping '{dbname}' DB indexing..."
-            return logString
+            return
         
         # Convert to WSL paths where needed
         origDbname = dbname # retain the original value for output flag creation later
@@ -172,7 +168,7 @@ class MM_DB:
             cmd += ["--search-type", "3"]
         
         # Run query index
-        logString = "# DB indexing with: " + " ".join(cmd)
+        print("# DB indexing with: " + " ".join(cmd))
         if platform.system() != "Windows":
             run_index = subprocess.Popen(" ".join(cmd), shell = True,
                                          stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -186,8 +182,6 @@ class MM_DB:
         # Create output flag
         with open(origDbname + ".idxComplete", "w") as fileOut: # need orig name if WSL change occurred
             pass # create empty file
-        
-        return logString
     
     @staticmethod
     def mms2_index_exists(fileNamePrefix, directory):
@@ -362,12 +356,11 @@ class MMseqs:
             force -- a Boolean indicating whether to force the search to run even if the output file
                      already exists. Defaults to False.
         '''
-        
         if not self.isSetup:
             self.setup()
         
         # Specify file locations
-        query = os.path.abspath(f"{self.query.fasta}_seqDB")
+        queryDB = os.path.abspath(f"{self.query.fasta}_seqDB")
         targetDB = os.path.abspath(f"{self.target.fasta}_seqDB")
         searchOutFile = outFile + "_tmp"
         tableOutFile = outFile
@@ -392,7 +385,7 @@ class MMseqs:
         ]
         
         # Run MMseqs search
-        logString = "# MMseqs2 searching with: " + " ".join(cmd)
+        print("# MMseqs2 searching with: " + " ".join(cmd))
         if platform.system() != "Windows":
             run_search = subprocess.Popen(" ".join(cmd), shell = True,
                                           stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -410,7 +403,7 @@ class MMseqs:
         ]
         
         # Run MMseqs2 convertalis
-        logString = "# Generating MMseqs2 tabular output with: " + " ".join(cmd)
+        print("# Generating MMseqs2 tabular output with: " + " ".join(cmd))
         if platform.system() != "Windows":
             run_table = subprocess.Popen(" ".join(cmd), shell = True,
                                           stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -429,7 +422,6 @@ class MMseqs:
                 os.unlink(os.path.join(outDir, file))
         
         self.searchResult = origOutFile
-        return logString
     
     def parse_result(self, searchResultFile=None):
         if searchResultFile == None:
@@ -699,8 +691,7 @@ class MM_Linclust(MM_Clust):
         
         # Skip if db already exists
         if os.path.isfile(dbname) or os.path.isfile(dbname + ".dbtype"):
-            logString = f"# Skipping '{dbname}' linclust clustering..."
-            return logString
+            return
         
         # Format command
         cmd = [
@@ -711,7 +702,7 @@ class MM_Linclust(MM_Clust):
         ]
         
         # Clustering
-        logString = "# Running linclust with: " + " ".join(cmd)
+        print("# Running linclust with: " + " ".join(cmd))
         if platform.system() != "Windows":
             run_linclust = subprocess.Popen(" ".join(cmd), shell = True,
                                          stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -722,8 +713,6 @@ class MM_Linclust(MM_Clust):
         if linclusterr.decode("utf-8") != '':
             raise Exception('Linclust error text below\n' +
                             linclusterr.decode("utf-8"))
-        
-        return logString
     
     def tabulate(self, outputFileName):
         '''
@@ -744,14 +733,13 @@ class MM_Linclust(MM_Clust):
         
         # Skip if table already exists
         if os.path.isfile(outputFileName):
-            logString = f"# Skipping '{outputFileName}' linclust table generation..."
-            return logString
+            return
         
         # Format command
         cmd = [self.mmDB.mmseqsExe, "createtsv", seqdbname, seqdbname, clustdbname, outputFileName]
         
         # Tabulation
-        logString = "# Running table generation with: " + " ".join(cmd)
+        print("# Running table generation with: " + " ".join(cmd))
         if platform.system() != "Windows":
             run_tabulate = subprocess.Popen(" ".join(cmd), shell = True,
                                          stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -762,8 +750,6 @@ class MM_Linclust(MM_Clust):
         if tableerr.decode("utf-8") != '':
             raise Exception('Linclust tabulation text below\n' +
                             tableerr.decode("utf-8"))
-        
-        return logString
     
     def clean_all(self):
         '''
@@ -851,8 +837,7 @@ class MM_Cascade(MM_Clust):
         
         # Skip if db already exists
         if os.path.isfile(dbname) or os.path.isfile(dbname + ".dbtype"):
-            logString = f"# Skipping '{dbname}' cascaded clustering..."
-            return logString
+            return
         
         # Format command
         cmd = [
@@ -864,7 +849,7 @@ class MM_Cascade(MM_Clust):
         ]
         
         # Clustering
-        logString = "# Running cascaded clustering with: " + " ".join(cmd)
+        print("# Running cascaded clustering with: " + " ".join(cmd))
         if platform.system() != "Windows":
             run_cluster = subprocess.Popen(" ".join(cmd), shell = True,
                                          stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -875,8 +860,6 @@ class MM_Cascade(MM_Clust):
         if clusterr.decode("utf-8") != '':
             raise Exception('Cascaded clustering error text below\n' +
                             clusterr.decode("utf-8"))
-        
-        return logString
     
     def tabulate(self, outputFileName):
         '''
@@ -897,14 +880,13 @@ class MM_Cascade(MM_Clust):
         
         # Skip if table already exists
         if os.path.isfile(outputFileName):
-            logString = f"# Skipping '{outputFileName}' cascaded table generation..."
-            return logString
+            return
         
         # Format command
         cmd = [self.mmDB.mmseqsExe, "createtsv", seqdbname, seqdbname, clustdbname, outputFileName]
         
         # Tabulation
-        logString = "# Running table generation with: " + " ".join(cmd)
+        print("# Running table generation with: " + " ".join(cmd))
         if platform.system() != "Windows":
             run_tabulate = subprocess.Popen(" ".join(cmd), shell = True,
                                          stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -915,8 +897,6 @@ class MM_Cascade(MM_Clust):
         if tableerr.decode("utf-8") != '':
             raise Exception('Cascaded clustering tabulation text below\n' +
                             tableerr.decode("utf-8"))
-        
-        return logString
     
     def clean_all(self):
         '''
