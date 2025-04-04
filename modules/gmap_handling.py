@@ -82,7 +82,7 @@ class GMAP_DB:
         
         # Format command
         cmd = [
-            self.buildExe. "-D", os.path.dirname(fasta),
+            self.buildExe, "-D", os.path.dirname(fasta),
             "-d", f"{os.path.basename(fasta)}.gmap", fasta
         ]
         
