@@ -434,41 +434,42 @@ class TestMultiProcessing(unittest.TestCase):
         self.assertEqual(origStart1, origStart2, "Thread number should have no effect")
         self.assertEqual(origContigs1, origContigs2, "Thread number should have no effect")
     
-    def test_multiprocessing_speed(self):
-            '''
-            This test should prove that multiprocessing has a speed benefit
-            '''
-            # Arrange
-            convergenceIters = 5
-            gmapFiles = [
-                os.path.join(dataDir, "gmap_cmj.gff3"),
-                os.path.join(dataDir, "gmap_cmj_cross.gff3"),
-                os.path.join(dataDir, "gmap_fh.gff3"),
-                os.path.join(dataDir, "gmap_fh_cross.gff3")
-            ]
-            binCollectionList = [ BinCollection() for _ in range(len(gmapFiles)) ]
-            numTests = 100
+    ## Turn off this test in case user has a single core machine; it will probably fail
+    # def test_multiprocessing_speed(self):
+    #         '''
+    #         This test should prove that multiprocessing has a speed benefit
+    #         '''
+    #         # Arrange
+    #         convergenceIters = 5
+    #         gmapFiles = [
+    #             os.path.join(dataDir, "gmap_cmj.gff3"),
+    #             os.path.join(dataDir, "gmap_cmj_cross.gff3"),
+    #             os.path.join(dataDir, "gmap_fh.gff3"),
+    #             os.path.join(dataDir, "gmap_fh_cross.gff3")
+    #         ]
+    #         binCollectionList = [ BinCollection() for _ in range(len(gmapFiles)) ]
+    #         numTests = 100
             
-            # Act 1
-            act1Time = 0
-            for i in range(numTests):
-                timeStart = time.time()
-                binCollectionList1 = [ BinCollection() for _ in range(len(gmapFiles)) ]
-                binCollectionList1 = populate_bin_collections(binCollectionList, gmapFiles,
-                                                                            threads=1)
-                act1Time += time.time() - timeStart
+    #         # Act 1
+    #         act1Time = 0
+    #         for i in range(numTests):
+    #             timeStart = time.time()
+    #             binCollectionList1 = [ BinCollection() for _ in range(len(gmapFiles)) ]
+    #             binCollectionList1 = populate_bin_collections(binCollectionList, gmapFiles,
+    #                                                                         threads=1)
+    #             act1Time += time.time() - timeStart
             
-            # Act 2
-            act2Time = 0
-            for i in range(numTests):
-                timeStart = time.time()
-                binCollectionList2 = [ BinCollection() for _ in range(len(gmapFiles)) ]
-                binCollectionList2 = populate_bin_collections(binCollectionList, gmapFiles,
-                                                                            threads=4)
-                act2Time += time.time() - timeStart
+    #         # Act 2
+    #         act2Time = 0
+    #         for i in range(numTests):
+    #             timeStart = time.time()
+    #             binCollectionList2 = [ BinCollection() for _ in range(len(gmapFiles)) ]
+    #             binCollectionList2 = populate_bin_collections(binCollectionList, gmapFiles,
+    #                                                                         threads=4)
+    #             act2Time += time.time() - timeStart
             
-            # Assert
-            self.assertGreater(act1Time, act2Time, "time 2 should be less than time 1")
+    #         # Assert
+    #         self.assertGreater(act1Time, act2Time, "time 2 should be less than time 1")
 
 class TestBinSeederThread(unittest.TestCase):
     def test_binCollection_seeder(self):
