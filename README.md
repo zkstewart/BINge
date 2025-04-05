@@ -58,12 +58,10 @@ python BINge_post.py annotate -d /location/of/working/directory \
 
 # Installation
 ## Obtaining BINge
-Download BINge by cloning the repository and initialising the 'Various_scripts' submodule as below; the submodule contains a few libraries that BINge relies upon.
+Download BINge by cloning the repository as below. It is available as a collection of Python scripts, so no further installation or compilation is necessary.
 
 ```
 git clone https://github.com/zkstewart/BINge.git
-cd BINge
-git submodule update --init --recursive
 ```
 
 ## Prerequisites
@@ -97,7 +95,7 @@ The external programs can be installed through the bioconda channel, or you may 
 See the [Installing BINge wiki page](https://github.com/zkstewart/BINge/wiki/Installing-BINge) for more information.
 
 # How to use BINge
-On the command line, you can always ask BINge.py to provide help information for its submodules by doing:
+On the command line, you can always ask BINge to provide help information for its different functions by doing:
 
 ```
 python /location/of/BINge.py initialise -h
@@ -106,7 +104,7 @@ python /location/of/BINge_post.py filter -h
 ... etc ...
 ```
 
-For the 'cluster' submodule only, many parameters are hidden since their default values are what most people should use. If you want to see those, try:
+For the 'cluster' function only, many parameters are hidden since their default values are what most people should use. If you want to see those, try:
 
 `python /location/of/BINge.py cluster --help-long`
 
