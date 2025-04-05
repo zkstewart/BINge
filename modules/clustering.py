@@ -1,8 +1,8 @@
-import os, sys, random, time
+import os, random, time
 from hashlib import sha256
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_ClustIO, ZS_BlastIO
+from .mmseqs import MM_Cascade, MM_Linclust, MM_DB
+from .cdhit import CDHIT
 
 def get_hash_for_input_sequences(inObject, randomHash=True, maxLength=20):
     '''
@@ -132,19 +132,19 @@ def mmseqs_clustering(fastaFile, algorithm, mmseqsDir, tmpDir, threads, evalue, 
                 corresponding to modes 0, 1, and 2,3 of MMseqs2.
     '''
     # Generate the MMseqs2 sequence database
-    mmDB = ZS_BlastIO.MM_DB(fastaFile, mmseqsDir, tmpDir, "nucleotide", threads)
+    mmDB = MM_DB(fastaFile, mmseqsDir, tmpDir, "nucleotide", threads)
     mmDB.generate()
     mmDB.index()
     
     # Cluster the unbinned transcripts
     if algorithm == "mmseqs-cascade":
-        clusterer = ZS_ClustIO.MM_Cascade(
+        clusterer = MM_Cascade(
             mmDB, evalue, identity, coverage,
             mode, threads, tmpDir,
             sensitivity, steps
         )
     else:
-        clusterer = ZS_ClustIO.MM_Linclust(
+        clusterer = MM_Linclust(
             mmDB, evalue, identity, coverage,
             mode, threads, tmpDir
         )
@@ -188,7 +188,7 @@ def cdhit_clustering(fastaFile, cdhitDir, threads, mem,
         f"{molecule} must be 'nucleotide' or 'protein'!"
     
     # Cluster the unbinned transcripts
-    clusterer = ZS_ClustIO.CDHIT(fastaFile, molecule, cdhitDir)
+    clusterer = CDHIT(fastaFile, molecule, cdhitDir)
     clusterer.identity = identity
     clusterer.set_shorter_cov_pct(shorterCovPct)
     clusterer.set_longer_cov_pct(longerCovPct)

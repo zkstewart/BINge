@@ -1,9 +1,8 @@
-import os, sys, requests, re
+import os, requests, re
 from itertools import groupby
 from goatools import obo_parser
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_GO
+from .go import fix_obsoletions
 
 def init_table(repToClust, blastFile, evalueCutoff, numHits, outputFileName,
                databaseTag=".", largeTable=False):
@@ -241,7 +240,7 @@ def update_table_with_gos(originalTable, newTable, hitMapDict, goObo):
                         bestHitGOs = [ bhg for bhg in bestHitGOs if bhg != "" and bhg != "." ]
                         
                         # Try to fix any obsoletions (if any)
-                        fixedGOs = ZS_GO.fix_obsoletions(bestHitGOs, goObo, queriedGOs)
+                        fixedGOs = fix_obsoletions(bestHitGOs, goObo, queriedGOs)
                         
                         # If we ended up with no hits, handle that
                         if fixedGOs == []:

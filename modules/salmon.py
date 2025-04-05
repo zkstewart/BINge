@@ -1,4 +1,253 @@
-import os
+import os, subprocess, platform
+
+class Salmon:
+    '''
+    The Salmon Class provides access to the salmon read mapping functionality. It cooperates
+    with a Salmon_DB class object to perform the mapping.
+    
+    Attributes:
+        reads (REQUIRED) -- a list containing one string (single-end) or two strings (paired-end)
+                            indicating the location of FASTQ file(s) to map.
+        target (REQUIRED) -- a Salmon_DB object.
+        salmonDir (REQUIRED) -- a string pointing to the location where the mmseqs executable
+                                is found.
+        threads (OPTIONAL) -- an integer value specifying the number of threads to run when
+                              performing MMseqs2 search. Defaults to 1.
+    '''
+    def __init__(self, reads, target, salmonDir, threads=1):
+        self.reads = reads
+        self.target = target
+        self.salmonDir = salmonDir
+        self.threads = threads
+        
+        # Set helper attributes
+        self.isSetup = False
+        self.searchResult = None
+        self.isSalmon = True
+    
+    @property
+    def reads(self):
+        return self._reads
+    
+    @reads.setter
+    def reads(self, value):
+        assert isinstance(value, list)
+        assert len(value) == 1 or len(value) == 2, \
+            "reads must be a list of one or two strings"
+        for read in value:
+            assert isinstance(read, str)
+            if not os.path.isfile(read):
+                raise FileNotFoundError(f"Read file does not exist: {read}")
+        
+        self._reads = value
+    
+    @property
+    def target(self):
+        return self._target
+    
+    @target.setter
+    def target(self, value):
+        assert type(value).__name__ == "Salmon_DB" \
+            or type(value).__name__ == "ZS_MapIO.Salmon_DB" \
+            or hasattr(value, "isSalmon_DB") and value.isSalmon_DB == True
+        
+        self._target = value
+    
+    @property
+    def salmonDir(self):
+        return self._salmonDir
+    
+    @salmonDir.setter
+    def salmonDir(self, value):
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        if not os.path.isdir(value):
+            raise Exception(("salmonDir does not point to an existing directory"))
+        
+        self._salmonDir = value
+        self.salmonExe = os.path.join(value, "salmon")
+    
+    @property
+    def salmonExe(self):
+        return self._salmonExe
+    
+    @salmonExe.setter
+    def salmonExe(self, value):
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        if not os.path.isfile(value):
+            raise Exception(("salmonExe does not point to an existing file"))
+        
+        self._salmonExe = value
+    
+    @property
+    def threads(self):
+        return self._threads
+    
+    @threads.setter
+    def threads(self, value):
+        assert isinstance(value, int)
+        assert 0 < value, "threads must be a positive integer"
+        
+        self._threads = value
+    
+    def setup(self):
+        '''
+        Indexes database (if relevant)
+        '''
+        if not self.target.index_exists():
+            self.target.index()
+        
+        self.isSetup = True
+    
+    def quant(self, outputDirectory):
+        '''
+        Performs the salmon quant operation.
+        
+        Parameters:
+            outputDirectory -- a string indicating the location to
+                               write outputs to.
+        '''
+        if not self.isSetup:
+            self.setup()
+        
+        # Specify file locations
+        reads = [os.path.abspath(read) for read in self.reads]
+        target = os.path.abspath(f"{self.target.fasta}.salmonDB")
+        
+        # Format command
+        cmd = [
+            self.salmonExe, "quant", "--threads", str(self.threads),
+            "--index", target, "--libType", "A", "-o", outputDirectory
+        ]
+        
+        # Add read files
+        if len(reads) == 1:
+            cmd += ["-r", reads[0]]
+        elif len(reads) == 2:
+            cmd += ["-1", reads[0], "-2", reads[1]]
+        else:
+            raise Exception("Incorrect number of read files provided")
+        
+        # Perform salmon search
+        if platform.system() != "Windows":
+            run_salmon = subprocess.Popen(" ".join(cmd), shell = True,
+                                        stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_salmon = subprocess.Popen(cmd, shell = True,
+                                        stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        
+        salmonout, salmonerr = run_salmon.communicate()
+        if "writing output" not in salmonerr.decode("utf-8"):
+            raise Exception('salmon searching error text below\n' +
+                            salmonerr.decode("utf-8"))
+
+class Salmon_DB:
+    '''
+    The Salmon_DB Class encapsulates the logic of indexing a FASTA file using salmon.
+    
+    Attributes:
+        fasta (REQUIRED) -- a string indicating the location of a FASTA file.
+        salmonDir (REQUIRED) -- a string indicating the location of salmon binaries.
+    '''
+    def __init__(self, fasta, salmonDir, threads=1):
+        self.fasta = fasta
+        self.salmonDir = salmonDir
+        self.threads = threads
+        
+        self.isSalmon_DB = True # flag to check object type
+    
+    @property
+    def fasta(self):
+        return self._fasta
+    
+    @fasta.setter
+    def fasta(self, value):
+        assert type(value).__name__ == "str"
+        if not os.path.isfile(value):
+            raise Exception(("Fasta parameter is a string, but does not point " + 
+                            "to an existing file location"))
+        
+        self._fasta = value
+    
+    @property
+    def salmonDir(self):
+        return self._salmonDir
+    
+    @salmonDir.setter
+    def salmonDir(self, value):
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        if not os.path.isdir(value):
+            raise Exception(("salmonDir does not point to an existing directory"))
+        
+        self._salmonDir = value
+        self.salmonExe = os.path.join(value, "salmon")
+    
+    @property
+    def salmonExe(self):
+        return self._salmonExe
+    
+    @salmonExe.setter
+    def salmonExe(self, value):
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        if not os.path.isfile(value):
+            raise Exception(("salmonExe does not point to an existing file"))
+        
+        self._salmonExe = value
+    
+    @property
+    def threads(self):
+        return self._threads
+    
+    @threads.setter
+    def threads(self, value):
+        assert isinstance(value, int)
+        if value < 0:
+            raise Exception("Number of threads must be more than 0")
+        
+        self._threads = value
+    
+    def index_exists(self):
+        '''
+        Checks for the expected index directory.
+        
+        Returns:
+            dbExists -- a Boolean where True means the database exists,
+                        and False means it does not exist.
+        '''
+        return os.path.isdir(f"{self.fasta}.salmonDB")
+    
+    def index(self):
+        '''
+        Makes a database out of the .fasta value for use in salmon mapping.
+        '''
+        # Skip if index exists
+        if self.index_exists():
+            raise FileExistsError("salmon index already exists!")
+        
+        # Specify file locations
+        fasta = os.path.abspath(self.fasta)
+        
+        # Format command
+        cmd = [
+            self.salmonExe, "index", "--threads", str(self.threads),
+            "--transcripts", fasta, "--index", f"{fasta}.salmonDB"
+        ]
+        
+        # Run indexing
+        if platform.system() != "Windows":
+            run_index = subprocess.Popen(" ".join(cmd), shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_index = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        indexout, indexerr = run_index.communicate()
+        
+        # Raise exception if final part of stderr from successful run isn't found
+        if "done building index" not in indexerr.decode("utf-8"):
+            raise Exception('salmon indexing error text below\n' + indexerr.decode("utf-8"))
 
 class EquivalenceClassCollection():
     def __init__(self):

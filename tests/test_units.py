@@ -6,7 +6,6 @@ from multiprocessing import Queue
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from Various_scripts.Function_packages.ZS_GFF3IO import GFF3
 from modules.bins import BinCollection, Bin, BinBundle
 from modules.gff3_handling import iterate_gmap_gff3
 from modules.bin_handling import GmapBinProcess, CollectionSeedProcess, \
@@ -435,41 +434,42 @@ class TestMultiProcessing(unittest.TestCase):
         self.assertEqual(origStart1, origStart2, "Thread number should have no effect")
         self.assertEqual(origContigs1, origContigs2, "Thread number should have no effect")
     
-    def test_multiprocessing_speed(self):
-            '''
-            This test should prove that multiprocessing has a speed benefit
-            '''
-            # Arrange
-            convergenceIters = 5
-            gmapFiles = [
-                os.path.join(dataDir, "gmap_cmj.gff3"),
-                os.path.join(dataDir, "gmap_cmj_cross.gff3"),
-                os.path.join(dataDir, "gmap_fh.gff3"),
-                os.path.join(dataDir, "gmap_fh_cross.gff3")
-            ]
-            binCollectionList = [ BinCollection() for _ in range(len(gmapFiles)) ]
-            numTests = 100
+    ## Turn off this test in case user has a single core machine; it will probably fail
+    # def test_multiprocessing_speed(self):
+    #         '''
+    #         This test should prove that multiprocessing has a speed benefit
+    #         '''
+    #         # Arrange
+    #         convergenceIters = 5
+    #         gmapFiles = [
+    #             os.path.join(dataDir, "gmap_cmj.gff3"),
+    #             os.path.join(dataDir, "gmap_cmj_cross.gff3"),
+    #             os.path.join(dataDir, "gmap_fh.gff3"),
+    #             os.path.join(dataDir, "gmap_fh_cross.gff3")
+    #         ]
+    #         binCollectionList = [ BinCollection() for _ in range(len(gmapFiles)) ]
+    #         numTests = 100
             
-            # Act 1
-            act1Time = 0
-            for i in range(numTests):
-                timeStart = time.time()
-                binCollectionList1 = [ BinCollection() for _ in range(len(gmapFiles)) ]
-                binCollectionList1 = populate_bin_collections(binCollectionList, gmapFiles,
-                                                                            threads=1)
-                act1Time += time.time() - timeStart
+    #         # Act 1
+    #         act1Time = 0
+    #         for i in range(numTests):
+    #             timeStart = time.time()
+    #             binCollectionList1 = [ BinCollection() for _ in range(len(gmapFiles)) ]
+    #             binCollectionList1 = populate_bin_collections(binCollectionList, gmapFiles,
+    #                                                                         threads=1)
+    #             act1Time += time.time() - timeStart
             
-            # Act 2
-            act2Time = 0
-            for i in range(numTests):
-                timeStart = time.time()
-                binCollectionList2 = [ BinCollection() for _ in range(len(gmapFiles)) ]
-                binCollectionList2 = populate_bin_collections(binCollectionList, gmapFiles,
-                                                                            threads=4)
-                act2Time += time.time() - timeStart
+    #         # Act 2
+    #         act2Time = 0
+    #         for i in range(numTests):
+    #             timeStart = time.time()
+    #             binCollectionList2 = [ BinCollection() for _ in range(len(gmapFiles)) ]
+    #             binCollectionList2 = populate_bin_collections(binCollectionList, gmapFiles,
+    #                                                                         threads=4)
+    #             act2Time += time.time() - timeStart
             
-            # Assert
-            self.assertGreater(act1Time, act2Time, "time 2 should be less than time 1")
+    #         # Assert
+    #         self.assertGreater(act1Time, act2Time, "time 2 should be less than time 1")
 
 class TestBinSeederThread(unittest.TestCase):
     def test_binCollection_seeder(self):
@@ -531,38 +531,6 @@ class TestGmapBinProcess(unittest.TestCase):
         
         # Assert
         self.assertEqual(len(resultCollection), 2, "Should have two bins")
-
-class TestGFF3IterationSpeed(unittest.TestCase):
-    def test_iterators_for_speed(self):
-        # Arrange
-        gff3File = os.path.join(dataDir, "big.gff3")
-        timesToIterate = 5
-        
-        # Skip if test is not possible
-        if not os.path.exists(gff3File):
-            self.assertTrue(True, "Skipping test because big.gff3 does not exist")
-            return
-        
-        # Act
-        startTime1 = time.time()
-        for _ in range(timesToIterate):
-            for feature in iterate_gmap_gff3(gff3File):
-                pass
-        endTime1 = time.time() - startTime1
-        
-        startTime2 = time.time()
-        for _ in range(timesToIterate):
-            gff3Obj = GFF3(gff3File, strict_parse=False)
-            for geneFeature in gff3Obj.types["gene"]:
-                pass
-        endTime2 = time.time() - startTime2
-        
-        # Notify
-        print(f"test_iterators_for_speed: iterate_gmap_gff3 = {endTime1}")
-        print(f"test_iterators_for_speed: GFF3 = {endTime2}")
-        
-        # Assert
-        self.assertTrue(True, "Test result is printed to terminal")
 
 if __name__ == '__main__':
     unittest.main()
