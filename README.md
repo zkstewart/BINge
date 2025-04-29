@@ -5,6 +5,7 @@
   - [Prerequisites](#prerequisites)
   - [Installation suggestions](#installation-suggestions)
 - [How to use BINge](#how-to-use-binge)
+  - [Running an analysis](#running-an-analysis)
   - [Rerunning an analysis](#rerunning-an-analysis)
 - [How to cite](#how-to-cite)
 
@@ -109,7 +110,16 @@ For the 'cluster' function only, many parameters are hidden since their default 
 
 `python /location/of/BINge.py cluster --help-long`
 
+Some short but important things to note follow below.
+
 Otherwise, refer to the [BINge wiki](https://github.com/zkstewart/BINge/wiki) for more detailed information on the program. The wiki also contains a tutorial guiding you through a full replication of one part of the BINge study which can be easily applied to your own dataset.
+
+## Running an analysis
+When running BINge, each analysis will be given its own hash code to identify it e.g., `run_379df7a68ec7f39d3f02`. If you are running multiple BINge analyses using the same input files (in other words, you are just tweaking optional clustering parameters like the `--identity` value), you may want to specify which run to use with the `--analysis` parameter. This is not relevant to salmon or BLAST as they use the input sequences themselves which are not subject to any optional parameters.
+
+However, if you do not specify a `--analysis` value, all BINge functions will default to using the most recently generated results from any prerequisite steps. In practice, if you are running BINge without tweaking any optional parameters during the clustering process, you do not need to think about run identifiers or hash codes. Just use BINge and it will handle that all for you!
+
+If you are not sure what run you want to be using, try using `python BINge.py view --analysis ...` substituting the `...` with the folder/run name of any outputs you are curious about. It will give you a complete overview of what files and parameters pertain to that analysis.
 
 ## Rerunning an analysis
 If you try to rerun a previously completed analysis, you might encounter an error indicating that the output file already exists. BINge does not like to overwrite existing results, so you should move, delete, or rename any results before rerunning something performed previously.
