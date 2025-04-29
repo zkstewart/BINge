@@ -5,6 +5,7 @@
   - [Prerequisites](#prerequisites)
   - [Installation suggestions](#installation-suggestions)
 - [How to use BINge](#how-to-use-binge)
+  - [Rerunning an analysis](#rerunning-an-analysis)
 - [How to cite](#how-to-cite)
 
 # Getting started
@@ -109,6 +110,9 @@ For the 'cluster' function only, many parameters are hidden since their default 
 `python /location/of/BINge.py cluster --help-long`
 
 Otherwise, refer to the [BINge wiki](https://github.com/zkstewart/BINge/wiki) for more detailed information on the program. The wiki also contains a tutorial guiding you through a full replication of one part of the BINge study which can be easily applied to your own dataset.
+
+## Rerunning an analysis
+If you try to rerun a previously completed analysis, you might encounter an error indicating that the output file already exists. BINge does not like to overwrite existing results, so you should move, delete, or rename any results before rerunning something performed previously.
 
 # How to cite
 A publication is hopefully forthcoming which can be referred to when using this program. Until then, you can link to this repository.
