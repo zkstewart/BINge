@@ -1,4 +1,4 @@
-import os, distutils.spawn, platform, subprocess, sys
+import os, shutil, platform, subprocess, sys
 from pathlib import Path
 
 from .locations import Locations
@@ -6,8 +6,8 @@ from .locations import Locations
 # Argument validations
 def _validate_gmap(args):
     if args.gmapDir == None:
-        gmap = distutils.spawn.find_executable("gmap")
-        gmap_build = distutils.spawn.find_executable("gmap_build")
+        gmap = shutil.which("gmap")
+        gmap_build = shutil.which("gmap_build")
         
         # Raise error if we failed to find the executables
         if gmap == None or gmap_build == None:
@@ -132,7 +132,7 @@ def validate_cluster_args(args):
     if args.unbinnedClusterer in ["mmseqs-cascade", "mmseqs-linclust"]:
         # Validate MMseqs2 location (if applicable)
         if args.mmseqsDir == None:
-            mmseqs = distutils.spawn.find_executable("mmseqs")
+            mmseqs = shutil.which("mmseqs")
             if mmseqs == None:
                 raise FileNotFoundError("--mmseqsDir wasn't specified, and 'mmseqs' is missing from your PATH")
             args.mmseqsDir = os.path.dirname(mmseqs)
@@ -159,7 +159,7 @@ def validate_cluster_args(args):
     if args.unbinnedClusterer == "cd-hit":
         # Validate CD-HIT location (if applicable)
         if args.cdhitDir == None:
-            cdhitest = distutils.spawn.find_executable("cd-hit-est")
+            cdhitest = shutil.which("cd-hit-est")
             if cdhitest == None:
                 raise FileNotFoundError("--cdhitDir wasn't specified, and 'cd-hit-est' is missing from your PATH")
             args.cdhitDir = os.path.dirname(cdhitest)
@@ -206,7 +206,7 @@ def validate_blast_args(args):
     
     # Validate that MMseqs2 executable is locateable
     if args.mms2Exe == None:
-        mms2 = distutils.spawn.find_executable("mmseqs")
+        mms2 = shutil.which("mmseqs")
         if mms2 == None:
             raise FileNotFoundError("--mms2 wasn't specified, and 'mmseqs' is missing from your PATH")
         args.mms2Exe = mms2
@@ -241,7 +241,7 @@ def validate_salmon_args(args):
     
     # Validate that salmon executable is locateable
     if args.salmonExe == None:
-        salmon = distutils.spawn.find_executable("salmon")
+        salmon = shutil.which("salmon")
         if salmon == None:
             raise FileNotFoundError("--salmon wasn't specified, and 'salmon' is missing from your PATH")
         args.salmonExe = salmon
