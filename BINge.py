@@ -109,9 +109,8 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
             # Check that FASTA is a FASTA
             isFASTA = validate_fasta(fasta)
             if not isFASTA:
-                print(f"-i value '{fasta}' value after the ',' is not a FASTA file")
-                print("Make sure you specify the file order as 'GFF3,FASTA' then try again.")
-                quit()
+                raise ValueError(f"-i value '{fasta}' value after the ',' is not a FASTA file; " + 
+                                 "Make sure you specify the file order as 'GFF3,FASTA' then try again.")
             
             # Symlink files to genomes subdirectory if not aleady existing
             linkedGFF3 = os.path.join(locations.genomesDir, f"genome{numGenomes}.gff3")
@@ -133,9 +132,7 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
             # Check that FASTA is a FASTA
             isFASTA = validate_fasta(fasta)
             if not isFASTA:
-                print(f"-i value '{fasta}' is not a FASTA file")
-                print("Make sure you specify the right file and/or location then try again.")
-                quit()
+                raise ValueError(f"-i value '{fasta}' is not a FASTA file")
             
             # Symlink to main working directory if not already existing
             linkedFASTA = os.path.join(locations.genomesDir, f"genome{numGenomes}.fasta")
