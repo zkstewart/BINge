@@ -1,13 +1,12 @@
 #! python3
 
-import os, sys, unittest, time
+import os, sys, unittest
 import networkx as nx
-from multiprocessing import Queue
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.bins import BinCollection, Bin, BinBundle
-from modules.gff3_handling import iterate_gmap_gff3
+from modules.gff3 import GmapGFF3
 from modules.bin_handling import GmapBinProcess, CollectionSeedProcess, \
     find_overlapping_bins, add_bin_to_collection
 
@@ -273,10 +272,11 @@ class TestGff3Iterate(unittest.TestCase):
     def test_iterate_through_empty_file(self):
         # Arrange
         gmapFile = os.path.join(dataDir, "empty_file")
+        gmapGff3Obj = GmapGFF3(gmapFile)
         
         # Act and assert
         try:
-            for feature in iterate_gmap_gff3(gmapFile):
+            for feature in gmapGff3Obj:
                 pass
         except:
             self.assertTrue(True, "Should error out here")
@@ -284,11 +284,12 @@ class TestGff3Iterate(unittest.TestCase):
     def test_iterate_through_gff3(self):
         # Arrange
         gmapFile = os.path.join(dataDir, "gmap_normal.gff3")
+        gmapGff3Obj = GmapGFF3(gmapFile)
         
         # Act
         numFeatures = 0
         mrnaIDs = []
-        for feature in iterate_gmap_gff3(gmapFile):
+        for feature in gmapGff3Obj:
             numFeatures += 1
             mrnaIDs.append(feature["Name"])
         

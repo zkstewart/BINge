@@ -4,6 +4,7 @@ from Bio import SeqIO
 from .validation import touch_ok
 from .thread_workers import BasicProcess
 from .translate import get_reverse_complement, dna_to_protein
+from .gff3 import GFF3Graph
 
 # Define classes
 class AnnotationExtractor:
@@ -85,18 +86,10 @@ class AnnotationExtractor:
             exonSeq -- a string representing the exon/transcript sequence.
             cdsSeq -- a string representing the CDS.
         '''
-        warnedOnce1 = False
-        warnedOnce2 = False
-        for mrnaID, contig, strand, exon, cds in gff3_iterator(self.gff3File, self.isMicrobial):
-            # Skip if the CDS or exon lists are empty
-            "This can happen with 'transcript' biotypes that don't have CDS features"
-            if len(exon) == 0 or len(cds) == 0:
-                if not warnedOnce1:
-                    print(f"WARNING: '{mrnaID}' lacks exon and/or CDS features; " + 
-                          f"similar warnings for file '{self.gff3File}' will be suppressed.")
-                    warnedOnce1 = True
-                continue
-            
+        gff3Obj = GFF3Graph(self.gff3File)
+        
+        warnedOnce = False
+        for mrnaID, contig, strand, exon, cds in gff3Obj.binge_iterator(self.isMicrobial):
             # Create sequence by piecing together exon / CDS bits
             contigSequence = str(self.fasta[contig].seq)
             
@@ -106,15 +99,14 @@ class AnnotationExtractor:
             
             # Warn if the protein sequence contains a stop codon
             if "*" in protSeq.strip("*"):
-                if not warnedOnce2:
+                if not warnedOnce:
                     print(f"WARNING: protein sequence for '{mrnaID}' contains an internal stop codon; " + 
                           f"similar warnings for file '{self.gff3File}' will be suppressed.")
-                    warnedOnce2 = True
+                    warnedOnce = True
             
             # Yield products
             yield mrnaID, exonSeq, cdsSeq, protSeq
 
-# Multithreaded functions and classes
 class GFF3ExtractionProcess(BasicProcess):
     '''
     Handles sequence extraction from a GFF3 file and genome FASTA file.
@@ -143,141 +135,6 @@ class GFF3ExtractionProcess(BasicProcess):
         touch_ok(mrnaFileOut)
         touch_ok(cdsFileOut)
         touch_ok(protFileOut)
-
-# Other functions
-def _build_data_to_yield(thisFeature):
-    # Parse out variables from mRNA line
-    contig, _, _, start, end, \
-        _, strand, _, attributes \
-        = thisFeature[1]
-    
-    # Start building a data structure to yield
-    dataDict = {"contig": contig, "start": int(start), "end": int(end), "strand": strand}
-    
-    # Get the GMAP alignment quality attributes
-    for attribute in attributes.split(";"):
-        key, value = attribute.split("=")
-        if key in ["identity", "coverage"]:
-            dataDict[key] = float(value)
-        elif key == "indels":
-            dataDict[key] = int(value)
-        elif key == "Name":
-            dataDict["Name"] = value
-    
-    # Get the exons
-    dataDict["exons"] = []
-    for _sl in thisFeature[2:]:
-        contig, _, featureType, start, end, \
-            _, strand, _, attributes \
-            = _sl
-        if featureType == "exon":
-            dataDict["exons"].append([int(start), int(end)])
-    dataDict["exons"] = sorted(dataDict["exons"])
-    
-    return dataDict
-
-def iterate_gmap_gff3(gff3File):
-    '''
-    Provides a simple iterator for a GMAP GFF3 file which yields only the
-    relevant details for BINge. Assumes the file is sorted as is the case
-    with GMAP output.
-    
-    Parameters:
-        gff3File -- a string indicating the location of a GMAP GFF3 formatted
-                    file that is sorted.
-    '''
-    thisAlignment = []
-    with open(gff3File, "r") as fileIn:
-        for line in fileIn:
-            sl = line.rstrip("\t\r\n ").split("\t")
-            
-            # Skip comment / irrelevant lines
-            if line.startswith("#") or len(sl) != 9: # gff3 lines are always 9 long
-                continue
-            
-            # Handle content lines
-            else:
-                featureType = sl[2]
-                
-                # Yield a completed gene data dictionary
-                if featureType == "gene" and thisAlignment != []:
-                    dataDict = _build_data_to_yield(thisAlignment)
-                    
-                    # Reset our feature storage, and yield result now
-                    thisAlignment = []
-                    yield dataDict
-                
-                # Build an ongoing feature
-                thisAlignment.append(sl)
-    
-    # Yield the last feature in the GFF3
-    if thisAlignment != []:
-        dataDict = _build_data_to_yield(thisAlignment)
-    else:
-        raise Exception(f"'{gff3File}' does not appear to be a valid GFF3 file!")
-    yield dataDict
-
-def gff3_iterator(gff3File, isMicrobial=False):
-    '''
-    Provides a simple iterator for a GFF3 file.
-    
-    It is intended to be quick and dumb - which is a positive for GFF3s which are
-    frequently poorly formatted. But if a GFF3 is _so poorly_ formatted that it isn't even
-    ordered as expected (gene -> mRNA -> CDS/exon, then the next gene -> ...) this function
-    will fail.
-    
-    These failures cannot be detected so the user must be vigilant for them.
-    '''
-    # Setup data structures
-    idRegex = re.compile(r"ID=(.+?)($|;|\n)")
-    parentRegex = re.compile(r"Parent=(.+?)($|;|\n)")
-    foundSomething = False
-    gff3Dict = {}
-    
-    # Configuration for microbial or normal GFF3
-    if isMicrobial:
-        subfeature = ["gene"]
-    else:
-        subfeature = ["mRNA", "transcript"]
-    
-    # Iterate through file and build up a dictionary of features
-    with open(gff3File, "r") as fileIn:
-        for line in fileIn:
-            # Parse and skip irrelevant lines
-            if line.startswith("#"):
-                continue
-            sl = line.rstrip("\t\r\n ").split("\t")
-            if len(sl) != 9: # gff3 lines are always 9 long
-                continue
-            
-            # Extract line details
-            contig, source, featureType, start, end, \
-                score, strand, frame, attributes = sl
-            isParent = featureType in subfeature
-            
-            # Index parent features (which may be genes or mRNAs)
-            if isParent:
-                mrnaID = idRegex.search(sl[8]).groups()[0]
-                gff3Dict[mrnaID] = [contig, strand, [], []] # exon, CDS lists
-            
-            # Build an ongoing feature
-            featureIndex = 2 if featureType == "exon" else 3 if featureType == "CDS" else None
-            if featureIndex != None:
-                parentIDs = parentRegex.search(sl[8]).groups()[0].split(",")
-                for pid in parentIDs:
-                    if pid in gff3Dict:
-                        gff3Dict[pid][featureIndex].append([int(start), int(end), frame])
-                        foundSomething = True
-    
-    # Yield each feature in the GFF3
-    if foundSomething == False:
-        raise Exception(f"'{gff3File}' does not appear to be a valid GFF3 file!")
-    else:
-        for mrnaID, (contig, strand, exon, cds) in gff3Dict.items():
-            if not isMicrobial:
-                yield mrnaID, contig, strand, exon, cds
-            else:
-                yield mrnaID, contig, strand, cds, cds # exon is equivalent to CDS in microbe GFF3s
 
 def extract_annotations_from_gff3(inputDir, outputDir, outputPrefix, threads, isMicrobial, translationTable):
     '''
