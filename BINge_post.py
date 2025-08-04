@@ -12,13 +12,12 @@ import os, argparse
 import numpy as np
 from goatools import obo_parser
 
-from modules.locations import Locations
 from modules.fasta_handling import FastaCollection
 from modules.salmon import Salmon_DB, Salmon, SalmonQC
 from modules.mmseqs import MM_DB, MMseqs
 from modules.validation import validate_blast_args, validate_salmon_args, validate_filter_args, \
     validate_representatives_args, validate_dge_args, validate_annotate_args, touch_ok
-from modules.parsing import parse_equivalence_classes, parse_quants, parse_binge_clusters, \
+from modules.parsing import parse_quants, parse_binge_clusters, \
     parse_gff3_ids, locate_read_files, parse_binge_representatives, BLAST_Results
 from modules.annotation import init_table, parse_idmap, update_table_with_gos, \
     update_table_with_seq_details

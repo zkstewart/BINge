@@ -1,4 +1,4 @@
-import os, shutil, platform, subprocess, sys
+import os, shutil
 from pathlib import Path
 
 from .locations import Locations

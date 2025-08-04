@@ -1,4 +1,3 @@
-import os, sys
 from multiprocessing import Process, Pipe, Queue
 
 class BasicProcess(Process):

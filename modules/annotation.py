@@ -1,6 +1,5 @@
-import os, requests, re
+import re
 from itertools import groupby
-from goatools import obo_parser
 
 from .go import fix_obsoletions
 

@@ -1,4 +1,5 @@
 import os, re, subprocess, platform
+from pathlib import Path
 from .fasta_handling import remove_sequence_from_fasta
 from .thread_workers import BasicProcess
 from .validation import touch_ok
@@ -390,7 +391,11 @@ def setup_gmap_indices(locations, gmapDir, threads):
             # Gather results
             for indexWorkerThread in processing:
                 indexWorkerThread.join()
-                indexWorkerThread.check_errors()
+                try:
+                    indexWorkerThread.check_errors()
+                except Exception as e:
+                    if not str(e).rstrip("\r\n ").endswith("Done"):
+                        raise e
 
 def auto_gmapping(locations, gmapDir, threads):
     '''

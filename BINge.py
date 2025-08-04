@@ -10,7 +10,7 @@
 # de novo transcriptome, but leverage the genomic information
 # to group transcripts into genes. That's what this does.
 
-import os, argparse, sys, pickle, platform, subprocess, json
+import os, argparse, sys, pickle, json
 from hashlib import sha256
 from pathlib import Path
 
