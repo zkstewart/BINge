@@ -44,6 +44,10 @@ class AnnotationExtractor:
         assert all([ len(x) == 2 for x in coordsList ]) or all([ len(x) == 3 for x in coordsList ]), \
             "assemble_sequence() received coordinates that aren't in a list of lists with 2 or 3 entries each!"
         
+        # Skip unhandled strands
+        if strand == "?":
+            return None
+        
         # Sort coordsList appropriately
         coordsList.sort(key = lambda x: (int(x[0]), int(x[1])))
         
@@ -88,21 +92,43 @@ class AnnotationExtractor:
         '''
         gff3Obj = GFF3Graph(self.gff3File)
         
-        warnedOnce = False
+        warnedOnce1 = False
+        warnedOnce2 = False
+        warnedOnce3 = False
         for mrnaID, contig, strand, exon, cds in gff3Obj.binge_iterator(self.isMicrobial):
             # Create sequence by piecing together exon / CDS bits
             contigSequence = str(self.fasta[contig].seq)
             
             exonSeq = AnnotationExtractor.assemble_sequence(exon, strand, contigSequence)
+            if exonSeq == None:
+                if not warnedOnce1:
+                    print(f"WARNING: Trans-splicing mixed strands (strand == '?') is not handled; '{mrnaID}' " + 
+                          "and similar sequences will not be produced")
+                    warnedOnce1 = True
+                continue
+            
             cdsSeq = AnnotationExtractor.assemble_sequence(cds, strand, contigSequence)
+            if cdsSeq == None:
+                if not warnedOnce1:
+                    print(f"WARNING: Trans-splicing mixed strands (strand == '?') is not handled; '{mrnaID}' " + 
+                          "and similar sequences will not be produced")
+                    warnedOnce1 = True
+                continue
+            elif cdsSeq == "":
+                if not warnedOnce2:
+                    print(f"WARNING: '{mrnaID}' produced an empty CDS; it " + 
+                          "and similar sequences will not be part of the generated sequences")
+                    warnedOnce2 = True
+                continue
+            
             protSeq = dna_to_protein(cdsSeq, self.translationTable)
             
             # Warn if the protein sequence contains a stop codon
             if "*" in protSeq.strip("*"):
-                if not warnedOnce:
+                if not warnedOnce3:
                     print(f"WARNING: protein sequence for '{mrnaID}' contains an internal stop codon; " + 
                           f"similar warnings for file '{self.gff3File}' will be suppressed.")
-                    warnedOnce = True
+                    warnedOnce3 = True
             
             # Yield products
             yield mrnaID, exonSeq, cdsSeq, protSeq

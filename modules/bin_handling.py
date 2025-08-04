@@ -26,7 +26,7 @@ class CollectionSeedProcess(ReturningProcess):
             for mrnaID, contig, strand, exon, cds in gff3Obj.binge_iterator(isMicrobial):
                 # Create a bin for each exon feature
                 exonBins = []
-                for exonStart, exonEnd in exon:
+                for exonStart, exonEnd, frame in exon: # uninterested in frame
                     exonBin = Bin(contig, exonStart, exonEnd)
                     exonBin.add(mrnaID)
                     exonBins.append(exonBin)

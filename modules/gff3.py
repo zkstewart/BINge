@@ -12,12 +12,13 @@ from .parsing import read_gz_file
 
 class GFF3Feature:
     IMMUTABLE = ["ID", "ftype"] # these attributes should never change once set
-    def __init__(self, ID, ftype, start=None, end=None, strand=None, contig=None, children=None, parents=None):
+    def __init__(self, ID, ftype, start=None, end=None, strand=None, frame=None, contig=None, children=None, parents=None):
         self.ID = ID
         self.ftype = ftype
         self.start = start
         self.end = end
         self.strand = strand
+        self.frame = frame
         self.contig = contig
         
         self._children = []
@@ -103,13 +104,30 @@ class GFF3Feature:
     
     @strand.setter
     def strand(self, value):
-        ACCEPTED_STRANDS = ["+", "-", "."] # "." might represent unknown strand
+        ACCEPTED_STRANDS = ["+", "-", ".", "?"] # "." might represent unknown strand; "?" can represent mixed strand for trans-splicing
         if value != None:
             if not value in ACCEPTED_STRANDS:
                 raise ValueError(f"Strand value '{value}' is not recognised; should be one of {ACCEPTED_STRANDS}")
             self._strand = value
         else:
             self._strand = None
+    
+    @property
+    def frame(self):
+        if self._frame == None:
+            return "."
+        else:
+            return self._frame
+    
+    @frame.setter
+    def frame(self, value):
+        ACCEPTED_FRAMES = [".", "0", "1", "2"] # "." represents irrelevant
+        if value != None:
+            if not value in ACCEPTED_FRAMES:
+                raise ValueError(f"Frame value '{value}' is not recognised; should be one of {ACCEPTED_FRAMES}")
+            self._frame = value
+        else:
+            self._frame = None
     
     @property
     def children(self):
@@ -258,7 +276,7 @@ class GFF3Graph:
                 
                 # Create a feature object
                 feature = GFF3Feature(ID=featureID, ftype=ftype,
-                                      start=start, end=end, strand=strand,
+                                      start=start, end=end, strand=strand, frame=frame,
                                       contig=contig, children=[], parents=parentIDs)
                 
                 # Index the feature if it doesn't already exist
@@ -358,7 +376,7 @@ class GFF3Graph:
                     
                     # Render a CDS coordinates list from the CDS features
                     try:
-                        cdsCoords = sorted([ [f.start, f.end] for f in feature.CDS ])
+                        cdsCoords = sorted([ [f.start, f.end, f.frame] for f in feature.CDS ])
                     except:
                         # Handle CDS feature absence via warning
                         if not warnedOnce:
@@ -374,7 +392,7 @@ class GFF3Graph:
                         # Handle exon feature absence silently
                         "If we get to here, we have a CDS feature, so the exon becomes mostly irrelevant"
                         try:
-                            exonCoords = sorted([ [f.start, f.end] for f in feature.exon ])
+                            exonCoords = sorted([ [f.start, f.end, f.frame] for f in feature.exon ])
                         except:
                             exonCoords = cdsCoords
                     
