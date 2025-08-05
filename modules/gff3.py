@@ -383,7 +383,7 @@ class GFF3Graph:
                             print(f"WARNING: '{feature.ID}' lacks CDS features; " + 
                                 f"similar warnings for file '{self.fileLocation}' will be suppressed.")
                             warnedOnce = True
-                            continue
+                        continue
                     
                     # Render a exon coordinates list from the exon features
                     if isMicrobial:
