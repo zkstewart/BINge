@@ -1,8 +1,8 @@
 import os
 from .thread_workers import ReturningProcess
 from .parsing import load_sequence_length_index
-from .gff3_handling import gff3_iterator, iterate_gmap_gff3
 from .bins import Bin, BinCollection
+from .gff3 import GFF3Graph, GmapGFF3
 
 # Multithreaded functions and classes
 class CollectionSeedProcess(ReturningProcess):
@@ -21,10 +21,12 @@ class CollectionSeedProcess(ReturningProcess):
         
         # Seed bin collection if GFF3 is available
         if gff3File != None:
-            for mrnaID, contig, strand, exon, cds in gff3_iterator(gff3File, isMicrobial):
+            gff3Obj = GFF3Graph(gff3File)
+            
+            for mrnaID, contig, strand, exon, cds in gff3Obj.binge_iterator(isMicrobial):
                 # Create a bin for each exon feature
                 exonBins = []
-                for exonStart, exonEnd, _ in exon:
+                for exonStart, exonEnd, frame in exon: # uninterested in frame
                     exonBin = Bin(contig, exonStart, exonEnd)
                     exonBin.add(mrnaID)
                     exonBins.append(exonBin)
@@ -141,8 +143,9 @@ class GmapBinProcess(ReturningProcess):
             # Hold onto the GMAP alignments for each gene
             """GMAP is guaranteed to return alignments for each gene together, but not ordered
             by quality. We'll sort them by quality and then process them iteratively"""
+            gmapGff3Obj = GmapGFF3(gmapFile)
             thisBlockID, thisBlockData = None, None
-            for dataDict in iterate_gmap_gff3(gmapFile):
+            for dataDict in gmapGff3Obj:
                 # Handle first iteration
                 if thisBlockID == None:
                     thisBlockID = dataDict["Name"]

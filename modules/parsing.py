@@ -1,20 +1,33 @@
-import os, pickle, codecs
+import os, pickle, codecs, gzip
+from contextlib import contextmanager
+
 from .salmon import EquivalenceClassCollection, QuantCollection, DGEQuantCollection
 
 def get_codec(fileName):
     try:
         f = codecs.open(fileName, encoding='utf-8', errors='strict')
         for line in f:
-            pass
+            break
+        f.close()
         return "utf-8"
     except:
         try:
             f = codecs.open(fileName, encoding='utf-16', errors='strict')
             for line in f:
-                pass
+                break
+            f.close()
             return "utf-16"
         except UnicodeDecodeError:
             print(f"Can't tell what codec '{fileName}' is!!")
+
+@contextmanager
+def read_gz_file(filename):
+    if filename.endswith(".gz"):
+        with gzip.open(filename, "rt") as f:
+            yield f
+    else:
+        with open(filename, "r", encoding=get_codec(filename)) as f:
+            yield f
 
 class BLAST_Results:
     '''
