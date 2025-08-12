@@ -156,11 +156,11 @@ def get_unbinned_sequence_ids(clusterDict, eliminatedIDs, transcriptRecords):
     Parameters:
         clusterDict -- a dictionary with structure like:
                        {
-                           0 : [ "seq1", "seq2", "seq3" ],
-                           1 : [ "seq4", "seq5", "seq6" ],
+                           0 : [ ("seqFileName1", "seq1"), ("seqFileName1", "seq2"), ...],
+                           1 : [ ("seqFileName2", "seq3") ("seqFileName3", "seq4"), ... ],
                            ...
                         }
-        eliminatedIDs -- a set containing strings of sequence IDs which are not to be
+        eliminatedIDs -- a set containing tuples of (seqFileName, sequenceID) values which are not to be
                          considered for clustering.
         transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
                              sequences
@@ -168,15 +168,15 @@ def get_unbinned_sequence_ids(clusterDict, eliminatedIDs, transcriptRecords):
         unbinnedIDs -- a set containing string value for sequence IDs that were not
                        binned by BINge's main clustering process.
     '''
-    binnedIDs = []
-    for seqIDs in clusterDict.values():
-        binnedIDs.extend(seqIDs)
-    binnedIDs = set(binnedIDs)
-    binnedIDs = binnedIDs.union(eliminatedIDs)
+    binnedNumbersAndIDs = []
+    for seqNumbersAndIDs in clusterDict.values():
+        binnedNumbersAndIDs.extend(seqNumbersAndIDs)
+    binnedNumbersAndIDs = set(binnedNumbersAndIDs)
+    binnedNumbersAndIDs = binnedNumbersAndIDs.union(eliminatedIDs)
     
     unbinnedIDs = set()
     for record in transcriptRecords:
-        if record.name not in binnedIDs:
+        if record.name not in binnedNumbersAndIDs:
             unbinnedIDs.add(record.name)
     
     return unbinnedIDs

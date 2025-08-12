@@ -22,13 +22,14 @@ class CollectionSeedProcess(ReturningProcess):
         # Seed bin collection if GFF3 is available
         if gff3File != None:
             gff3Obj = GFF3Graph(gff3File)
+            sequenceFileName = os.path.basename(gff3File).split("_to_")[0]
             
             for mrnaID, contig, strand, exon, cds in gff3Obj.binge_iterator(isMicrobial):
                 # Create a bin for each exon feature
                 exonBins = []
                 for exonStart, exonEnd, frame in exon: # uninterested in frame
                     exonBin = Bin(contig, exonStart, exonEnd)
-                    exonBin.add(mrnaID)
+                    exonBin.add((sequenceFileName, mrnaID))
                     exonBins.append(exonBin)
                 
                 # Iteratively handle exon bins
@@ -49,7 +50,7 @@ class GmapBinProcess(ReturningProcess):
                          linking sequence IDs (key) to lengths (value).
     '''
     @staticmethod
-    def process_block(thisBlockData, seqLenDict, binCollection):
+    def process_block(thisBlockData, seqLenDict, binCollection, sequenceFileName):
         '''
         Decides whether any of the GMAP alignments for this gene ("block") are
         good enough to be added to the bin collection. Called by the task()
@@ -65,6 +66,7 @@ class GmapBinProcess(ReturningProcess):
             seqLenDict -- a dictionary linking sequence IDs (key) to lengths (value).
             binCollection -- an existing BinCollection object to add sequence IDs to
                              as new bins or added into existing bins.
+            sequenceFileName -- a string indicating which sequence file the sequence ID belongs to
         '''
         
         # Static behavioural parameters (static for now, may change later)
@@ -126,7 +128,7 @@ class GmapBinProcess(ReturningProcess):
             for exonStart, exonEnd in blockDataDict["exons"]:
                 # Create a bin for each exon feature
                 exonBin = Bin(blockDataDict["contig"], exonStart, exonEnd)
-                exonBin.add(blockDataDict["Name"])
+                exonBin.add((sequenceFileName, blockDataDict["Name"]))
                 
                 # See if this overlaps an existing bin
                 binOverlap = find_overlapping_bins(binCollection, exonBin)
@@ -144,6 +146,8 @@ class GmapBinProcess(ReturningProcess):
             """GMAP is guaranteed to return alignments for each gene together, but not ordered
             by quality. We'll sort them by quality and then process them iteratively"""
             gmapGff3Obj = GmapGFF3(gmapFile)
+            sequenceFileName = os.path.basename(gmapFile).split("_to_")[0]
+            
             thisBlockID, thisBlockData = None, None
             for dataDict in gmapGff3Obj:
                 # Handle first iteration
@@ -157,13 +161,13 @@ class GmapBinProcess(ReturningProcess):
                     thisBlockData.append(dataDict)
                 # Otherwise, process the block of data
                 else:
-                    GmapBinProcess.process_block(thisBlockData, seqLenDict, binCollection)
+                    GmapBinProcess.process_block(thisBlockData, seqLenDict, binCollection, sequenceFileName)
                     
                     # Reset for next iteration
                     thisBlockID, thisBlockData = dataDict["Name"], [dataDict]
             
             # Process the last block of data
-            GmapBinProcess.process_block(thisBlockData, seqLenDict, binCollection)
+            GmapBinProcess.process_block(thisBlockData, seqLenDict, binCollection, sequenceFileName)
         
         return binCollection
 

@@ -122,7 +122,7 @@ def validate_cluster_args(args):
                          "or less than 1")
     
     # Locate and validate that sequences exist in the sequences directory
-    sequenceSuffix = ".cds" # always CDS for Salmon mapping
+    sequenceSuffix = ".cds" # always CDS for clustering
     args.sequenceFiles = locations.get_sequenceFiles(sequenceSuffix)
     
     # Validate GMAP location

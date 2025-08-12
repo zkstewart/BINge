@@ -145,7 +145,7 @@ def determine_if_1x_filter(transcriptCounts, seqIDs, transcriptRecords, readLeng
                  1x coverage criteria or not.
     '''
     # Get sequence lengths per transcript as nucleotides
-    transcriptLengths = [ len(str(transcriptRecords[sid])) for sid in seqIDs ]
+    transcriptLengths = [ len(str(transcriptRecords[sfile][sid])) for (sfile, sid) in seqIDs ]
     transcriptLengths = [ tl * 3 if sequenceType == "protein" else tl for tl in transcriptLengths ]
     
     # Figure out how many reads would be required for 1x coverage
@@ -868,8 +868,8 @@ def fmain(args, locations):
             "Note: we include stop codons in the length calculations here"
             if any(
             [
-                ( len(str(transcriptRecords[seqID])) / 3 ) >= args.minimumLength
-                for seqID in seqIDs
+                ( len(str(transcriptRecords[seqFileName][seqID])) / 3 ) >= args.minimumLength
+                for seqFileName, seqID in seqIDs
             ]):
                 continue
             
@@ -975,16 +975,16 @@ def rmain(args, locations):
                 evidenceLists = []
                 
                 # Store all forms of evidence we have at hand for each sequence member
-                numRepsInCluster = sum([ seqID in annotIDs for seqID in seqIDs ])
-                for seqID in seqIDs:
+                numRepsInCluster = sum([ seqID in annotIDs for seqFileName, seqID in seqIDs ])
+                for seqFileName, seqID in seqIDs:
                     # Raise error for non-existing sequences
-                    if not seqID in cdsRecords:
-                        raise KeyError(f"'{seqID}' not found in any input FASTA files; have you modified " +
+                    if not (seqFileName, seqID) in cdsRecords:
+                        raise KeyError(f"'{seqID}' not found in '{seqFileName}' file; have you modified " +
                                        "any files after initialisation or clustering?")
                     
                     # Tolerantly handle counts that can be filtered by salmon
                     try:
-                        counts = sum(salmonCollection.get_transcript_count(seqID))
+                        counts = sum(salmonCollection.get_transcript_count(seqID)) # BUGGED; never functional
                     except: # this happens if Salmon filtered something out
                         counts = 0
                     
@@ -1001,7 +1001,7 @@ def rmain(args, locations):
                             1 if seqID in annotIDs else 0,
                             blastDict[seqID][0][7] if seqID in blastDict else 0, # best hit is index 0
                             counts,
-                            len(str(cdsRecords[seqID])),
+                            len(str(cdsRecords[(seqFileName, seqID)])),
                             seqID
                         ]
                     else:

@@ -53,13 +53,13 @@ class Bin:
             "A Bin must end at a value >= 1 (it behaves 1-based for indexing)"
         self._end = value
     
-    def add(self, idValue):
-        assert isinstance(idValue, str)
-        self.ids.add(idValue)
+    def add(self, value):
+        assert isinstance(value, tuple)
+        self.ids.add(value)
     
-    def union(self, ids):
-        assert isinstance(ids, list) or isinstance(ids, set)
-        self.ids = self.ids.union(ids)
+    def union(self, values):
+        assert isinstance(values, list) or isinstance(values, set)
+        self.ids = self.ids.union(values)
     
     def merge(self, otherBin):
         assert self.contig == otherBin.contig, \
@@ -241,8 +241,9 @@ class BinBundle:
                               This represents a ratio for which sequences must co-occur.
         Returns:
             clusterDict -- a dictionary where keys are integers from 0 -> n, and values
-                           are sets of sequence IDs.
-            eliminations -- a set of sequence IDs to NOT take through to further clustering.
+                           are sets of (seqFile[Number/Name], sequence IDs) tuples.
+            eliminations -- a set of (seqFile[Number/Name], sequence IDs) tuples to
+                            NOT take through to further clustering.
         '''
         assert 0 < VOTE_THRESHOLD <= 1.0, \
             "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
@@ -252,12 +253,12 @@ class BinBundle:
         
         eliminations = []
         
-        # Figure out which bins each sequence occur in
+        # Figure out which bins each sequence occurs in
         occurrenceDict = {}
         for binIndex, bin in enumerate(self.bins):
-            for seqID in bin.ids:
-                occurrenceDict.setdefault(seqID, set())
-                occurrenceDict[seqID].add(binIndex)
+            for seqNumberAndID in bin.ids: # seqNumberAndID == (seqFileNumber, seqID)
+                occurrenceDict.setdefault(seqNumberAndID, set())
+                occurrenceDict[seqNumberAndID].add(binIndex)
         
         # Initialise graph data structure to link sequences
         graph = nx.Graph()
@@ -265,76 +266,76 @@ class BinBundle:
         
         # Iterate through each sequence and link where appropriate
         fragmentDict = { k:[0,0] for k in occurrenceDict.keys() }
-        for seqID, binIndices in occurrenceDict.items():
+        for seqNumberAndID, binIndices in occurrenceDict.items():
             # Count how many times other sequences occur in the same bin as this
             seqLinkDict = {}
             for binIndex in binIndices:
                 bin = self.bins[binIndex]
-                for otherSeqID in bin.ids:
-                    if otherSeqID == seqID:
+                for otherSeqNumberAndID in bin.ids:
+                    if otherSeqNumberAndID == seqNumberAndID:
                         continue
                     
-                    seqLinkDict.setdefault(otherSeqID, 0)
-                    seqLinkDict[otherSeqID] += 1
+                    seqLinkDict.setdefault(otherSeqNumberAndID, 0)
+                    seqLinkDict[otherSeqNumberAndID] += 1
             
             # Count how many times this occurs in the same bin as the other sequences
             otherSeqLinkDict = {}
-            for otherSeqID in seqLinkDict.keys():
-                otherSeqLinkDict.setdefault(otherSeqID, 0)
+            for otherSeqNumberAndID in seqLinkDict.keys():
+                otherSeqLinkDict.setdefault(otherSeqNumberAndID, 0)
                 
-                otherBinIndices = occurrenceDict[otherSeqID]
-                otherSeqLinkDict[otherSeqID] += len(otherBinIndices.intersection(binIndices))
+                otherBinIndices = occurrenceDict[otherSeqNumberAndID]
+                otherSeqLinkDict[otherSeqNumberAndID] += len(otherBinIndices.intersection(binIndices))
             
             # Determine if we will link these sequences or not
-            for otherSeqID, numOccurrence in seqLinkDict.items():
+            for otherSeqNumberAndID, numOccurrence in seqLinkDict.items():
                 # See how they would link
                 thisWouldLink = True if (numOccurrence / len(binIndices)) >= VOTE_THRESHOLD \
                     else False
-                otherWouldLink = True if (otherSeqLinkDict[otherSeqID] / len(occurrenceDict[otherSeqID])) >= VOTE_THRESHOLD \
+                otherWouldLink = True if (otherSeqLinkDict[otherSeqNumberAndID] / len(occurrenceDict[otherSeqNumberAndID])) >= VOTE_THRESHOLD \
                     else False
                 
                 # Store information on whether either might be a fragment
-                fragmentDict[seqID][1] += 1
-                fragmentDict[otherSeqID][1] += 1
+                fragmentDict[seqNumberAndID][1] += 1
+                fragmentDict[otherSeqNumberAndID][1] += 1
                 
                 if thisWouldLink and not otherWouldLink:
-                    fragmentDict[seqID][0] += 1
+                    fragmentDict[seqNumberAndID][0] += 1
                 if otherWouldLink and not thisWouldLink:
-                    fragmentDict[otherSeqID][0] += 1
+                    fragmentDict[otherSeqNumberAndID][0] += 1
                 
                 # Form an edge if either wants it
                 if thisWouldLink or otherWouldLink:
-                    graph.add_edge(seqID, otherSeqID)
+                    graph.add_edge(seqNumberAndID, otherSeqNumberAndID)
         
         # Remove any nodes which are fragments
-        for seqID, (numFragments, numOccurrences) in fragmentDict.items():
+        for seqNumberAndID, (numFragments, numOccurrences) in fragmentDict.items():
             if numOccurrences == 0:
                 continue
             if (numFragments / numOccurrences) >= FRAGMENT_CUTOFF:
-                graph.remove_node(seqID)
-                eliminations.append(seqID)
+                graph.remove_node(seqNumberAndID)
+                eliminations.append(seqNumberAndID)
         
         # Create sequence bins based on the graph's connected components
         clusterDict = {}
         ongoingCount = 0
-        for connectedSeqIDs in nx.connected_components(graph):
+        for connectedSeqNumberAndIDs in nx.connected_components(graph):
             # If there is only one sequence, just add it
-            if len(connectedSeqIDs) == 1:
-                clusterDict[ongoingCount] = connectedSeqIDs
+            if len(connectedSeqNumberAndIDs) == 1:
+                clusterDict[ongoingCount] = connectedSeqNumberAndIDs
                 ongoingCount += 1
                 continue
             
             # Otherwise, create a subgraph of this connected component
-            subGraph = graph.subgraph(connectedSeqIDs).copy()
+            subGraph = graph.subgraph(connectedSeqNumberAndIDs).copy()
             
             # Filter sequences with anomalous degree centrality
             centralityDict = nx.degree_centrality(subGraph)
             centralityMedian = median(centralityDict.values())
             centralityBound = centralityMedian * CENTRALITY_CUTOFF
-            for seqID, centrality in centralityDict.items():
+            for seqNumberAndID, centrality in centralityDict.items():
                 if centrality < centralityBound:
-                    subGraph.remove_node(seqID)
-                    eliminations.append(seqID)
+                    subGraph.remove_node(seqNumberAndID)
+                    eliminations.append(seqNumberAndID)
             
             # Remove chimeras (articulation points)
             articulations = list(nx.articulation_points(subGraph))
@@ -364,10 +365,10 @@ class BinBundle:
                                 eliminations.append(articulation)
             
             # Cluster the sequences in any connected components
-            for subConnectedSeqIDs in nx.connected_components(subGraph):
+            for subConnectedSeqNumberAndIDs in nx.connected_components(subGraph):
                 "If we created an isolate, we will ignore it here"
-                if len(subConnectedSeqIDs) != 1:
-                    clusterDict[ongoingCount] = set(subConnectedSeqIDs)
+                if len(subConnectedSeqNumberAndIDs) != 1:
+                    clusterDict[ongoingCount] = set(subConnectedSeqNumberAndIDs)
                     ongoingCount += 1
         
         return clusterDict, set(eliminations)
@@ -408,8 +409,7 @@ class BinBundle:
             for bin in binCollection:
                 newBundle.add(bin.data)
         return newBundle
-        
-        
+    
     def __len__(self):
         return len(self.bins)
     

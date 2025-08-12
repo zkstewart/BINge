@@ -27,14 +27,30 @@ class FastaCollection:
     '''
     def __init__(self, fastaFiles):
         self.fastaFiles = fastaFiles
-        self.records = []
+        self.records = {}
         self.pipePrefixes = []
         
         self._parse_fastas()
     
+    @property
+    def fastaFiles(self):
+        return self._fastaFiles
+    
+    @fastaFiles.setter
+    def fastaFiles(self, values):
+        if not (type(values) == list or type(values) == tuple):
+            raise TypeError("FastaCollection expects to receive a list or tuple of FASTA file names")
+        
+        for fastaFile in values:
+            if not os.path.isfile(fastaFile):
+                raise FileNotFoundError(f"FastaCollection expected '{fastaFile}' to be an existing file")
+        
+        self._fastaFiles = values
+    
     def _parse_fastas(self):
         for fastaFile in self.fastaFiles:
-            self.records.append(Fasta(fastaFile))
+            self.records[os.path.basename(fastaFile)] = Fasta(fastaFile)
+            
             # Extract pipe prefixes from FASTA titles
             pipePrefixes = set()
             with open(fastaFile, "r") as fileIn:
@@ -44,19 +60,23 @@ class FastaCollection:
                         if "|" in seqPrefix:
                             pipePrefix = seqPrefix.split("|")[0] + "|"
                             pipePrefixes.add(pipePrefix)
-            self.pipePrefixes.append(pipePrefixes)
+            self.pipePrefixes[os.path.basename(fastaFile)] = pipePrefixes
     
-    def __getitem__(self, key):
-        for i, records in enumerate(self.records):
-            try:
-                return records[key]
-            except:
-                for pipePrefix in self.pipePrefixes[i]:
-                    try:
-                        return records[pipePrefix + key]
-                    except:
-                        pass
-        raise KeyError(f"'{key}' not found in collection")
+    def __getitem__(self, value):
+        try:
+            seqFileName, seqID = value
+        except:
+            raise TypeError(f"'{value}' is not a valid key for a FastaCollection")
+        
+        try:
+            return self.records[seqFileName][seqID]
+        except:
+            for pipePrefix in self.pipePrefixes[seqFileName]:
+                try:
+                    return self.records[seqFileName][pipePrefix + seqID]
+                except:
+                    pass
+        raise KeyError(f"'{value}' not found in FastaCollection")
     
     def __contains__(self, key):
         try:
@@ -66,11 +86,16 @@ class FastaCollection:
             return False
     
     def __iter__(self):
-        for records in self.records:
-            yield from records
+        for fastaFile, records in self.records.items():
+            for record in records:
+                yield (fastaFile, record)
     
     def __repr__(self):
-        return (f"<FastaCollection object;num_records='{len(self.records)}';" +
+        numRecords = 0
+        for _ in self:
+            numRecords += 1
+        
+        return (f"<FastaCollection object;num_records='{numRecords}';" +
                 f"fastaFiles={self.fastaFiles}"
         )
 
