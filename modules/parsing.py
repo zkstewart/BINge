@@ -1,4 +1,4 @@
-import os, pickle, codecs, gzip
+import os, pickle, codecs, gzip, re
 from contextlib import contextmanager
 
 from .salmon import EquivalenceClassCollection, QuantCollection, DGEQuantCollection
@@ -162,6 +162,117 @@ class BLAST_Results:
             self.file, len(self), self.evalue, self.num_hits
         )
 
+class BINge_Results:
+    def __init__(self):
+        self.seqFileRegex = re.compile(r"#sequence_file_(\d+)=(.+)")
+    
+    def parse_binge_clusters(self, bingeFile):
+        '''
+        Reads in the output file of BINge as a dictionary assocating clusters to their
+        sequence members.
+        
+        Parameters:
+            bingeFile -- a string pointing to the location of a BINge cluster output file.
+        Sets:
+            self.seqFiles -- a dictionary with structure like:
+                             {
+                                 1: "fileLocation1.fasta",
+                                 2: "fileLocation2.fasta",
+                                 ...
+                             }
+            self.binned / self.unbinned -- a dictionary with structure like:
+                        {
+                            0: [seqid1, seqid2, ...],
+                            1: [ ... ],
+                            ...
+                        }
+        '''
+        self.seqFiles = {}
+        self.binned = {}
+        self.unbinned = {}
+        firstCommented = True
+        firstUncommented = True
+        with open(bingeFile, "r") as fileIn:
+            for line in fileIn:
+                l = line.rstrip("\r\n\t ")
+                
+                # Handle header lines
+                if line.startswith("#"):
+                    # Handle file format identifier line
+                    if firstCommented:
+                        assert line.startswith("#BINge clustering information file"), \
+                            ("BINge file is expected to start with a specific comment line! " +
+                            "Your file is hence not recognised as a valid BINge cluster file.")
+                        firstCommented = False
+                    # Handle sequence file identifier lines
+                    else:
+                        # Extract values from comment line
+                        regexMatch = self.seqFileRegex.match(l)
+                        if regexMatch == None:
+                            raise ValueError(f"BINge header line '{l}' does not meet expected formatting")
+                        seqFileNumber, seqFileLocation = regexMatch.groups()
+                        try:
+                            seqFileNumber = int(seqFileNumber)
+                        except:
+                            raise ValueError(f"Sequence file number '{seqFileNumber}' is not an integer; " + 
+                                             f"BINge header line '{l}' does not meet expected formatting")
+                        
+                        # Store sequence file information
+                        self.seqFiles[seqFileNumber] = seqFileLocation
+                # Handle body lines
+                else:
+                    sl = line.rstrip("\r\n ").split("\t")
+                    
+                    # Handle column labels
+                    if firstUncommented:
+                        assert sl == ["cluster_num", "sequence_file", "sequence_id", "cluster_type"], \
+                            ("BINge file is expected to have a specific header line on the first uncommented line! " +
+                            "Your file is hence not recognised as a valid BINge cluster file.")
+                        firstUncommented = False
+                    # Handle all subsequent information-containing lines
+                    else:
+                        clustNum, seqFileNumber, seqID, clusterType = int(sl[0]), sl[1], sl[2], sl[3]
+                        if clusterType == "binned":
+                            self.binned.setdefault(clustNum, [])
+                            self.binned[clustNum].append((seqFileNumber, seqID))
+                        else:
+                            self.unbinned.setdefault(clustNum, [])
+                            self.unbinned[clustNum].append((seqFileNumber, seqID))
+    
+    def write_binge_clusters(self, outputFileName, clusterTypes="all"):
+        '''
+        Generates a BINge results file based on the values in self.binned and self.unbinned
+        
+        Parameters:
+            outputFileName -- a string indicating the location to write the output file
+            clusterTypes -- a string in the list of ["all", "binned", "unbinned"] signalling which
+                            result type(s) to write to output
+        '''
+        ACCEPTED_TYPES = ["all", "binned", "unbinned"]
+        if not clusterTypes in ACCEPTED_TYPES:
+            raise ValueError(f"write_binge_clusters() does not recognise '{clusterTypes}' as a valid value for clusterTypes")
+        
+        with open(outputFileName, "w") as fileOut:
+            # Write comment lines
+            fileOut.write("#BINge clustering information file\n")
+            for seqFileNumber, seqFileLocation in self.seqFiles.items():
+                fileOut.write(f"#sequence_file_{seqFileNumber}={seqFileLocation}\n")
+            
+            # Write column header
+            fileOut.write("cluster_num\tsequence_file\tsequence_id\tcluster_type\n")
+            
+            # Write content lines
+            numWrittenClusters = 0
+            if (clusterTypes == "all" or clusterTypes == "binned") and hasattr(self, "binned"):
+                for clusterNum, seqValues in self.binned.items():
+                    for seqFileNumber, seqID in seqValues:
+                        fileOut.write(f"{clusterNum}\t{seqFileNumber}\t{seqID}\tbinned\n")
+                        numWrittenClusters += 1
+            if (clusterTypes == "all" or clusterTypes == "unbinned") and hasattr(self, "unbinned"):
+                for clusterNum, seqValues in self.unbinned.items():
+                    for seqFileNumber, seqID in seqValues:
+                        fileOut.write(f"{clusterNum + numWrittenClusters}\t{seqFileNumber}\t{seqID}\tunbinned\n")
+
 def parse_equivalence_classes(equivalenceClassFiles, sampleNames):
     '''
     Parses in one or more equivalence class files from Salmon, producing
@@ -234,52 +345,6 @@ def parse_dge_quants(quantFiles, sampleNames):
         
         dgeQuantCollection.parse_quant_file(quantFile, sample)
     return dgeQuantCollection
-
-def parse_binge_clusters(bingeFile, typeToReturn="all"):
-    '''
-    Reads in the output file of BINge as a dictionary assocating clusters to their
-    sequence members.
-    
-    Parameters:
-        bingeFile -- a string pointing to the location of a BINge cluster output file.
-        typeToReturn -- a string indicating whether to return all clusters ("all"), only
-                        the binned clusters ("binned"), or only the unbinned clusters
-                        ("unbinned")
-    Returns:
-        clusterDict -- a dictionary with structure like:
-                       {
-                             0: [seqid1, seqid2, ...],
-                             1: [ ... ],
-                             ...
-                         }
-    '''
-    assert typeToReturn in ["all", "binned", "unbinned"]
-    
-    clusterDict = {}
-    lineNum = 0
-    with open(bingeFile, "r") as fileIn:
-        for line in fileIn:
-            sl = line.rstrip("\r\n ").split("\t")
-            
-            # Handle header lines
-            if lineNum == 0:
-                assert line.startswith("#BINge clustering information file"), \
-                    ("BINge file is expected to start with a specific comment line! " +
-                    "Your file is hence not recognised as a valid BINge cluster file.")
-                lineNum += 1
-            elif lineNum == 1:
-                assert sl == ["cluster_num", "sequence_id", "cluster_type"], \
-                    ("BINge file is expected to have a specific header line on the second line! " +
-                     "Your file is hence not recognised as a valid BINge cluster file.")
-                lineNum += 1
-            
-            # Handle content lines
-            else:
-                clustNum, seqID, clusterType = int(sl[0]), sl[1], sl[2]
-                if typeToReturn == "all" or typeToReturn == clusterType:
-                    clusterDict.setdefault(clustNum, [])
-                    clusterDict[clustNum].append(seqID)
-    return clusterDict
 
 def parse_gff3_ids(gff3File):
     '''
