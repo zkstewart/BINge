@@ -527,3 +527,54 @@ def touch_ok(fileName):
     if not fileName.endswith(".ok"):
         fileName = f"{fileName}.ok"
     open(fileName, "w").close()
+
+def check_for_duplicates(sequencesDir, fileSuffix):
+    '''
+    Checks the sequences being used by BINge for sequence ID duplication which will
+    complicate/induce bugs in downstream activities.
+    
+    Parameters:
+        sequencesDir -- a string indicating the folder to check files for
+                        sequence ID duplicates
+        fileSuffix -- a string indicating the suffix of the files we want to check
+    '''
+    # Locate all the files for checking
+    filesToCheck = [
+        os.path.join(sequencesDir, f)
+        for f in os.listdir(sequencesDir)
+        if f.endswith(fileSuffix)
+    ]
+    
+    # Check all sequences for duplicate IDs
+    foundIDs = set()
+    duplicatedIDs = set()
+    for fileToCheck in filesToCheck:
+        with open(fileToCheck, "r") as fileIn:
+            for line in fileIn:
+                if line.startswith(">"):
+                    seqID = line[1:].rstrip("\r\n ")
+                    if not seqID in foundIDs:
+                        foundIDs.add(seqID)
+                    else:
+                        duplicatedIDs.add(seqID)
+    
+    # Report the error (if relevant)
+    if len(duplicatedIDs) != 0:
+        # Format information for error reporting
+        numDuplicates = len(duplicatedIDs)
+        examples = []
+        for dupeID in duplicatedIDs:
+            if len(examples) == 10:
+                examples.append("...")
+                break
+            examples.append(dupeID)
+        examples = ", ".join(examples)
+        
+        # Format the message for error reporting
+        errorMsg = (f"There are {numDuplicates} sequences with duplicated IDs across or within the sequence files " + 
+                    f"being used by BINge at '{sequencesDir}'. You should adjust your input files to have unique " +
+                    f"identifiers for each sequence. Duplicated sequence identifiers include: {examples}"
+        )
+        
+        # Raise the error with informative message
+        raise ValueError(errorMsg)

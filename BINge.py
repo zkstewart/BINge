@@ -23,8 +23,8 @@ from modules.gff3_handling import extract_annotations_from_gff3
 from modules.clustering import cluster_unbinned_sequences
 from modules.parsing import parse_binge_clusters
 from modules.validation import initialise_working_directory, validate_init_args, \
-    validate_cluster_args, validate_view_args, \
-    validate_fasta, handle_symlink_change, touch_ok
+    validate_cluster_args, validate_view_args, validate_fasta, \
+    check_for_duplicates, handle_symlink_change, touch_ok
 from modules.fasta_handling import FastaCollection, \
     generate_sequence_length_index, process_transcripts
 from _version import __version__
@@ -532,6 +532,9 @@ def imain(args, locations):
     
     # Extract CDS/proteins from any --ix files
     process_transcripts(locations, args.threads, args.translationTable)
+    
+    # Validate that sequence duplication does not exist
+    check_for_duplicates(locations.sequencesDir, ".aa") # AA files are smaller than CDS or mRNA with identical IDs
     
     # Establish GMAP indexes
     setup_gmap_indices(locations, args.gmapDir, args.threads)
