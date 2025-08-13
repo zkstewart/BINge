@@ -641,7 +641,7 @@ def cmain(args, locations):
         print(f"# There are {len(unbinnedIDs)} unbinned sequences for external clustering")
     
     if len(unbinnedIDs) == 1:
-        unbinnedClusterDict = { 0: list(unbinnedIDs)[0] }
+        unbinnedClusterDict = { 0: list(unbinnedIDs) }
     elif len(unbinnedIDs) > 0:
         unbinnedClusterDict = cluster_unbinned_sequences(unbinnedIDs, transcriptRecords,
                                                          args, locations.tmpDir, runDir)
