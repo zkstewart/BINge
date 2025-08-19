@@ -653,7 +653,7 @@ def cmain(args, locations):
     with open(outputFileName, "a") as fileOut:
         for clusterNum, clusterIDs in unbinnedClusterDict.items():
             for seqID in clusterIDs:
-                fileOut.write(f"{clusterNum+numClusters+1}\t{seqID}\tunbinned\n")
+                fileOut.write(f"{clusterNum+numClusters}\t{seqID}\tunbinned\n")
     touch_ok(outputFileName)
     
     print("Clustering complete!")
