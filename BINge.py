@@ -22,7 +22,7 @@ from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.gff3_handling import extract_annotations_from_gff3
 from modules.clustering import cluster_unbinned_sequences
 from modules.parsing import BINge_Results
-from modules.validation import initialise_working_directory, validate_init_args, \
+from modules.validation import validate_args, validate_init_args, \
     validate_cluster_args, validate_view_args, validate_fasta, \
     check_for_duplicates, handle_symlink_change, touch_ok
 from modules.fasta_handling import FastaCollection, \
@@ -491,7 +491,7 @@ def main():
                          default="most_recent")
     
     args = subParentParser.parse_args()
-    initialise_working_directory(args.workingDirectory)
+    validate_args(args) # updates args.workingDirectory
     
     # Split into mode-specific functions
     if args.mode in ["initialise", "init"]:
@@ -573,7 +573,8 @@ def cmain(args, locations):
     if os.path.isfile(pickleFile):
         with open(pickleFile, "rb") as pickleIn:
             clusterDict, eliminations = pickle.load(pickleIn)
-        print("# An existing pickle file will be loaded to resume program operation.")
+        if args.debug:
+            print("# An existing pickle file will be loaded to resume program operation.")
     
     # ... error out if it's a directory or something weird ...
     elif os.path.exists(pickleFile):
