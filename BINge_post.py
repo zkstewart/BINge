@@ -823,7 +823,7 @@ def fmain(args, locations):
     bingeResults.filter(toDropUnbinned)
     
     # Write output of clustering to file
-    bingeResults.write_binge_clusters(outputFileName, clusterTypes="all")
+    bingeResults.write(outputFileName, clusterTypes="all")
     touch_ok(outputFileName)
     
     # Print some statistics for the user

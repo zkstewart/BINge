@@ -640,7 +640,7 @@ def cmain(args, locations):
     bingeResults.unbinned = bingeResults.update_unbinned_ids(unbinnedClusterDict)
     
     # Write output of clustering to file
-    bingeResults.write_binge_clusters(outputFileName, clusterTypes="all")
+    bingeResults.write(outputFileName, clusterTypes="all")
     touch_ok(outputFileName)
     
     print("Clustering complete!")
