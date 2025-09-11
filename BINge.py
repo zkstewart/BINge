@@ -21,7 +21,7 @@ from modules.bin_handling import generate_bin_collections, populate_bin_collecti
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
 from modules.gff3_handling import extract_annotations_from_gff3
 from modules.clustering import cluster_unbinned_sequences
-from modules.parsing import parse_binge_clusters
+from modules.parsing import BINge_Results
 from modules.validation import initialise_working_directory, validate_init_args, \
     validate_cluster_args, validate_view_args, validate_fasta, \
     check_for_duplicates, handle_symlink_change, touch_ok
@@ -147,19 +147,14 @@ def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations)
             generate_sequence_length_index(linkedFASTA)
             touch_ok(linkedFASTA)
 
-def get_unbinned_sequence_ids(clusterDict, eliminatedIDs, transcriptRecords):
+def get_unbinned_sequence_ids(bingeResults, eliminatedIDs, transcriptRecords):
     '''
     Compares one or more BinBundle objects against the transcript sequences
     to see if any sequences indicated in transcriptRecords do not exist in
     any Bins.
     
     Parameters:
-        clusterDict -- a dictionary with structure like:
-                       {
-                           0 : [ "seq1", "seq2", "seq3" ],
-                           1 : [ "seq4", "seq5", "seq6" ],
-                           ...
-                        }
+        bingeResults -- a BINge_Results object with .binned dictionary
         eliminatedIDs -- a set containing strings of sequence IDs which are not to be
                          considered for clustering.
         transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
@@ -169,7 +164,7 @@ def get_unbinned_sequence_ids(clusterDict, eliminatedIDs, transcriptRecords):
                        binned by BINge's main clustering process.
     '''
     binnedIDs = []
-    for seqIDs in clusterDict.values():
+    for seqIDs in bingeResults.binned.values():
         binnedIDs.extend(seqIDs)
     binnedIDs = set(binnedIDs)
     binnedIDs = binnedIDs.union(eliminatedIDs)
@@ -623,20 +618,13 @@ def cmain(args, locations):
         with open(pickleFile, "wb") as pickleOut:
             pickle.dump([clusterDict, eliminations], pickleOut)
     
-    # Write binned clusters to file
-    with open(outputFileName, "w") as fileOut:
-        # Write header
-        fileOut.write("#BINge clustering information file\n")
-        fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
-        
-        # Write content lines
-        for clusterNum, seqIDs in clusterDict.items():
-            for seqID in seqIDs:
-                fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
+    # Initialise a BINge_Results object for containing cluster results
+    bingeResults = BINge_Results()
+    bingeResults.binned = clusterDict
     
     # Cluster remaining unbinned sequences
     transcriptRecords = FastaCollection(args.sequenceFiles)
-    unbinnedIDs = get_unbinned_sequence_ids(clusterDict, eliminations, transcriptRecords)
+    unbinnedIDs = get_unbinned_sequence_ids(bingeResults, eliminations, transcriptRecords)
     if args.debug:
         print(f"# There are {len(unbinnedIDs)} unbinned sequences for external clustering")
     
@@ -646,14 +634,13 @@ def cmain(args, locations):
         unbinnedClusterDict = cluster_unbinned_sequences(unbinnedIDs, transcriptRecords,
                                                          args, locations.tmpDir, runDir)
     else:
-        unbinnedClusterDict = {} # blank to append nothing to output file
+        unbinnedClusterDict = {} # blank to signal an absence of results
+    
+    # Store unbinned clusters in the BINge_results object
+    bingeResults.unbinned = bingeResults.update_unbinned_ids(unbinnedClusterDict)
     
     # Write output of clustering to file
-    numClusters = len(clusterDict)
-    with open(outputFileName, "a") as fileOut:
-        for clusterNum, clusterIDs in unbinnedClusterDict.items():
-            for seqID in clusterIDs:
-                fileOut.write(f"{clusterNum+numClusters}\t{seqID}\tunbinned\n")
+    bingeResults.write_binge_clusters(outputFileName, clusterTypes="all")
     touch_ok(outputFileName)
     
     print("Clustering complete!")
@@ -742,15 +729,15 @@ def vmain(args, locations):
     print("# Clustering result:")
     clusterFile = os.path.join(args.runDir, locations.clusterFile)
     if os.path.exists(clusterFile):
-        binnedDict = parse_binge_clusters(clusterFile, "binned")
-        unbinnedDict = parse_binge_clusters(clusterFile, "unbinned")
+        bingeResults = BINge_Results()
+        bingeResults.parse(clusterFile)
         
-        seqsBinned = sum([len(seqIDs) for seqIDs in binnedDict.values()])
-        seqsUnbinned = sum([len(seqIDs) for seqIDs in unbinnedDict.values()])
+        seqsBinned = sum([len(seqIDs) for seqIDs in bingeResults.binned.values()])
+        seqsUnbinned = sum([len(seqIDs) for seqIDs in bingeResults.unbinned.values()])
         
-        print(f"# Number of binned clusters: {len(binnedDict)}")
+        print(f"# Number of binned clusters: {len(bingeResults.binned)}")
         print(f"# Number of sequences in binned clusters: {seqsBinned}")
-        print(f"# Number of unbinned clusters: {len(unbinnedDict)}")
+        print(f"# Number of unbinned clusters: {len(bingeResults.unbinned)}")
         print(f"# Number of sequences in unbinned clusters: {seqsUnbinned}")
     else:
         print("No clustering result available")

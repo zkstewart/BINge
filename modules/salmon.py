@@ -580,24 +580,20 @@ class SalmonQC():
         self.parse_quant_file(quantFile, sample)
         self.parse_log_file(logFile, sample)
     
-    def get_clustered_qc(self, clusterDict):
+    def get_clustered_qc(self, bingeResults):
         '''
         Computes the percentage of reads that are represented in the clustered sequences
         for each sample, and then adjusts the total mapping percentage on this basis.
         
         Parameters:
-            clusterDict -- a dictionary with format like:
-                           { 0: [ [seqid1, seqid2, ...], "binned" ],
-                             3: [ [...], "unbinned"],
-                             12: ...,
-                             ...
-                           }
+            bingeResults -- a BINge_Results object to be iterated over for its .binned
+                            and .unbinned values
         '''
         adjustedQC = {}
         for sample, numReads in self.totalReads.items():
             # Get the number of reads that clustered for this sample
             clusteredNumReads = 0
-            for clusterNum, seqIDs in clusterDict.items():
+            for clusterNum, seqIDs in bingeResults:
                 for seqID in seqIDs:
                     if seqID in self.numReads[sample]:
                         clusteredNumReads += self.numReads[sample][seqID]

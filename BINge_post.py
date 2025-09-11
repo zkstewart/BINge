@@ -17,35 +17,28 @@ from modules.salmon import Salmon_DB, Salmon, SalmonQC
 from modules.mmseqs import MM_DB, MMseqs
 from modules.validation import validate_blast_args, validate_salmon_args, validate_filter_args, \
     validate_representatives_args, validate_dge_args, validate_annotate_args, touch_ok
-from modules.parsing import parse_quants, parse_binge_clusters, \
-    parse_gff3_ids, locate_read_files, parse_binge_representatives, BLAST_Results
+from modules.parsing import BINge_Results, BLAST_Results, \
+    parse_quants, parse_gff3_ids, locate_read_files, parse_binge_representatives
 from modules.annotation import init_table, parse_idmap, update_table_with_gos, \
     update_table_with_seq_details
 from _version import __version__
 
 # Define functions
-def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
-                                     quantCollection):
+def get_counts_cutoff_by_percentiles(bingeResults, quantCollection):
     '''
     Parses the sequence IDs out of the two cluster dictionaries, alongside a salmon
     QuantCollection, and calculates the nth percentile of read count values in the
     dataset.
     
     Parameters:
-        binnedClusterDict -- a dictionary with format like:
-                             {
-                                 1: [ seqid1, seqid2, ... ],
-                                 2: [...],
-                                 ...
-                             }
-        unbinnedClusterDict -- a dictionary with the same format as binnedClusterDict.
+        bingeResults -- a BINge_Results object with .binned and .unbinned dictionaries
         quantCollection -- a QuantCollection.
     '''
     # Get counts for each bin dictionary
     binnedCounts = [
         np.mean(quantCollection.get_transcript_count(seqID))
         
-        for seqIDs in binnedClusterDict.values()
+        for seqIDs in bingeResults.binned.values()
         for seqID in seqIDs
         if seqID in quantCollection.quant
     ]
@@ -53,7 +46,7 @@ def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
     unbinnedCounts = [
         np.mean(quantCollection.get_transcript_count(seqID))
         
-        for seqIDs in unbinnedClusterDict.values()
+        for seqIDs in bingeResults.unbinned.values()
         for seqID in seqIDs
         if seqID in quantCollection.quant
     ]
@@ -88,41 +81,6 @@ def get_counts_cutoff_by_percentiles(binnedClusterDict, unbinnedClusterDict,
         # This becomes our countCutoff value (if it is >= 1)
         "If it doesn't even == 1, we just set 1 so this filter will NEVER save a cluster"
         return unbinnedPercentileMean if unbinnedPercentileMean >= 1 else 1
-
-def merge_cluster_dicts(binnedDict, unbinnedDict, toDrop):
-    '''
-    Merges binnedDict and unbinnedDict together, after dropping any clusters
-    noted in the toDrop set.
-    
-    Parameters:
-        binnedDict -- a dictionary containing clusters with format like:
-                          {
-                              1: [ seqid1, seqid2, ... ],
-                              2: [ ... ],
-                              ...
-                          }
-        toFilterDict -- a dictionary with the same format as unfilteredDict.
-        toDrop -- a set listing cluster numbers to exclude.
-    Returns:
-        clusterDict -- a new dictionary with clusters numbered in toDrop removed,
-                       with a format like:
-                       {
-                           1: [ [seqid1, seqid2, ...], "binned" ],
-                           3: [ [...], "unbinned"],
-                           12: ...,
-                           ...
-                       }
-    '''
-    clusterDict = {}
-    for i in range(2):
-        toFilterDict = [binnedDict, unbinnedDict][i]
-        binType = "binned" if i == 0 else "unbinned"
-        
-        for clusterNum, seqIDs in toFilterDict.items():
-            if not clusterNum in toDrop:
-                clusterDict[clusterNum] = [seqIDs, binType]
-    
-    return clusterDict
 
 def determine_if_1x_filter(transcriptCounts, seqIDs, transcriptRecords, readLength, sequenceType="nucleotide"):
     '''
@@ -198,27 +156,22 @@ def format_representative(clusterNum, representativeID, representativeSeq):
     '''
     return f">cluster-{clusterNum} representative={representativeID}\n{representativeSeq}\n"
 
-def write_tx2gene(tx2geneFile, clusterDict):
+def write_tx2gene(tx2geneFile, bingeResults):
     '''
     Generates a tx2gene file for summarisation of salmon counts to gene/cluster level
     from mapping done to individual transcripts/sequences.
     
     Parameters:
         tx2geneFile -- a string indicating the location of the output file.
-        clusterDict -- a dictionary with format like:
-                       {
-                           1: [ seqid1, seqid2, ... ],
-                           2: [ ... ],
-                           ...
-                       }
+        bingeResults -- a BINge_Results object with .binned and .unbinned dictionaries
     '''
     with open(tx2geneFile, "w") as fileOut:
         fileOut.write("TXNAME\tGENEID\n")
-        for clusterNum, seqIDs in clusterDict.items():
+        for clusterNum, seqIDs in bingeResults:
             for seqID in seqIDs:
                 fileOut.write(f"{seqID}\tcluster-{clusterNum}\n")
 
-def write_salmonQC(salmonDirs, salmonQCFile, clusterDict):
+def write_salmonQC(salmonDirs, salmonQCFile, bingeResults):
     '''
     Generates a salmonQC file for summarisation of salmon counts to gene/cluster level
     from mapping done to individual transcripts/sequences.
@@ -226,18 +179,13 @@ def write_salmonQC(salmonDirs, salmonQCFile, clusterDict):
     Parameters:
         salmonDirs -- a list of strings indicating the locations of the salmon output directories.
         salmonQCFile -- a string indicating the location of the output file.
-        clusterDict -- a dictionary with format like:
-                       {
-                           1: [ seqid1, seqid2, ... ],
-                           2: [ ... ],
-                           ...
-                       }
+        bingeResults -- a BINge_Results object with .binned and .unbinned dictionaries
     '''
     # Generate the SalmonQC object
     salmonQC = SalmonQC(salmonDirs)
     
     # Calculate adjusted mapping percentages
-    adjustedQCDict = salmonQC.get_clustered_qc(clusterDict)
+    adjustedQCDict = salmonQC.get_clustered_qc(bingeResults)
     
     # Write output
     with open(salmonQCFile, "w") as fileOut:
@@ -758,20 +706,12 @@ def fmain(args, locations):
                               "To resume or overwrite, move/rename/delete this file then try again.")
     
     # Parse the BINge cluster file
-    binnedDict = parse_binge_clusters(args.bingeFile, "binned")
-    unbinnedDict = parse_binge_clusters(args.bingeFile, "unbinned")
+    bingeResults = BINge_Results()
+    bingeResults.parse(args.bingeFile)
     
     # If we're just dropping unbinned clusters, we can do that now
     if args.justDropUnbinned:
-        with open(outputFileName, "w") as fileOut:
-            # Write header
-            fileOut.write("#BINge clustering information file\n")
-            fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
-            
-            # Write content lines
-            for clusterNum, seqIDs in binnedDict.items():
-                for seqID in seqIDs:
-                    fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
+        bingeResults.write(outputFileName, clusterTypes="binned")
         touch_ok(outputFileName)
         return # exit the program here
     
@@ -804,8 +744,7 @@ def fmain(args, locations):
         so if this is the only thing that passes on a cluster, we want to be confident
         that it's actually good."""
         countCutoff = get_counts_cutoff_by_percentiles(
-            binnedDict, unbinnedDict,
-            quantCollection
+            bingeResults, quantCollection
         )
     
     # Perform filtration of clusters with available evidence
@@ -879,22 +818,13 @@ def fmain(args, locations):
             else:
                 toDropUnbinned.add(clusterID)
     
-    # Merge cluster dicts back together
-    toDrop = toDropBinned.union(toDropUnbinned)
-    clusterDict = merge_cluster_dicts(binnedDict, unbinnedDict, toDrop)
+    # Filter clusters
+    bingeResults.filter(toDropBinned)
+    bingeResults.filter(toDropUnbinned)
     
-    # Write filtered clusters to file
-    with open(outputFileName, "w") as fileOut:
-        # Write header
-        fileOut.write("#BINge clustering information file\n")
-        fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
-        
-        # Write content lines
-        for clusterNum, value in clusterDict.items():
-            clusterIDs, binType = value
-            for seqID in clusterIDs:
-                fileOut.write(f"{clusterNum}\t{seqID}\t{binType}\n")
-        touch_ok(outputFileName)
+    # Write output of clustering to file
+    bingeResults.write_binge_clusters(outputFileName, clusterTypes="all")
+    touch_ok(outputFileName)
     
     # Print some statistics for the user
     print("# BINge_post.py 'filter' statistics:")
@@ -902,7 +832,7 @@ def fmain(args, locations):
         print(f"> A salmon quant value >= {countCutoff} resulted in cluster retention")
     print(f"> Removed {len(toDropBinned)} binned clusters")
     print(f"> Removed {len(toDropUnbinned)} unbinned clusters")
-    print(f"> Result contains {len(clusterDict)} clusters")
+    print(f"> Result contains {len(bingeResults)} clusters")
     
     print("Filtering complete!")
 
@@ -929,7 +859,8 @@ def rmain(args, locations):
                                   "To resume or overwrite, move/rename/delete this file then try again.")
     
     # Parse the BINge cluster file
-    clusterDict = parse_binge_clusters(args.bingeFile, "all")
+    bingeResults = BINge_Results()
+    bingeResults.parse(args.bingeFile)
     
     # Load transcripts into memory for quick access
     mrnaRecords = FastaCollection(args.mrnaSequenceFiles)
@@ -965,7 +896,7 @@ def rmain(args, locations):
     with open(os.path.join(reprRunDir, locations.representativeMRNA), "w") as mrnaOut, \
     open(os.path.join(reprRunDir, locations.representativeCDS), "w") as cdsOut, \
     open(os.path.join(reprRunDir, locations.representativeAA), "w") as aaOut:
-        for clusterID, seqIDs in clusterDict.items():
+        for clusterID, seqIDs in bingeResults:
             # Handle single sequence clusters (by just choosing the sequence)
             if len(seqIDs) == 1:
                 seqID = seqIDs[0]
@@ -1061,13 +992,14 @@ def dmain(args, locations):
     os.symlink(dgeRunName, mostRecentDir)
     
     # Parse the BINge cluster file
-    clusterDict = parse_binge_clusters(args.bingeFile, "all")
+    bingeResults = BINge_Results()
+    bingeResults.parse(args.bingeFile)
     
     # Generate tx2gene file (if not already done)
     tx2geneFile = os.path.join(dgeRunName, locations.tx2geneFile)
     if not os.path.exists(tx2geneFile) or not os.path.exists(tx2geneFile + ".ok"):
         print(f"# Generating '{locations.tx2geneFile}' file for cluster count summarisation...")
-        write_tx2gene(tx2geneFile, clusterDict)
+        write_tx2gene(tx2geneFile, bingeResults)
         touch_ok(tx2geneFile)
     
     # Derive the directories from the salmon files
@@ -1077,7 +1009,7 @@ def dmain(args, locations):
     salmonQCFile = os.path.join(dgeRunName, locations.salmonQCFile)
     if not os.path.exists(salmonQCFile) or not os.path.exists(salmonQCFile + ".ok"):
         print(f"# Generating '{locations.salmonQCFile}' file for salmon QC assessment...")
-        write_salmonQC(salmonDirs, salmonQCFile, clusterDict)
+        write_salmonQC(salmonDirs, salmonQCFile, bingeResults)
         touch_ok(salmonQCFile)
     
     # Write list of samples for DGE analysis (if not already done)
