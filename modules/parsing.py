@@ -1,7 +1,8 @@
-import os, re, pickle, codecs, gzip
+import os, sys, re, pickle, codecs, gzip
 from contextlib import contextmanager
 
-from .salmon import EquivalenceClassCollection, QuantCollection, DGEQuantCollection
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from salmon import EquivalenceClassCollection, QuantCollection, DGEQuantCollection
 
 def get_codec(fileName):
     try:

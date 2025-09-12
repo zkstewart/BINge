@@ -1,10 +1,11 @@
-import os, re, pickle
+import os, sys, re, pickle
 from Bio import SeqIO
 from pyfaidx import Fasta
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 
-from .thread_workers import BasicProcess
-from .validation import handle_symlink_change, touch_ok
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from thread_workers import BasicProcess
+from validation import handle_symlink_change, touch_ok
 
 # Define classes
 class FastaParser:

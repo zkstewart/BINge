@@ -1,8 +1,10 @@
-import os
-from .thread_workers import ReturningProcess
-from .parsing import load_sequence_length_index
-from .bins import Bin, BinCollection
-from .gff3 import GFF3Graph, GmapGFF3
+import os, sys
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from thread_workers import ReturningProcess
+from parsing import load_sequence_length_index
+from bins import Bin, BinCollection
+from gff3 import GFF3Graph, GmapGFF3
 
 # Multithreaded functions and classes
 class CollectionSeedProcess(ReturningProcess):

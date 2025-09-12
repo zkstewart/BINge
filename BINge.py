@@ -19,7 +19,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.bins import BinBundle
 from modules.bin_handling import generate_bin_collections, populate_bin_collections
 from modules.gmap_handling import setup_gmap_indices, auto_gmapping
-from modules.gff3_handling import extract_annotations_from_gff3
+from modules.gff3tofasta import extract_annotations_from_gff3
 from modules.clustering import cluster_unbinned_sequences
 from modules.parsing import BINge_Results
 from modules.validation import validate_args, validate_init_args, \

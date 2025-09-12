@@ -1,7 +1,8 @@
-import re
+import sys, re
 from itertools import groupby
 
-from .go import fix_obsoletions
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from go import fix_obsoletions
 
 def init_table(repToClust, blastFile, evalueCutoff, numHits, outputFileName,
                databaseTag=".", largeTable=False):
