@@ -1,7 +1,8 @@
-import os, shutil
+import os, sys, shutil
 from pathlib import Path
 
-from .locations import Locations
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from locations import Locations
 
 class DirectoryNotFoundError(Exception):
     pass

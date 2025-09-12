@@ -1,8 +1,10 @@
-import os, re, subprocess, platform
+import os, sys, re, subprocess, platform
 from pathlib import Path
-from .fasta_handling import remove_sequence_from_fasta
-from .thread_workers import BasicProcess
-from .validation import touch_ok
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from fasta_handling import remove_sequence_from_fasta
+from thread_workers import BasicProcess
+from validation import touch_ok
 
 class GMAP_DB:
     '''

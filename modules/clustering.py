@@ -1,8 +1,9 @@
-import os, random, time
+import os, sys, random, time
 from hashlib import sha256
 
-from .mmseqs import MM_Cascade, MM_Linclust, MM_DB
-from .cdhit import CDHIT
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from mmseqs import MM_Cascade, MM_Linclust, MM_DB
+from cdhit import CDHIT
 
 def get_hash_for_input_sequences(inObject, randomHash=True, maxLength=20):
     '''
