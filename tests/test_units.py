@@ -9,6 +9,7 @@ from modules.bins import BinCollection, Bin, BinBundle
 from modules.gff3 import GmapGFF3
 from modules.bin_handling import GmapBinProcess, CollectionSeedProcess, \
     find_overlapping_bins, add_bin_to_collection
+from modules.parsing import BINge_Results
 
 # Specify data locations
 dataDir = os.path.join(os.getcwd(), "data")
@@ -532,6 +533,112 @@ class TestGmapBinProcess(unittest.TestCase):
         
         # Assert
         self.assertEqual(len(resultCollection), 2, "Should have two bins")
+
+class TestBINge_Results(unittest.TestCase):
+    def test_parse(self):
+        # Arrange
+        resultFile = os.path.join(dataDir, "clustering_result_1.tsv")
+        trueBinnedIDs = [f"g{i}" for i in range(1, 8)] # g1 through g7
+        trueUnbinnedIDs = [f"g{i}" for i in range(8, 11)] # g8 through g10
+        
+        # Act
+        bingeResults = BINge_Results()
+        bingeResults.parse(resultFile)
+        binnedIDs = [ v for values in bingeResults.binned.values() for v in values]
+        unbinnedIDs = [ v for values in bingeResults.unbinned.values() for v in values]
+        
+        # Assert
+        self.assertEqual(len(bingeResults.binned), 5, "Should have five binned clusters")
+        self.assertEqual(len(bingeResults.unbinned), 2, "Should have two binned clusters")
+        self.assertEqual(binnedIDs, trueBinnedIDs, f"Binned IDs should be {trueBinnedIDs}, not {binnedIDs}")
+        self.assertEqual(unbinnedIDs, trueUnbinnedIDs, f"Unbinned IDs should be {trueUnbinnedIDs}, not {unbinnedIDs}")
+    
+    def test_set_1(self):
+        # Arrange
+        resultFile = os.path.join(dataDir, "clustering_result_1.tsv")
+        bingeResults = BINge_Results()
+        bingeResults.parse(resultFile)
+        
+        # Act
+        bingeResults2 = BINge_Results()
+        bingeResults2.binned = bingeResults.binned
+        bingeResults2.unbinned = bingeResults.unbinned
+        
+        # Assert
+        self.assertEqual(bingeResults.binned, bingeResults2.binned, "Binned .parse should be equal to set data")
+        self.assertEqual(bingeResults.unbinned, bingeResults2.unbinned, "Unbinned .parse should be equal to set data")
+    
+    def test_set_2(self):
+        # Arrange
+        resultFile = os.path.join(dataDir, "clustering_result_1.tsv")
+        bingeResults = BINge_Results()
+        bingeResults.parse(resultFile)
+        
+        binnedClusters = {0: ['g1'], 1: ['g2'], 2: ['g3'], 3: ['g4', 'g5'], 4: ['g6', 'g7']}
+        unbinnedClusters = {0: ['g8', 'g9'], 1: ['g10']}
+        
+        # Act
+        bingeResults2 = BINge_Results()
+        bingeResults2.binned = binnedClusters
+        bingeResults2.unbinned = bingeResults2.update_unbinned_ids(unbinnedClusters)
+        
+        # Assert
+        self.assertEqual(bingeResults.binned, bingeResults2.binned, "Binned .parse should be equal to set data")
+        self.assertEqual(bingeResults.unbinned, bingeResults2.unbinned, "Unbinned .parse should be equal to set data")
+    
+    def test_filter(self):
+        # Arrange
+        resultFile = os.path.join(dataDir, "clustering_result_1.tsv")
+        bingeResults = BINge_Results()
+        bingeResults.parse(resultFile)
+        
+        binnedClusterKeys = [1,2,3,4,5]
+        unbinnedClusterKeys = [6]
+        toRemove = [0, 6] # 0: ['g1'] and 6: ['g10'] should be removed
+        
+        # Act
+        bingeResults.filter(toRemove)
+        
+        # Assert
+        self.assertEqual(len(bingeResults.binned), 4, "Should have four binned clusters")
+        self.assertEqual(len(bingeResults.unbinned), 1, "Should have one binned cluster")
+    
+    def test_iterate(self):
+        # Arrange
+        resultFile = os.path.join(dataDir, "clustering_result_1.tsv")
+        bingeResults = BINge_Results()
+        bingeResults.parse(resultFile)
+        
+        trueClusterIDs = list(range(0, 7)) # [0,1,2,3,4,5,6,]
+        trueSeqIDs = [f"g{i}" for i in range(1, 11)] # g1 through g10
+        
+        # Act
+        foundClusterIDs = []
+        foundSeqIDs = []
+        for clusterID, seqIDs in bingeResults:
+            foundClusterIDs.append(int(clusterID))
+            foundSeqIDs.extend(seqIDs)
+        
+        # Assert
+        self.assertEqual(foundClusterIDs, trueClusterIDs, f"Cluster IDs should be {trueClusterIDs}, not {foundClusterIDs}")
+        self.assertEqual(foundSeqIDs, trueSeqIDs, f"Sequence IDs should be {trueSeqIDs}, not {foundSeqIDs}")
+    
+    def test_write(self):
+        # Arrange
+        resultFile = os.path.join(dataDir, "clustering_result_1.tsv")
+        bingeResults = BINge_Results()
+        bingeResults.parse(resultFile)
+        
+        tmpFile = os.path.join(dataDir, "TestBINge_Results.test_write.tsv")
+        
+        # Act
+        bingeResults.write(tmpFile)
+        bingeResults2 = BINge_Results()
+        bingeResults2.parse(tmpFile)
+        
+        # Assert
+        self.assertEqual(bingeResults.binned, bingeResults2.binned, "Binned .write should be equal to .parse data")
+        self.assertEqual(bingeResults.unbinned, bingeResults2.unbinned, "Unbinned .write should be equal to .parse data")
 
 if __name__ == '__main__':
     unittest.main()

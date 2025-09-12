@@ -3,7 +3,9 @@ from pathlib import Path
 
 from .locations import Locations
 
-# Argument validations
+class DirectoryNotFoundError(Exception):
+    pass
+
 def _validate_gmap(args):
     if args.gmapDir == None:
         gmap = shutil.which("gmap")
@@ -29,24 +31,29 @@ def _validate_gmap(args):
         if not os.path.isdir(args.gmapDir):
             raise FileNotFoundError(f"Unable to locate the GMAP directory '{args.gmapDir}'")
 
-def initialise_working_directory(workingDirectory):
-    # Validate working directory
-    workingDirectory = os.path.abspath(workingDirectory)
-    if os.path.isdir(workingDirectory):
-        print("Working directory already exists; will attempt to resume a previous initialisation...")
-    elif not os.path.exists(workingDirectory):
-        try:
-            os.mkdir(workingDirectory)
-            print(f'Working directory was created during argument validation')
-        except Exception as e:
-            print(f"An error occurred when trying to create the working directory '{workingDirectory}'")
-            print("This probably means you've indicated a directory wherein the parent " + 
-                  "directory does not already exist.")
-            print("I'll show you the error below before this program exits.")
-            raise Exception(e.message)
+def validate_args(args):
+    args.workingDirectory = os.path.abspath(args.workingDirectory)
+    if not os.path.exists(args.workingDirectory):
+        if args.mode in ["initialise", "init"]:
+            try:
+                os.mkdir(args.workingDirectory)
+                print(f'Working directory was created during argument validation')
+            except Exception as e:
+                raise Exception((f"An error occurred when trying to create the working directory '{args.workingDirectory}'" + 
+                                "This probably means you've indicated a directory wherein the parent " + 
+                                "directory does not already exist. The exact error being raised is: " +
+                                e.message
+                                ))
+        else:
+            raise DirectoryNotFoundError((f"Working directory (-d {args.workingDirectory}) does not exist. Run " +
+                                          "'BINge.py initialise' first to establish the necessary file structure"))
+    elif os.path.isdir(args.workingDirectory):
+        if args.mode in ["initialise", "init"]:
+            print("Working directory already exists; will attempt to resume a previous initialisation...")
     else:
-        raise ValueError(f"Something other than a directory already exists at '{workingDirectory}'. " +
-                         "Please move this, or specify a different -d value, then try again.")
+        raise DirectoryNotFoundError((f"Value provided to -d ({args.workingDirectory}) exists, but does not appear " +
+                                      "to be a directory. Make sure you specify the folder location produced by " +
+                                      "'BINge.py initialise'"))
 
 def validate_init_args(args):
     # Validate working directory

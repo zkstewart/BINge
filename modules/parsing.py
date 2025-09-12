@@ -1,4 +1,4 @@
-import os, pickle, codecs, gzip
+import os, re, pickle, codecs, gzip
 from contextlib import contextmanager
 
 from .salmon import EquivalenceClassCollection, QuantCollection, DGEQuantCollection
@@ -162,6 +162,207 @@ class BLAST_Results:
             self.file, len(self), self.evalue, self.num_hits
         )
 
+class BINge_Results:
+    seqFileRegex = re.compile(r"#sequence_file_(\d+)=(.+)")
+    
+    def __init__(self):
+        self._binned = {}
+        self._unbinned = {}
+        self._highestBinnedNumber = -1
+        self._highestUnbinnedNumber = -1
+    
+    @property
+    def binned(self):
+        return self._binned
+    
+    @binned.setter
+    def binned(self, value):
+        if not isinstance(value, dict):
+            raise TypeError(f".binned must be a dict, not '{type(value)}'")
+        
+        if set(value.keys()).intersection(set(self.unbinned.keys())) != set():
+            raise ValueError("Cluster ID collision between new .binned and existing .unbinned values!")
+        
+        highestNumber = -1
+        for k, v in value.items():
+            if not isinstance(k, int):
+                raise TypeError(f".binned keys must be integer, not '{type(k)}'")
+            highestNumber = max(highestNumber, k)
+        
+        self._binned = value
+        self._highestBinnedNumber = highestNumber
+    
+    @property
+    def unbinned(self):
+        return self._unbinned
+    
+    @unbinned.setter
+    def unbinned(self, value):
+        if not isinstance(value, dict):
+            raise TypeError(f".unbinned must be a dict, not '{type(value)}'")
+        
+        if set(value.keys()).intersection(set(self.binned.keys())) != set():
+            raise ValueError("Cluster ID collision between new .unbinned and existing .binned values!")
+        
+        highestNumber = -1
+        for k, v in value.items():
+            if not isinstance(k, int):
+                raise TypeError(f".unbinned keys must be integer, not '{type(k)}'")
+            highestNumber = max(highestNumber, k)
+        
+        self._unbinned = value
+        self._highestUnbinnedNumber = highestNumber
+    
+    def update_unbinned_ids(self, unbinnedClusterDict):
+        '''
+        Receives a cluster dictionary as obtained by parsing an external clusterer's results
+        e.g., MM_Clust.parse_tsv, where cluster keys will start at index 0. To prevent key
+        collision, you should run it through this function before attempting to set
+        it as the .unbinned value.
+        
+        Parameters:
+            unbinnedClusterDict -- a dictionary where keys are integers and values are
+                                   lists of sequence IDs (strings)
+        '''
+        return { k+self._highestBinnedNumber+1:v for k,v in unbinnedClusterDict.items() }
+    
+    def parse(self, bingeFile):
+        '''
+        Reads in the output file of BINge as a dictionary assocating clusters to their
+        sequence members.
+        
+        Parameters:
+            bingeFile -- a string pointing to the location of a BINge cluster output file.
+        Sets:
+            self.binned / self.unbinned -- a dictionary with structure like:
+                        {
+                            0: [seqid1, seqid2, ...],
+                            1: [ ... ],
+                            ...
+                        }
+        '''
+        self.binned = {}
+        self.unbinned = {}
+        firstCommented = True
+        firstUncommented = True
+        with open(bingeFile, "r") as fileIn:
+            for line in fileIn:
+                l = line.rstrip("\r\n\t ")
+                
+                # Handle header lines
+                if line.startswith("#"):
+                    # Handle file format identifier line
+                    if firstCommented:
+                        assert line.startswith("#BINge clustering information file"), \
+                            ("BINge file is expected to start with a specific comment line! " +
+                            "Your file is hence not recognised as a valid BINge cluster file.")
+                        firstCommented = False
+                    # Handle sequence file identifier lines
+                    else:
+                        continue # silently skip any other comments a user might have added in
+                # Handle blank lines
+                elif l == "": # try to allow whitespace lines if they've somehow been added in
+                    continue
+                # Handle body lines
+                else:
+                    sl = line.rstrip("\r\n ").split("\t")
+                    
+                    # Handle column labels
+                    if firstUncommented:
+                        assert sl == ["cluster_num", "sequence_id", "cluster_type"], \
+                            ("BINge file is expected to have a specific header line on the first uncommented line! " +
+                            "Your file is hence not recognised as a valid BINge cluster file.")
+                        firstUncommented = False
+                    # Handle all subsequent information-containing lines
+                    else:
+                        clustNum, seqID, clusterType = int(sl[0]), sl[1], sl[2]
+                        
+                        if clusterType == "binned":
+                            self.binned.setdefault(clustNum, [])
+                            self.binned[clustNum].append(seqID)
+                            if clustNum > self._highestBinnedNumber:
+                                self._highestBinnedNumber = clustNum
+                        elif clusterType == "unbinned":
+                            self.unbinned.setdefault(clustNum, [])
+                            self.unbinned[clustNum].append(seqID)
+                            if clustNum > self._highestUnbinnedNumber:
+                                self._highestUnbinnedNumber = clustNum
+                        else:
+                            raise ValueError(f"Did not recognise '{clusterType}' as a valid third column value in a BINge results file")
+    
+    def filter(self, clustersToRemove):
+        '''
+        Drops any clusters from .binned or .unbinned with a key value match to
+        clusters listed in clustersToRemove. Providing a key not found
+        in this object will raise an error.
+        
+        Parameters:
+            clustersToRemove -- a list or set of cluster IDs to drop from this object's
+                                .binned or .unbinned dictionaries. 
+        '''
+        # Locate and validate all IDs for removal
+        binnedToRemove = []
+        unbinnedToRemove = []
+        for clusterID in clustersToRemove:
+            if clusterID in self.binned:
+                binnedToRemove.append(clusterID)
+            elif clusterID in self.unbinned:
+                unbinnedToRemove.append(clusterID)
+            else:
+                raise ValueError(f"No cluster with number {clusterID} found in this BINge results object")
+        
+        # Convert to set for lookup
+        binnedToRemove = set(binnedToRemove)
+        unbinnedToRemove = set(unbinnedToRemove)
+        
+        # Drop clusters
+        self.binned = { k:v for k,v in self.binned.items() if not k in binnedToRemove }
+        self.unbinned = { k:v for k,v in self.unbinned.items() if not k in unbinnedToRemove }
+    
+    def write(self, outputFileName, clusterTypes="all"):
+        '''
+        Generates a BINge results file based on the values in self.binned and self.unbinned
+        
+        Parameters:
+            outputFileName -- a string indicating the location to write the output file
+            clusterTypes -- a string in the list of ["all", "binned", "unbinned"] signalling which
+                            result type(s) to write to output
+        '''
+        ACCEPTED_TYPES = ["all", "binned", "unbinned"]
+        if not clusterTypes in ACCEPTED_TYPES:
+            raise ValueError(f"write() does not recognise '{clusterTypes}' as a valid value for clusterTypes")
+        
+        with open(outputFileName, "w") as fileOut:
+            # Write header lines
+            fileOut.write("#BINge clustering information file\n")
+            fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
+            
+            # Write content lines
+            if (clusterTypes == "all" or clusterTypes == "binned") and hasattr(self, "binned"):
+                for clusterNum, seqValues in self.binned.items():
+                    for seqID in seqValues:
+                        fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
+            if (clusterTypes == "all" or clusterTypes == "unbinned") and hasattr(self, "unbinned"):
+                for clusterNum, seqValues in self.unbinned.items():
+                    for seqID in seqValues:
+                        fileOut.write(f"{clusterNum}\t{seqID}\tunbinned\n")
+    
+    def __iter__(self):
+        for key, value in self.binned.items():
+            yield key, value
+        for key, value in self.unbinned.items():
+            yield key, value
+    
+    def __len__(self):
+        return len(self.binned) + len(self.unbinned)
+    
+    def __repr__(self):
+        return "<BINge_Results object;num_binned_clusters={0};num_unbinned_clusters={1};total_clustered_sequences={2}>".format(
+            len(self.binned),
+            len(self.unbinned),
+            sum([ len(values) for values in self.binned.values() ]) + sum([ len(values) for values in self.unbinned.values() ])
+        )
+
 def parse_equivalence_classes(equivalenceClassFiles, sampleNames):
     '''
     Parses in one or more equivalence class files from Salmon, producing
@@ -234,52 +435,6 @@ def parse_dge_quants(quantFiles, sampleNames):
         
         dgeQuantCollection.parse_quant_file(quantFile, sample)
     return dgeQuantCollection
-
-def parse_binge_clusters(bingeFile, typeToReturn="all"):
-    '''
-    Reads in the output file of BINge as a dictionary assocating clusters to their
-    sequence members.
-    
-    Parameters:
-        bingeFile -- a string pointing to the location of a BINge cluster output file.
-        typeToReturn -- a string indicating whether to return all clusters ("all"), only
-                        the binned clusters ("binned"), or only the unbinned clusters
-                        ("unbinned")
-    Returns:
-        clusterDict -- a dictionary with structure like:
-                       {
-                             0: [seqid1, seqid2, ...],
-                             1: [ ... ],
-                             ...
-                         }
-    '''
-    assert typeToReturn in ["all", "binned", "unbinned"]
-    
-    clusterDict = {}
-    lineNum = 0
-    with open(bingeFile, "r") as fileIn:
-        for line in fileIn:
-            sl = line.rstrip("\r\n ").split("\t")
-            
-            # Handle header lines
-            if lineNum == 0:
-                assert line.startswith("#BINge clustering information file"), \
-                    ("BINge file is expected to start with a specific comment line! " +
-                    "Your file is hence not recognised as a valid BINge cluster file.")
-                lineNum += 1
-            elif lineNum == 1:
-                assert sl == ["cluster_num", "sequence_id", "cluster_type"], \
-                    ("BINge file is expected to have a specific header line on the second line! " +
-                     "Your file is hence not recognised as a valid BINge cluster file.")
-                lineNum += 1
-            
-            # Handle content lines
-            else:
-                clustNum, seqID, clusterType = int(sl[0]), sl[1], sl[2]
-                if typeToReturn == "all" or typeToReturn == clusterType:
-                    clusterDict.setdefault(clustNum, [])
-                    clusterDict[clustNum].append(seqID)
-    return clusterDict
 
 def parse_gff3_ids(gff3File):
     '''
