@@ -3,6 +3,9 @@ from copy import deepcopy
 from itertools import product
 from Bio.Data import CodonTable, IUPACData
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from parsing import read_gz_file
+
 class TranslationTable:
     '''
     This namespace behaves like a singleton. It should maintain a single state
