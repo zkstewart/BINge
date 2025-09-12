@@ -485,7 +485,7 @@ def main():
     fparser.add_argument("--length", dest="minimumLength",
                          required=False,
                          type=int,
-                         help="""Specify the minimum length of an ORF (in amino acids) that must
+                         help="""Specify the minimum length of an ORF (in base pairs) that must
                          be met for a cluster to pass filtration (if it hasn't passed any other
                          filter checks already); default==300 (bp)""",
                          default=300)
@@ -716,7 +716,7 @@ def fmain(args, locations):
         return # exit the program here
     
     # Load transcripts into memory for quick access
-    transcriptRecords = FastaCollection(args.sequenceFiles)
+    transcriptRecords = FastaCollection(args.sequenceFiles) # args.sequenceFiles lists CDS files
     
     # Parse BLAST results (if relevant)
     if args.useBLAST:
@@ -750,7 +750,7 @@ def fmain(args, locations):
     # Perform filtration of clusters with available evidence
     toDropBinned = set()
     toDropUnbinned = set()
-    for index, toFilterDict in enumerate([binnedDict, unbinnedDict]):
+    for index, toFilterDict in enumerate([bingeResults.binned, bingeResults.unbinned]):
         for clusterID, seqIDs in toFilterDict.items():
             # Skip unless we are filtering binned clusters
             if index == 0 and (not args.filterBinned):
@@ -807,7 +807,7 @@ def fmain(args, locations):
             "Note: we include stop codons in the length calculations here"
             if any(
             [
-                ( len(str(transcriptRecords[seqID])) / 3 ) >= args.minimumLength
+                ( len(str(transcriptRecords[seqID])) ) >= args.minimumLength
                 for seqID in seqIDs
             ]):
                 continue
