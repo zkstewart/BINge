@@ -1,4 +1,4 @@
-import sys, re
+import os, sys, re
 from itertools import groupby
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
