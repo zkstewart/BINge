@@ -294,7 +294,11 @@ class CDHIT:
             outputFile = convert_windows_to_wsl_path(os.path.join(outputDir, outputFasta))
         else:
             outputFile = os.path.join(outputDir, outputFasta)
-        cmd = base_subprocess_cmd(program)
+        
+        if platform.system() == "Windows":
+            cmd = ["wsl", "~", "-e", convert_windows_to_wsl_path(program)]
+        else:
+            cmd = [program]
         
         # Format cmd and run it
         cmd += list(map(str, ["-i", fasta, "-o", outputFile,
