@@ -13,7 +13,7 @@ from itertools import product
 from threading import Thread
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_ClustIO
+from modules.cdhit import CDHIT
 
 # Define functions
 def validate_args(args):
@@ -119,7 +119,7 @@ class CDHITWorkerThread(Thread):
     
     def run_cdhit(self):
         # Configure clusterer object
-        clusterer = ZS_ClustIO.CDHIT(self.inputFileName, self.molecule, self.cdhitDir)
+        clusterer = CDHIT(self.inputFileName, self.molecule, self.cdhitDir)
         clusterer.identity = self.identity
         clusterer.threads = 1
         clusterer.mem = self.mem

@@ -13,8 +13,8 @@ from sklearn.metrics.cluster import adjusted_rand_score, rand_score, \
     normalized_mutual_info_score, adjusted_mutual_info_score
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Various_scripts.Function_packages import ZS_GFF3IO, ZS_ClustIO
-
+from modules.cdhit import CDHIT
+from modules.gff3 import GFF3Graph
 from modules.validation import validate_cluster_file
 from modules.parsing import BINge_Results
 
@@ -312,7 +312,7 @@ def main():
     validate_args(args)
     
     # Parse the GFF3 file into memory
-    gff3 = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False)
+    gff3 = GFF3Graph(args.gff3File)
     
     # Derive a cluster dict from the GFF3 to use as our true labels
     numGeneClusters = 0
@@ -331,7 +331,7 @@ def main():
         bingeResults = BINge_Results(args.clusterFile)
         testDict = { k:v for k,v in bingeResults } # we will 'test' this against our ground truth
     elif args.clusterer == "cdhit":
-        testDict = ZS_ClustIO.CDHIT.parse_clstr_file(args.clusterFile) 
+        testDict = CDHIT.parse_clstr_file(args.clusterFile) 
     elif args.clusterer == "corset":
         testDict = parse_corset_clusters(args.clusterFile)
     elif args.clusterer == "mmseqs":
