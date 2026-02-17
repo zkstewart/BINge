@@ -1,4 +1,4 @@
-#! python3
+#!/usr/bin/env python3
 # BINge_post.py
 # BIN Genes for Expression analyses - post-processing modules
 

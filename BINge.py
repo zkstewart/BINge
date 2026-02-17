@@ -1,4 +1,4 @@
-#! python3
+#!/usr/bin/env python3
 # BINge.py
 # BIN Genes for Expression analyses
 

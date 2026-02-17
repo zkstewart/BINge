@@ -1,4 +1,4 @@
-#! python3
+#!/usr/bin/env python3
 # evaluate_vertebrates_clustering.py
 
 # This script is an adaptation of evaluate_clustering.py specifically for a
@@ -13,7 +13,7 @@ from sklearn.metrics.cluster import adjusted_rand_score, rand_score, \
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.validation import validate_cluster_file
-from modules.parsing import parse_binge_clusters
+from modules.parsing import BINge_Results
 from utilities.evaluate_clustering import validate_cluster_tsv_file, \
     parse_mmseqs_clusters, parse_orthofinder_clusters, parse_sonicparanoid_clusters
 
@@ -216,11 +216,13 @@ def main():
                    these should be column headers in the OrthoFinder.tsv file.""")
     
     args = p.parse_args()
-    isBinge = validate_args(args)
+    validate_args(args)
     
     # Parse the cluster file
     if args.clusterer == "binge":
-        testDict = parse_binge_clusters(args.clusterFile)
+        bingeResults = BINge_Results()
+        bingeResults.parse(args.clusterFile)
+        testDict = { k:v for k,v in bingeResults }
     elif args.clusterer == "mmseqs":
         testDict = parse_mmseqs_clusters(args.clusterFile)
     elif args.clusterer == "orthofinder":
