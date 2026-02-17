@@ -12,13 +12,10 @@ from modules.bin_handling import GmapBinProcess, CollectionSeedProcess, \
 from modules.parsing import BINge_Results
 
 # Specify data locations
-dataDir = os.path.join(os.getcwd(), "data")
+baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+dataDir = os.path.join(baseDir, "tests", "data")
 
 ###
-
-## Unit tests to be done:
-## cluster_by_occurrence
-## 
 
 def _generate_bin_collections_via_seeder(gff3Files, threads):
     # Start up threads
