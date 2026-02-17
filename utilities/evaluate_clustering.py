@@ -1,4 +1,4 @@
-#! python3
+#!/usr/bin/env python3
 # evaluate_clustering.py
 
 # Utility program to evaluate a clustering solution of

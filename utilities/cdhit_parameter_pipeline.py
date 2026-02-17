@@ -1,4 +1,4 @@
-#! python3
+#!/usr/bin/env python3
 # cdhit_parameter_pipeline.py
 
 # Utility program for determining the optimal combination of

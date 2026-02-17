@@ -1,4 +1,4 @@
-#! python3
+#!/usr/bin/env python3
 # evaluate_vertebrates_clustering.py
 
 # This script is an adaptation of evaluate_clustering.py specifically for a
