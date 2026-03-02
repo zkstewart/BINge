@@ -1,9 +1,6 @@
 # Table of Contents
 - [Getting started](#getting-started)
 - [Installation](#installation)
-  - [Obtaining BINge](#obtaining-binge)
-  - [Prerequisites](#prerequisites)
-  - [Installation suggestions](#installation-suggestions)
 - [How to use BINge](#how-to-use-binge)
   - [Running an analysis](#running-an-analysis)
   - [Rerunning an analysis](#rerunning-an-analysis)
