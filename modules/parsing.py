@@ -470,7 +470,7 @@ def parse_gff3_ids(gff3File):
     
     parentIDs = set()
     subIDs = set()
-    with open(gff3File, "r") as fileIn:
+    with read_gz_file(gff3File) as fileIn:
         for line in fileIn:
             sl = line.rstrip("\r\n ").split("\t")
             

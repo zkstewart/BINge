@@ -3,6 +3,7 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from locations import Locations
+from parsing import read_gz_file
 
 class DirectoryNotFoundError(Exception):
     pass
@@ -428,7 +429,7 @@ def validate_annotate_args(args):
         raise FileNotFoundError(f"Unable to locate the target file for BLAST search '{locations.targetFile}' -> '{targetFileResolved}'; " +
                                 "have you moved the symlink or the original file it points to?")
     else:
-        with open(args.targetFile, "r") as fileIn:
+        with read_gz_file(args.targetFile) as fileIn:
             firstLine = fileIn.readline()
             if not firstLine.startswith(">UniRef"):
                 raise ValueError(f"The target file for BLAST search '{locations.targetFile}' -> '{targetFileResolved}' " +
@@ -502,7 +503,7 @@ def validate_fasta(fastaFile):
     Returns:
         isFASTA -- a boolean where True means it is (probably) a FASTA, and False otherwise.
     '''
-    with open(fastaFile, "r") as fileIn:
+    with read_gz_file(fastaFile) as fileIn:
         firstLine = fileIn.readline()
         if not firstLine.startswith(">"):
             return False
@@ -557,7 +558,7 @@ def check_for_duplicates(sequencesDir, fileSuffix):
     foundIDs = set()
     duplicatedIDs = set()
     for fileToCheck in filesToCheck:
-        with open(fileToCheck, "r") as fileIn:
+        with read_gz_file(fileToCheck) as fileIn:
             for line in fileIn:
                 if line.startswith(">"):
                     seqID = line[1:].rstrip("\r\n ")

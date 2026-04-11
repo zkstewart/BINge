@@ -11,6 +11,7 @@
 # to group transcripts into genes. That's what this does.
 
 import os, argparse, sys, pickle, json
+import concurrent.futures
 from hashlib import sha256
 from pathlib import Path
 
@@ -18,134 +19,75 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from modules.bins import BinBundle
 from modules.bin_handling import generate_bin_collections, populate_bin_collections
-from modules.gmap_handling import setup_gmap_indices, auto_gmapping
-from modules.gff3tofasta import extract_annotations_from_gff3
+from modules.gmap_handling import auto_gmapping
 from modules.clustering import cluster_unbinned_sequences
 from modules.parsing import BINge_Results
 from modules.validation import validate_args, validate_init_args, \
     validate_cluster_args, validate_view_args, validate_fasta, \
     check_for_duplicates, handle_symlink_change, touch_ok
 from modules.fasta_handling import FastaCollection, \
-    generate_sequence_length_index, process_transcripts
+    generate_sequence_length_index
+from modules.setup import TargetGenome, AnnotatedGenome, Transcriptome
 from _version import __version__
 
 HASHING_PARAMS = ["identity", "clusterVoteThreshold"]
 
 # Define functions
-def setup_working_directory(gff3Files, txomeFiles, targetGenomeFiles, locations):
+def setup_working_directory(targetGenomeFiles, annotatedGenomeFiles, txomeFiles, locations):
     '''
     Given a mix of FASTA and/or GFF3 files, this function will symlink FASTA files
     and generate FASTAs from the GFF3 files at the indicated working directory location.
     
     Parameters:
-        gff3Files -- a list of strings pointing to GFF3,genome files.
-        txomeFIles -- a list of strings pointing to transcriptome FASTAs as individual mRNA
-                      files or as mRNA,CDS,protein files.
-        targetGenomeFiles -- a list of strings pointing to genome FASTAs to align against.
+        targetGenomeFiles -- a list of strings pointing to genome FASTAs to align against;
+                             may occur as individual FASTA files or as 'GFF3,genome' pairs.
+        annotatedGenomeFiles -- a list of strings occurring as 'GFF3,genome' pairs.
+        txomeFiles -- a list of strings pointing to transcriptome FASTAs as individual mRNA/CDS
+                      files or as 'mRNA,CDS,protein' trios.
+        
         locations -- a Locations object with attributes for directory locations.
+    Returns:
+        targetGenomes -- a list of TargetGenome objects
+        annotatedGenomes -- a list of AnnotatedGenome objects; list may be empty
+        transcriptomes -- a list of Transcriptome objects; list may be empty
     '''
-    # Create subdirectory for files (if not already existing)
+    # Create subdirectories for files (if not already existing)
     os.makedirs(locations.sequencesDir, exist_ok=True)
     os.makedirs(locations.gff3Dir, exist_ok=True)
     os.makedirs(locations.txDir, exist_ok=True)
     os.makedirs(locations.genomesDir, exist_ok=True)
+    os.makedirs(locations.mappingDir, exist_ok=True)
     
     # Link to the --ig GFF3,genome values
-    numIG = 0    
-    for file in gff3Files:
-        numIG += 1
-        
-        # Extract values from pair
-        gff3, fasta = [os.path.abspath(f) for f in file.split(",")]
-        
-        # Check that FASTA is a FASTA
-        isFASTA = validate_fasta(fasta)
-        if not isFASTA:
-            raise ValueError(f"--ig value '{file}' after the ',' is not a FASTA file")
-        
-        # Symlink files to GFF3s subdirectory if not aleady existing
-        linkedGFF3 = os.path.join(locations.gff3Dir, f"annotations{numIG}.gff3")
-        if os.path.exists(linkedGFF3):
-            handle_symlink_change(linkedGFF3, gff3)
-        else:
-            os.symlink(gff3, linkedGFF3)
-        
-        linkedFASTA = os.path.join(locations.gff3Dir, f"annotations{numIG}.fasta")
-        if os.path.exists(linkedFASTA):
-            handle_symlink_change(linkedFASTA, fasta)
-        else:
-            os.symlink(fasta, linkedFASTA)
+    annotatedGenomes = []
+    for index, file in enumerate(annotatedGenomeFiles):
+        gff3, fasta = [ os.path.abspath(f) for f in file.split(",") ]
+        annotatedGenome = AnnotatedGenome(index+1, locations, fasta, gff3)
+        annotatedGenomes.append(annotatedGenome)
     
     # Link to the --ix transcript FASTA files
-    numTX = 0
-    for file in txomeFiles:
-        numTX += 1
-        
-        # Extract values if triplicate
-        files = [os.path.abspath(f) for f in file.split(",")]
-        
-        # Check that FASTA is a FASTA
-        for i, f in enumerate(files):
-            isFASTA = validate_fasta(f)
-            if not isFASTA:
-                raise ValueError(f"--ix value '{f}' is not a FASTA file")
-            
-            # Symlink to main working directory if not already existing
-            suffix = "mrna" if i == 0 else "cds" if i == 1 else "aa"
-            linkedTranscriptome = os.path.join(locations.txDir, f"transcriptome{numTX}.{suffix}")
-            if os.path.exists(linkedTranscriptome):
-                handle_symlink_change(linkedTranscriptome, f)
-            else:
-                os.symlink(f, linkedTranscriptome)
+    transcriptomes = []
+    for index, file in enumerate(txomeFiles):
+        files = [ os.path.abspath(f) for f in file.split(",") ]
+        if len(files) == 1:
+            txome = Transcriptome(index+1, locations, files[0], cdsFasta=None, protFasta=None)
+        else:
+            txome = Transcriptome(index+1, locations, files[0], cdsFasta=files[1], protFasta=files[2])
+        transcriptomes.append(txome)
     
     # Link to the -i targetGenomeFiles values
-    numGenomes = 0
-    for file in targetGenomeFiles:
-        numGenomes += 1
-        # Handle GFF3:FASTA pairs
-        if "," in file:
-            gff3, fasta = [os.path.abspath(f) for f in file.split(",")]
-            
-            # Check that FASTA is a FASTA
-            isFASTA = validate_fasta(fasta)
-            if not isFASTA:
-                raise ValueError(f"-i value '{fasta}' value after the ',' is not a FASTA file; " + 
-                                 "Make sure you specify the file order as 'GFF3,FASTA' then try again.")
-            
-            # Symlink files to genomes subdirectory if not aleady existing
-            linkedGFF3 = os.path.join(locations.genomesDir, f"genome{numGenomes}.gff3")
-            if os.path.exists(linkedGFF3):
-                handle_symlink_change(linkedGFF3, gff3)
-            else:
-                os.symlink(gff3, linkedGFF3)
-            
-            linkedFASTA = os.path.join(locations.genomesDir, f"genome{numGenomes}.fasta")
-            if os.path.exists(linkedFASTA):
-                handle_symlink_change(linkedFASTA, fasta)
-            else:
-                os.symlink(fasta, linkedFASTA)
-        
-        # Handle plain genome files
+    targetGenomes = []
+    for index, file in enumerate(targetGenomeFiles):
+        files = [ os.path.abspath(f) for f in file.split(",") ]
+        if len(files) == 1:
+            targetGenome = TargetGenome(index+1, locations, files[0], gff3=None)
         else:
-            fasta = os.path.abspath(file)
-            
-            # Check that FASTA is a FASTA
-            isFASTA = validate_fasta(fasta)
-            if not isFASTA:
-                raise ValueError(f"-i value '{fasta}' is not a FASTA file")
-            
-            # Symlink to main working directory if not already existing
-            linkedFASTA = os.path.join(locations.genomesDir, f"genome{numGenomes}.fasta")
-            
-            if os.path.exists(linkedFASTA):
-                handle_symlink_change(linkedFASTA, fasta)
-            else:
-                os.symlink(fasta, linkedFASTA)
+            targetGenome = TargetGenome(index+1, locations, files[1], gff3=files[0])
+        targetGenome.length_index()
         
-        # Index the genome's contig lengths if not already done
-        if not os.path.exists(linkedFASTA) or not os.path.exists(f"{linkedFASTA}.ok"):
-            generate_sequence_length_index(linkedFASTA)
-            touch_ok(linkedFASTA)
+        targetGenomes.append(targetGenome)
+    
+    return targetGenomes, annotatedGenomes, transcriptomes
 
 def get_unbinned_sequence_ids(bingeResults, eliminatedIDs, transcriptRecords):
     '''
@@ -185,7 +127,7 @@ def get_parameters_hash(args, hashLen=20):
     
     Parameters:
         args -- the Argparse object associated with the main BINge.py function.
-        hashLen -- an integer indicating the length of the hash to generate (default==20)
+        hashLen -- an integer indicating the length of the hash to generate (default=20)
     Returns:
         paramHash -- a sha256 hash string of the parameters
     '''
@@ -229,7 +171,7 @@ def main():
     provide inputs like '--ig annotation.gff3,reference.fasta'
     ###
     Note 3: If you provide transcriptome FASTAs in the --ix argument, you should provide them
-    as individual mRNA/CDS sequences or as triplicates of mRNA/CDS/protein files with ',' separator.
+    as individual mRNA/CDS sequences or as trios of mRNA/CDS/protein files with ',' separator.
     For example you might provide inputs like '--ix mRNA.fasta,CDS.fasta,protein.fasta'
     ###
     Note 4: Similarly, for genome FASTAs given in the -i argument, you should either provide the
@@ -336,45 +278,48 @@ def main():
     iparser.add_argument("-i", dest="targetGenomeFiles",
                          required=True,
                          nargs="+",
-                         help="""Input genome FASTA(s) to align against as individual files or
-                         as 'file.gff3,file.fasta' pairs""")
+                         help="""Input one or more genome FASTA files to use as a clustering reference;
+                         can be provided as an individual FASTA file and/or as a 'file.gff3,file.fasta' pair""")
     iparser.add_argument("--ig", dest="inputGff3Files",
                          required=False,
                          nargs="+",
-                         help="""Optionally, input annotation GFF3(s) paired to their genome file
-                         with ',' separator""",
+                         help="""Optionally, input one or more gene model annotations as 'file.gff3,file.fasta'
+                         pairs; extracted gene model sequences will be clustered but the genome FASTA file
+                         will not be used as a clustering reference""",
                          default=[])
     iparser.add_argument("--ix", dest="inputTxomeFiles",
                          required=False,
                          nargs="+",
-                         help="""Optionally, input transcriptome FASTA(s) as individual files or as triplicates
-                         of mRNA/CDS/protein files with ',' separator""",
+                         help="""Optionally, input one or more gene model / transcriptome sequences as
+                         individual FASTA files (i.e., mRNA or CDS) and/or as trios of
+                         'mrna.fasta,cds.fasta,protein.fasta'""",
                          default=[])
     ## Optional (shown)
     iparser.add_argument("--threads", dest="threads",
                          required=False,
                          type=int,
                          help="""Optionally, specify how many threads to run when multithreading
-                         is available (default==1)""",
+                         is available (default=1)""",
                          default=1)
     iparser.add_argument("--gmapDir", dest="gmapDir",
                          required=False,
-                         help="""If GMAP is not discoverable in your PATH, specify the directory
-                         containing the 'gmap' and 'gmap_build' executables""")
+                         help="""Optionally, if GMAP is not discoverable in your PATH, specify the
+                         directory containing the 'gmap' and 'gmap_build' executables""")
     iparser.add_argument("--microbial", dest="isMicrobial",
                          required=False,
                          action="store_true",
-                         help="""Optionally provide this argument if you are providing a GFF3
-                         file from a bacteria, archaea, or just any organism in which the GFF3
-                         does not contain mRNA and exon features; in this case, I expect the GFF3
-                         feature to have 'gene' and 'CDS' features.""",
+                         help="""Optionally, specify this flag if you are inputting GFF3
+                         files from bacteria, archaea, or any other organism in which the GFF3
+                         does not contain mRNA and exon features; in this case, the GFF3 features
+                         will occur with a parental 'gene' and child 'CDS' features with no
+                         'mRNA' intermediary.""",
                          default=False)
     iparser.add_argument("--translation", dest="translationTable",
                          required=False,
                          type=int,
-                         help="""Optionally provide this argument if you have provided individual files in
-                         --ix which will be translated; default is 1 (standard code); indicate the NCBI
-                         translation table number if your organisms have a different genetic code""",
+                         help="""Optionally, specify the NCBI translation table number of your organism(s)
+                         if they have a codon table which is not The Standard Code applicable for almost
+                         all eukaryotes (default=1)""",
                          default=1)
     
     # Cluster-subparser arguments
@@ -383,104 +328,107 @@ def main():
                          required=False,
                          type=int,
                          help="""Optionally, specify how many threads to run when multithreading
-                         is available (default==1)""",
+                         is available (default=1)""",
                          default=1)
     cparser.add_argument("--gmapDir", dest="gmapDir",
                          required=False,
-                         help="""If GMAP is not discoverable in your PATH, specify the directory
-                         containing the 'gmap' and 'gmap_build' executables""")
+                         help="""Optionally, if GMAP is not discoverable in your PATH, specify the
+                         directory containing the 'gmap' and 'gmap_build' executables""")
+    cparser.add_argument("--microbial", dest="isMicrobial",
+                         required=False,
+                         action="store_true",
+                         help="""Optionally, specify this flag if you are inputting GFF3
+                         files from bacteria, archaea, or any other organism in which the GFF3
+                         does not contain mRNA and exon features; in this case, the GFF3 features
+                         will occur with a parental 'gene' and child 'CDS' features with no
+                         'mRNA' intermediary.""",
+                         default=False)
     cparser.add_argument("--clusterer", dest="unbinnedClusterer",
                          required=False,
                          choices=["mmseqs-cascade", "mmseqs-linclust", "cd-hit"],
-                         help="""Specify which algorithm to use for clustering of unbinned sequences
-                         (default=='mmseqs-cascade')""",
+                         help="""Optionally, specify which algorithm to use for clustering of unbinned
+                         sequences (default='mmseqs-cascade')""",
                          default="mmseqs-cascade")
     cparser.add_argument("--mmseqsDir", dest="mmseqsDir",
                          required=False,
-                         help="""If using MMseqs2-based clustering and 'mmseqs' is not discoverable
-                         in your path, specify the directory containing the mmseqs executable""")
+                         help="""Optionally, if using MMseqs2-based clustering and 'mmseqs' is not
+                         discoverable in your path, specify the directory containing the
+                         mmseqs executable""")
     cparser.add_argument("--cdhit", dest="cdhitDir",
                          required=False,
-                         help="""If using CD-HIT clustering and 'cd-hit-est' is not discoverable
-                         in your path, specify the directory containing the cd-hit-est executable""")
+                         help="""Optionally, if using CD-HIT clustering and 'cd-hit-est' is not
+                         discoverable in your path, specify the directory containing the
+                         cd-hit-est executable""")
     ## Optional (hidden)
     ### General
     cparser.add_argument("--clusterVoteThreshold", dest="clusterVoteThreshold",
                          required=False,
                          type=float,
                          help=hide("""Optionally, specify the clustering vote threshold used when
-                         clustering bins based on sequence ID co-occurrence (default == 0.66).
+                         clustering bins based on sequence ID co-occurrence (default=0.66).
                          A higher value gives more clusters and a lower value gives fewer
                          clusters; if you want to be more biologically correct, use 0.66, but
                          if you want fewer gene clusters, use 0.5.
                          """),
                          default=0.66)
-    cparser.add_argument("--microbial", dest="isMicrobial",
-                         required=False,
-                         action="store_true",
-                         help="""Optionally provide this argument if you are providing a GFF3
-                         file from a bacteria, archaea, or just any organism in which the GFF3
-                         does not contain mRNA and exon features; in this case, I expect the GFF3
-                         feature to have 'gene' and 'CDS' features.""",
-                         default=False)
     cparser.add_argument("--identity", dest="identity",
                          required=False,
                          type=float,
                          help=hide("""ALL CLUSTERERS: Specify the identity threshold for clustering
-                         (default==0.98); refer to --help-long information for help with choosing an
-                         appropriate value"""),
+                         (default=0.98); refer to program usage information above for help with
+                         choosing an appropriate value"""),
                          default=0.98)
     cparser.add_argument("--debug", dest="debug",
                          required=False,
                          action="store_true",
-                         help=hide("""Optionally provide this argument if you want to generate detailed
+                         help=hide("""Optionally, specify this flag if you want to generate detailed
                          logging information along the way to help with debugging."""),
                          default=False)
     ### MMseqs2
     cparser.add_argument("--mmseqsEvalue", dest="mmseqsEvalue",
                          required=False,
                          type=float,
-                         help=hide("MMSEQS: Specify the evalue threshold for clustering (default==1e-3)"),
+                         help=hide("MMSEQS: Specify the evalue threshold for clustering (default=1e-3)"),
                          default=1e-3)
     cparser.add_argument("--mmseqsCov", dest="mmseqsCoverage",
                          required=False,
                          type=float,
-                         help=hide("MMSEQS: Specify the coverage ratio for clustering (default==0.4)"),
+                         help=hide("MMSEQS: Specify the coverage ratio for clustering (default=0.4)"),
                          default=0.4)
     cparser.add_argument("--mmseqsMode", dest="mmseqsMode",
                          required=False,
                          choices=["set-cover", "connected-component", "greedy"],
-                         help=hide("MMSEQS: Specify the clustering mode (default=='connected-component')"),
+                         help=hide("MMSEQS: Specify the clustering mode (default='connected-component')"),
                          default="connected-component")
     cparser.add_argument("--mmseqsSens", dest="mmseqsSensitivity",
                          required=False,
                          choices=["4","5","5.7","6","7","7.5"],
-                         help=hide("MMSEQS-CASCADE: Specify the sensitivity value (default==5.7)"),
+                         help=hide("MMSEQS-CASCADE: Specify the sensitivity value (default=5.7)"),
                          default="5.7")
     cparser.add_argument("--mmseqsSteps", dest="mmseqsSteps",
                          required=False,
                          type=int,
                          help=hide("""MMSEQS-CASCADE: Specify the number of cascaded clustering steps 
-                         (default==3)"""),
+                         (default=3)"""),
                          default=3)
     ### CD-HIT
     cparser.add_argument("--cdhitShortCov", dest="cdhitShortCov",
                          required=False,
                          type=float,
                          help=hide("""CDHIT: Specify what -aS parameter to provide
-                         CD-HIT (default==0.4)"""),
+                         CD-HIT (default=0.4)"""),
                          default=0.4)
     cparser.add_argument("--cdhitLongCov", dest="cdhitLongCov",
                          required=False,
                          type=float,
                          help=hide("""CDHIT: Specify what -aL parameter to provide
-                         CD-HIT (default==0.4)"""),
+                         CD-HIT (default=0.4)"""),
                          default=0.4)
     cparser.add_argument("--cdhitMem", dest="cdhitMem",
                          required=False,
                          type=int,
                          help=hide("""CDHIT: Specify how many megabytes of memory to
-                         provide CD-HIT (default==6000)"""),
+                         provide CD-HIT (default=6000)"""),
                          default=6000)
     
     # View-subparser arguments
@@ -512,30 +460,58 @@ def main():
 
 def imain(args, locations):
     # Setup sequence working directory for analysis
-    setup_working_directory(args.inputGff3Files, args.inputTxomeFiles,
-                            args.targetGenomeFiles, locations)
+    targetGenomes, annotatedGenomes, transcriptomes = setup_working_directory(
+        args.targetGenomeFiles, args.inputGff3Files,
+        args.inputTxomeFiles, locations)
     
-    # Extract sequences from any -i files
-    extract_annotations_from_gff3(locations.gff3Dir, locations.sequencesDir,
-                                  "annotations", args.threads,
-                                  args.isMicrobial, args.translationTable)
+    # Process all input types prior to GMAP alignment
+    futures = []
+    with concurrent.futures.ProcessPoolExecutor(max_workers=args.threads) as executor:
+        # Handle -i files
+        for targetGenome in targetGenomes:
+            futures.append(
+                executor.submit(targetGenome.extract_sequences, args.isMicrobial, args.translationTable)
+            )
+            futures.append(
+                executor.submit(targetGenome.gmap_index, args.gmapDir)
+            )
+        # Handle --ig files
+        for annotatedGenome in annotatedGenomes:
+            futures.append(
+                executor.submit(annotatedGenome.extract_sequences, args.isMicrobial, args.translationTable)
+            )
+        # Handle --ix files
+        for transcriptome in transcriptomes:
+            futures.append(
+                executor.submit(transcriptome.extract_sequences, args.translationTable)
+            )
     
-    # Extract sequences from any --ig files
-    extract_annotations_from_gff3(locations.genomesDir, locations.genomesDir,
-                                  "genome", args.threads,
-                                  args.isMicrobial, args.translationTable,)
-    
-    # Extract CDS/proteins from any --ix files
-    process_transcripts(locations, args.threads, args.translationTable)
+    # Gather the modified argument objects
+    '''
+    ProcessPoolExecutor creates copies of the object in the spawned process, which means that changes
+    to the .cds property within the asynchronous code do not get relayed back to the original object.
+    Hence, the .extract_sequences() method returns 'self' with modifications applied. We can retrieve
+    the modified object through the .result() of the process, and refer to .thisType to organise it
+    into its respective list.
+    '''
+    targetGenomes, annotatedGenomes, transcriptomes = [], [], []
+    for f in futures:
+        futureResult = f.result() # raises Exceptions if any occurred
+        if futureResult == None: # this is the GMAP index future
+            pass
+        elif futureResult.thisType == "target":
+            targetGenomes.append(futureResult)
+        elif futureResult.thisType == "annotated":
+            annotatedGenomes.append(futureResult)
+        else:
+            transcriptomes.append(futureResult)
     
     # Validate that sequence duplication does not exist
     check_for_duplicates(locations.sequencesDir, ".aa") # AA files are smaller than CDS or mRNA with identical IDs
     
-    # Establish GMAP indexes
-    setup_gmap_indices(locations, args.gmapDir, args.threads)
-    
     # Perform GMAP mapping
-    auto_gmapping(locations, args.gmapDir, args.threads)
+    auto_gmapping(targetGenomes, annotatedGenomes, transcriptomes,
+                  locations.mappingDir, args.gmapDir, args.threads)
     
     print("Initialisation complete!")
 

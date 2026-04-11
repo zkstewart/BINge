@@ -136,12 +136,12 @@ class Locations:
         
         # Check self.gff3Dir
         for file in os.listdir(self.gff3Dir):
-            if file.endswith(".gff3"):
+            if file.endswith(".gff3") or file.endswith(".gff3.gz"):
                 gff3Files.append(os.path.join(self.gff3Dir, file))
         
         # Check self.genomesDir
         for file in os.listdir(self.genomesDir):
-            if file.endswith(".gff3"):
+            if file.endswith(".gff3") or file.endswith(".gff3.gz"):
                 gff3Files.append(os.path.join(self.genomesDir, file))
         
         if len(gff3Files) == 0:
@@ -232,11 +232,11 @@ class Locations:
         sequenceFiles = [
             os.path.join(self.sequencesDir, f)
             for f in os.listdir(self.sequencesDir)
-            if f.endswith(sequenceSuffix)
+            if f.endswith(sequenceSuffix) or f.endswith(sequenceSuffix + ".gz")
         ] + [
             os.path.join(self.genomesDir, f)
             for f in os.listdir(self.genomesDir)
-            if f.endswith(sequenceSuffix)
+            if f.endswith(sequenceSuffix) or f.endswith(sequenceSuffix + ".gz")
         ]
         if sequenceFiles == []:
             raise FileNotFoundError(f"Unable to locate any '{sequenceSuffix}' files within '{self.sequencesDir}' " +
