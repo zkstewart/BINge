@@ -47,10 +47,6 @@ def orf_extractor(extractionDirectory, inputFile, prefix, translationTable):
     if not (filesExist and flagsExist):
         print(f"# Extracting sequences from '{prefix}'")
         txome_to_orfs(inputFile, cds, aa, translationTable)
-        
-        # Symlink the original input file
-        linker(extractionDirectory, prefix, "mrna", inputFile)
-        touch_ok(mrna) # txome_to_orfs() touches ok files for cds and aa
     
     return cds, aa
 
@@ -187,6 +183,16 @@ class AnnotatedGenome:
         return f"<AnnotatedGenome;prefix={self.prefix};fasta={self.fasta};gff3={self.gff3}>"
 
 class Transcriptome:
+    '''
+    This Class behaves differently to TargetGenome and AnnotatedGenome, in that symlink setting
+    through the .mrna / .cds / .aa properties is handled slightly differently internally. With
+    respect to the object interface, the usage remains the same.
+    
+    Likewise, the interface to .extract_sequences() remains the same, but internally it handles
+    symlinking differently to accommodate how inputs may be provided directly, or generated, or
+    have a mix of the two. The complexity of this handling is managed internally to maintain
+    commonality in the interface of this Class.
+    '''
     def __init__(self, index, locations, mrnaFasta, cdsFasta=None, protFasta=None):
         self.prefix = f"transcriptome{index}"
         self.directory = locations.txDir
@@ -199,10 +205,6 @@ class Transcriptome:
     
     @property
     def mrna(self):
-        '''
-        At first this will be a symlink in self.directory. After running self.extract_sequences()
-        it will instead be a symlink in self.extractionDirectory.
-        '''
         return self._mrna
     
     @mrna.setter
@@ -211,12 +213,18 @@ class Transcriptome:
         if not isFASTA:
             raise ValueError(f"--ix value '{value}' is not a FASTA file")
         
-        symlink = linker(self.directory, self.prefix, "mrna", os.path.abspath(value))
+        # Infer where symlink should go
+        if os.path.dirname(os.path.abspath(value)) == self.directory: # file is already within the BINge working dir
+            symlinkDir = self.extractionDirectory
+        else:
+            symlinkDir = self.directory # file is not a BINge file
+        
+        symlink = linker(symlinkDir, self.prefix, "mrna", os.path.abspath(value))
         self._mrna = symlink
     
     @property
     def cds(self):
-        return self._cds # this is the symlink
+        return self._cds # this is the orf_extractor() generated file
     
     @cds.setter
     def cds(self, value):
@@ -227,12 +235,18 @@ class Transcriptome:
             if not isFASTA:
                 raise ValueError(f"--ix value '{value}' is not a FASTA file")
             
-            symlink = linker(self.directory, self.prefix, "cds", os.path.abspath(value))
+            # Infer where symlink should go
+            if os.path.dirname(os.path.abspath(value)) == self.directory: # file is already within the BINge working dir
+                symlinkDir = self.extractionDirectory
+            else:
+                symlinkDir = self.directory # file is not a BINge file
+            
+            symlink = linker(symlinkDir, self.prefix, "cds", os.path.abspath(value))
             self._cds = symlink
     
     @property
     def aa(self):
-        return self._aa # this is the symlink
+        return self._aa # this is the orf_extractor() generated file
     
     @aa.setter
     def aa(self, value):
@@ -243,19 +257,32 @@ class Transcriptome:
             if not isFASTA:
                 raise ValueError(f"--ix value '{value}' is not a FASTA file")
             
-            symlink = linker(self.directory, self.prefix, "aa", os.path.abspath(value))
+            # Infer where symlink should go
+            if os.path.dirname(os.path.abspath(value)) == self.directory: # file is already within the BINge working dir
+                symlinkDir = self.extractionDirectory
+            else:
+                symlinkDir = self.directory # file is not a BINge file
+            
+            symlink = linker(symlinkDir, self.prefix, "aa", os.path.abspath(value))
             self._aa = symlink
     
     def extract_sequences(self, translationTable):
-        '''
-        Unlike the other extract_sequences() functions, this one will not set self.mrna
-        since doing so would 1) be unnecessary, as the file does not change. And 2) cause
-        weirdness with the automatic symlinking built into the self.mrna property. Instead,
-        orf_extractor() is responsible for setting the new symlink.
-        '''
+        # Run extraction if applicable
         if self.cds == None or self.aa == None:
-            self.cds, self.aa = orf_extractor(self.extractionDirectory, self.mrna, ## TBD: Symlinks shouldn't be set by orf_extractor
-                                              self.prefix, translationTable)
+            self._cds, self._aa = orf_extractor(self.extractionDirectory, self.mrna, # bypass the property to avoid
+                                                self.prefix, translationTable) # creating a symlink
+        # Otherwise, create new symlinks in self.extractionDirectory pointing to the underlying symlinks in self.directory
+        else:
+            self._cds = linker(self.extractionDirectory, self.prefix, "cds", self.cds)
+            touch_ok(self._cds)
+            
+            self._aa = linker(self.extractionDirectory, self.prefix, "aa", self.aa)
+            touch_ok(self._aa)
+        
+        # Symlink from original mRNA file to the extractionDirectory
+        self._mrna = linker(self.extractionDirectory, self.prefix, "mrna", self.mrna)
+        touch_ok(self._mrna)
+        
         return self # needed to return this modified object back through the ProcessPoolExecutor
     
     def __repr__(self):
