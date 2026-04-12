@@ -27,7 +27,8 @@ from modules.validation import validate_args, validate_init_args, \
     check_for_duplicates, handle_symlink_change, touch_ok
 from modules.fasta_handling import FastaCollection, \
     generate_sequence_length_index
-from modules.setup import TargetGenome, AnnotatedGenome, Transcriptome
+from modules.setup import TargetGenome, AnnotatedGenome, Transcriptome, \
+    inputs_to_json, json_to_inputs
 from _version import __version__
 
 HASHING_PARAMS = ["identity", "clusterVoteThreshold"]
@@ -70,9 +71,9 @@ def setup_working_directory(targetGenomeFiles, annotatedGenomeFiles, txomeFiles,
     for index, file in enumerate(txomeFiles):
         files = [ os.path.abspath(f) for f in file.split(",") ]
         if len(files) == 1:
-            txome = Transcriptome(index+1, locations, files[0], cdsFasta=None, protFasta=None)
+            txome = Transcriptome(index+1, locations, mrnaFasta=files[0], cdsFasta=None, protFasta=None)
         else:
-            txome = Transcriptome(index+1, locations, files[0], cdsFasta=files[1], protFasta=files[2])
+            txome = Transcriptome(index+1, locations, mrnaFasta=files[0], cdsFasta=files[1], protFasta=files[2])
         transcriptomes.append(txome)
     
     # Link to the -i targetGenomeFiles values
@@ -512,6 +513,9 @@ def imain(args, locations):
     # Perform GMAP mapping
     auto_gmapping(targetGenomes, annotatedGenomes, transcriptomes,
                   locations.mappingDir, args.gmapDir, args.threads)
+    
+    # Store the argument objects for use during clustering
+    inputs_to_json(locations, targetGenomes, annotatedGenomes, transcriptomes)
     
     print("Initialisation complete!")
 

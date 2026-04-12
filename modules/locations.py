@@ -74,6 +74,10 @@ class Locations:
     
     # Naive file properties
     @property
+    def inputsJson(self):
+        return "inputs.json"
+    
+    @property
     def clusterFile(self):
         return "BINge_clustering_result.tsv"
     
