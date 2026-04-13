@@ -99,7 +99,7 @@ class Locations:
     
     @property
     def targetFile(self):
-        return "targetFile.fasta"
+        return "targetdb.fasta"
     
     @property
     def blastFile(self):
@@ -134,22 +134,6 @@ class Locations:
         return "BINge_clustering_representatives.aa"
     
     # Smart properties
-    @property
-    def gff3Files(self, targetGenomes, annotatedGenomes):
-        gff3Files = []
-        
-        # Check targetGenomes
-        for targetGenome in targetGenomes:
-            if targetGenome.gff3 != None:
-                gff3Files.append(targetGenome.gff3)
-        
-        # Check annotatedGenomes
-        for annotatedGenome in annotatedGenomes:
-            gff3Files.append(annotatedGenome.gff3) # should always be non-null
-        
-        # There is no need to check that gff3Files != [], as it is possible to run BINge with no GFF3 inputs whatsoever
-        return gff3Files
-    
     @property
     def salmonFiles(self):
         # Locate salmon directories
@@ -226,8 +210,24 @@ class Locations:
             if not os.path.isdir(resolvedDir):
                 raise FileNotFoundError(f"Unable to locate '{os.path.basename(resolvedDir)}' within '{value}'")
             
-            print(f"Run folder identified as: 'most_recent' -> '{resolvedDir}'")
+            print(f"# Run folder identified as: 'most_recent' -> '{resolvedDir}'")
             return resolvedDir
+    
+    # Methods
+    def get_gff3Files(self, targetGenomes, annotatedGenomes):
+        gff3Files = []
+        
+        # Check targetGenomes
+        for targetGenome in targetGenomes:
+            if targetGenome.gff3 != None:
+                gff3Files.append(targetGenome.gff3)
+        
+        # Check annotatedGenomes
+        for annotatedGenome in annotatedGenomes:
+            gff3Files.append(annotatedGenome.gff3) # should always be non-null
+        
+        # There is no need to check that gff3Files != [], as it is possible to run BINge with no GFF3 inputs whatsoever
+        return gff3Files
     
     def get_sequenceFiles(self, targetGenomes, annotatedGenomes, transcriptomes, sequenceSuffix):
         ACCEPTED_SUFFIXES = ["mrna", "cds", "aa"]

@@ -421,7 +421,7 @@ class MMseqs:
             if file.startswith(tmpFilePrefix):
                 os.unlink(os.path.join(outDir, file))
         
-        self.searchResult = origOutFile
+        self.searchResult = tableOutFile
     
     def parse_result(self, searchResultFile=None):
         if searchResultFile == None:
@@ -754,7 +754,7 @@ class MM_Linclust(MM_Clust):
     def clean_all(self):
         '''
         Function to invoke after performing Linclust, the results of which
-        are no longerwanted. It should clean up all files with _linclustDB* suffix.
+        are no longer wanted. It should clean up all files with _linclustDB* suffix.
         '''
         # Get hash for parameters combination
         strForHash = str(self.evalue) + str(self.identity) + str(self.cov_pct) + \
@@ -900,8 +900,8 @@ class MM_Cascade(MM_Clust):
     
     def clean_all(self):
         '''
-        Function to invoke after performing Linclust, the results of which
-        are no longerwanted. It should clean up all files with _clustDB* suffix.
+        Function to invoke after performing cascaded clustering, the results of which
+        are no longer wanted. It should clean up all files with _clustDB* suffix.
         '''
         # Get hash for parameters combination
         strForHash = str(self.evalue) + str(self.identity) + str(self.cov_pct) + \
