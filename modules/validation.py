@@ -130,10 +130,6 @@ def validate_cluster_args(args):
         raise ValueError("--clusterVoteThreshold should be given a value greater than zero, and equal to " + 
                          "or less than 1")
     
-    # Locate and validate that sequences exist in the sequences directory
-    sequenceSuffix = ".cds" # always CDS for Salmon mapping
-    args.sequenceFiles = locations.get_sequenceFiles(sequenceSuffix)
-    
     # Validate GMAP location
     _validate_gmap(args)
     

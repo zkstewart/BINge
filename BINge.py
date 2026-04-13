@@ -449,7 +449,7 @@ def main():
         imain(args, locations)
     elif args.mode == "cluster":
         print("## BINge.py - Clustering ##")
-        locations = validate_cluster_args(args) # sets args.sequenceFiles
+        locations = validate_cluster_args(args)
         cmain(args, locations)
     elif args.mode == "view":
         print("## BINge.py - Viewing ##")
@@ -535,6 +535,10 @@ def cmain(args, locations):
         os.unlink(mostRecentDir)
     os.symlink(runDir, mostRecentDir)
     
+    # Load the argument objects to identify our input files
+    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds")
+    
     # Store the parameters used in this run
     with open(os.path.join(runDir, locations.parametersFile), "w") as paramOut:
         json.dump({ param: args.__dict__[param] for param in HASHING_PARAMS }, paramOut)
@@ -564,7 +568,7 @@ def cmain(args, locations):
     # ... or begin pre-external clustering BINge
     else:
         # Set up a bin collection structure for each genome
-        collectionList = generate_bin_collections(locations.genomesDir, args.threads, args.isMicrobial)
+        collectionList = generate_bin_collections(targetGenomes, args.threads, args.isMicrobial)
         if args.debug:
             print(f"# Generated a list with {len(collectionList)} collections")
             for index, _cl in enumerate(collectionList):
@@ -576,6 +580,12 @@ def cmain(args, locations):
             for f in os.listdir(locations.mappingDir)
             if f.endswith(".gff3")
         ]
+        
+        # Ensure that each GMAP alignment has a corresponding .ok file
+        for gmapFile in gmapFiles:
+            if not os.path.exists(gmapFile + ".ok"):
+                raise FileNotFoundError(f"The GMAP file '{gmapFile}' lacks a .ok flag; rerun initialise " + 
+                                        "before attempting to cluster!")
         
         # Parse GMAP alignments into our bin collection with multiple threads
         collectionList = populate_bin_collections(locations.genomesDir,
@@ -637,19 +647,15 @@ def vmain(args, locations):
     print()
     
     # Derive the files used in the analysis
+    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    
     print("## File inputs:")
-    print("# Genome targets:")
-    genomeLinks = [ os.path.join(locations.genomesDir, f) for f in os.listdir(locations.genomesDir) if f.endswith(".fasta") ]
-    annotLinks = []
-    for genomeLink in genomeLinks:
-        suffixNum = genomeLink.rsplit("genome", maxsplit=1)[1].split(".fasta")[0]
-        annotLink = os.path.join(locations.genomesDir, f"genome{suffixNum}.gff3")
-        if os.path.exists(annotLink):
-            annotLinks.append(annotLink)
-        else:
-            annotLinks.append(None)
-    genomeOrigins = [ str(Path(g).resolve()) for g in genomeLinks ]
-    annotOrigins = [ str(Path(a).resolve()) if a is not None else None for a in annotLinks ]
+    print("# -i reference targets:")
+    genomeLinks = [ x.fasta for x in targetGenomes ]
+    annotLinks = [ x.gff3 for x in targetGenomes ]
+    
+    genomeOrigins = [ str(Path(x).resolve()) for x in genomeLinks ]
+    annotOrigins = [ str(Path(x).resolve()) if x is not None else None for x in annotLinks ]
     for gLink, gOrigin, aLink, aOrigin in zip(genomeLinks, genomeOrigins, annotLinks, annotOrigins):
         print(f"{gLink} -> {gOrigin}")
         if aOrigin is not None:
@@ -657,11 +663,12 @@ def vmain(args, locations):
     
     print()
     
-    print("# GFF3 annotations:")
-    gff3Links = [ os.path.join(locations.gff3Dir, f) for f in os.listdir(locations.gff3Dir) if f.endswith(".gff3") ]
-    gff3Origins = [ str(Path(g).resolve()) for g in gff3Links ]
-    fastaLinks = [ os.path.join(locations.gff3Dir, f) for f in os.listdir(locations.gff3Dir) if f.endswith(".fasta") ]
-    fastaOrigins = [ str(Path(f).resolve()) for f in fastaLinks ]
+    print("# --ig annotated gene models:")
+    gff3Links = [ x.gff3 for x in annotatedGenomes ]
+    fastaLinks = [ x.fasta for x in annotatedGenomes ]
+    
+    gff3Origins = [ str(Path(x).resolve()) for x in gff3Links ]
+    fastaOrigins = [ str(Path(x).resolve()) for x in fastaLinks ]
     if len(gff3Links) == 0:
         print("None")
     else:
@@ -670,37 +677,33 @@ def vmain(args, locations):
             print(f"    associated FASTA: {fLink} -> {fOrigin}")
     print()
     
-    print("# Transcript FASTAs:")
-    mrnaLinks = [ os.path.join(locations.txDir, f) for f in os.listdir(locations.txDir) if f.endswith(".mrna") ]
-    otherSeqLinks = []
-    for mrnaLink in mrnaLinks:
-        suffixNum = mrnaLink.rsplit("transcriptome", maxsplit=1)[1].split(".mrna")[0]
-        cdsLink = os.path.join(locations.txDir, f"transcriptome{suffixNum}.cds")
-        protLink = os.path.join(locations.txDir, f"transcriptome{suffixNum}.aa")
-        if os.path.exists(cdsLink) and os.path.exists(protLink):
-            otherSeqLinks.append([cdsLink, protLink])
-        else:
-            otherSeqLinks.append(None)
-    mrnaOrigins = [ str(Path(t).resolve()) for t in mrnaLinks ]
-    otherSeqOrigins = [ (str(Path(value[0]).resolve()), str(Path(value[1]).resolve())) if value is not None else None for value in otherSeqLinks ]
+    print("# --ix transcript FASTAs:")
+    mrnaLinks = [ x.mrna for x in transcriptomes ]
+    cdsLinks = [ x.cds for x in transcriptomes ]
+    aaLinks = [ x.aa for x in transcriptomes ]
+    
+    mrnaOrigins = [ str(Path(x).resolve()) for x in mrnaLinks ]
+    cdsOrigins = [ str(Path(x).resolve()) for x in cdsLinks ]
+    aaOrigins = [ str(Path(x).resolve()) for x in aaLinks ]
     
     if len(mrnaLinks) == 0:
         print("None")
     else:
         ongoingCount = 0
-        for mrnaLink, mrnaOrigin, otherSeqOrigin in zip(mrnaLinks, mrnaOrigins, otherSeqOrigins):
-            if otherSeqOrigin is not None:
-                cdsOrigin, protOrigin = otherSeqOrigin
-                print(f"mRNA: {mrnaLink} -> {mrnaOrigin}")
-                print(f"CDS: {cdsOrigin} -> {cdsOrigin}")
-                print(f"AA: {protOrigin} -> {protOrigin}")
+        for mrnaLink, mrnaOrigin, cdsLink, cdsOrigin, aaLink, aaOrigin in \
+        zip(mrnaLinks, mrnaOrigins, cdsLinks, cdsOrigins, aaLinks, aaOrigins):
+            print(f"mRNA: {mrnaLink} -> {mrnaOrigin}")
+            
+            if cdsLink == cdsOrigin:
+                print(f"CDS (predicted): {cdsLink}")
             else:
-                suffixNum = mrnaLink.rsplit("transcriptome", maxsplit=1)[1].split(".mrna")[0]
-                cdsFile = os.path.join(locations.sequencesDir, f"transcriptome{suffixNum}.cds")
-                aaFile = os.path.join(locations.sequencesDir, f"transcriptome{suffixNum}.aa")
-                print(f"mRNA: {mrnaLink} -> {mrnaOrigin}")
-                print(f"CDS (predicted): {cdsFile}")
-                print(f"AA (predicted): {aaFile}")
+                print(f"CDS: {cdsLink} -> {cdsOrigin}")
+            
+            if aaLink == aaOrigin:
+                print(f"AA (predicted): {aaLink}")
+            else:
+                print(f"AA: {aaLink} -> {aaOrigin}")
+            
             ongoingCount += 1
             if ongoingCount < len(mrnaLinks):
                 print()
