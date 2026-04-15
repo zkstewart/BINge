@@ -74,6 +74,10 @@ class Locations:
     
     # Naive file properties
     @property
+    def inputsJson(self):
+        return "inputs.json"
+    
+    @property
     def clusterFile(self):
         return "BINge_clustering_result.tsv"
     
@@ -95,7 +99,7 @@ class Locations:
     
     @property
     def targetFile(self):
-        return "targetFile.fasta"
+        return "targetdb.fasta"
     
     @property
     def blastFile(self):
@@ -131,38 +135,19 @@ class Locations:
     
     # Smart properties
     @property
-    def gff3Files(self):
-        gff3Files = []
-        
-        # Check self.gff3Dir
-        for file in os.listdir(self.gff3Dir):
-            if file.endswith(".gff3"):
-                gff3Files.append(os.path.join(self.gff3Dir, file))
-        
-        # Check self.genomesDir
-        for file in os.listdir(self.genomesDir):
-            if file.endswith(".gff3"):
-                gff3Files.append(os.path.join(self.genomesDir, file))
-        
-        if len(gff3Files) == 0:
-            raise FileNotFoundError(f"Unable to locate any GFF3 files within '{self.gff3Dir}' " + 
-                                    f"or '{self.genomesDir}'")
-        return gff3Files
-    
-    @property
     def salmonFiles(self):
         # Locate salmon directories
-        salmonOK = [
+        salmonDirs = [
             os.path.join(self.salmonDir, f)
             for f in os.listdir(self.salmonDir)
-            if f.endswith(".ok")
-            and not ".salmonDB" in f # ignore the salmonDB directory
-            and not f.startswith("concatenated") # ignore the concatenated CDS file
+            if not f.endswith(".ok") # ignore any .ok files
+            and not f.startswith("concatenated") # ignore the concatenated CDS FASTA and salmonDB
         ]
-        salmonDirs = [
-            f.rsplit(".ok", maxsplit=1)[0]
-            for f in salmonOK
-        ]
+        
+        # Validate that all directories have an associated .ok file
+        for salmonDir in salmonDirs:
+            if not os.path.exists(salmonDir + ".ok"):
+                raise FileNotFoundError(f"Failed to find a .ok file associated with '{salmonDir}'")
         
         # Validate that salmon directories exist
         if len(salmonDirs) == 0:
@@ -225,22 +210,46 @@ class Locations:
             if not os.path.isdir(resolvedDir):
                 raise FileNotFoundError(f"Unable to locate '{os.path.basename(resolvedDir)}' within '{value}'")
             
-            print(f"Run folder identified as: 'most_recent' -> '{resolvedDir}'")
+            print(f"# Run folder identified as: 'most_recent' -> '{resolvedDir}'")
             return resolvedDir
     
-    def get_sequenceFiles(self, sequenceSuffix):
-        sequenceFiles = [
-            os.path.join(self.sequencesDir, f)
-            for f in os.listdir(self.sequencesDir)
-            if f.endswith(sequenceSuffix)
-        ] + [
-            os.path.join(self.genomesDir, f)
-            for f in os.listdir(self.genomesDir)
-            if f.endswith(sequenceSuffix)
-        ]
+    # Methods
+    def get_gff3Files(self, targetGenomes, annotatedGenomes):
+        gff3Files = []
+        
+        # Check targetGenomes
+        for targetGenome in targetGenomes:
+            if targetGenome.gff3 != None:
+                gff3Files.append(targetGenome.gff3)
+        
+        # Check annotatedGenomes
+        for annotatedGenome in annotatedGenomes:
+            gff3Files.append(annotatedGenome.gff3) # should always be non-null
+        
+        # There is no need to check that gff3Files != [], as it is possible to run BINge with no GFF3 inputs whatsoever
+        return gff3Files
+    
+    def get_sequenceFiles(self, targetGenomes, annotatedGenomes, transcriptomes, sequenceSuffix):
+        ACCEPTED_SUFFIXES = ["mrna", "cds", "aa"]
+        if not sequenceSuffix in ACCEPTED_SUFFIXES:
+            raise ValueError(f"get_sequenceFiles should receive a value in '{ACCEPTED_SUFFIXES}', not '{sequenceSuffix}'")
+        
+        sequenceFiles = []
+        for inputList in [targetGenomes, annotatedGenomes, transcriptomes]:
+            for inputObj in inputList:
+                if sequenceSuffix == "mrna":
+                    if inputObj.mrna != None:
+                        sequenceFiles.append(inputObj.mrna)
+                elif sequenceSuffix == "cds":
+                    if inputObj.cds != None:
+                        sequenceFiles.append(inputObj.cds)
+                else:
+                    if inputObj.aa != None:
+                        sequenceFiles.append(inputObj.aa)
+        
         if sequenceFiles == []:
-            raise FileNotFoundError(f"Unable to locate any '{sequenceSuffix}' files within '{self.sequencesDir}' " +
-                                    f"or '{self.genomesDir}'; have you run the initialisation step yet?")
+            raise FileNotFoundError(f"Unable to locate any '{sequenceSuffix}' files; " +
+                                    f"have you run the initialisation step yet?")
         else:
             for sequenceFile in sequenceFiles:
                 if not os.path.isfile(sequenceFile + ".ok"):

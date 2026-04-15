@@ -221,12 +221,16 @@ def find_overlapping_bins(binCollection, binQuery):
     return binOverlap
 
 # Other functions
-def generate_bin_collections(genomesDir, threads, isMicrobial):
+def generate_bin_collections(targetGenomes, threads, isMicrobial):
     '''
-    Receives a list of genome FASTA files and generates bin collections each of these
-    into BinCollection structures which are separately stored in the returned list.
+    Receives a list of TargetGenome objects and generates bin collections for each of these
+    stored into BinCollection structures which are stored in the returned list.
     
     Parameters:
+        targetGenomes -- a list of TargetGenome objects, which have attributes indicating:
+            .prefix -- a string with format 'genome*' where the ending is an integer
+            .gff3 -- a string pointing to the GFF3 annotation of this reference genome; can
+                     be None in which case no pre-seeding occurs.
         genomesDir -- a string indicating an existing directory with genome GFF3
                       and/or FASTA files in it.
         threads -- an integer indicating how many threads to run.
@@ -239,42 +243,23 @@ def generate_bin_collections(genomesDir, threads, isMicrobial):
     '''
     FILE_PREFIX = "genome"
     
-    # Locate subdirectory containing files
-    if not os.path.isdir(genomesDir):
-        raise FileNotFoundError(f"generate_bin_collections failed because '{genomesDir}' doesn't exist or isn't a directory.")
-    
-    # Locate all genome/GFF3 pairings
+    # Obtain GFF3 files from the targetGenomes
     filePairs = []
-    for file in os.listdir(genomesDir):
-        if file.endswith(".fasta"):
-            if not file.startswith(FILE_PREFIX):
-                raise ValueError(f"FASTA file '{file}' in '{genomesDir}' does not start with '{FILE_PREFIX}' as expected.")
-            
-            # Extract file prefix/suffix components
-            filePrefix = file.split(".fasta")[0]
-            suffixNum = filePrefix.split(FILE_PREFIX)[1]
-            if not suffixNum.isdigit():
-                raise ValueError(f"FASTA file '{file}' in '{genomesDir}' does not have a number suffix as expected.")
-            
-            # Add value to pairings list
-            filePairs.append([None, suffixNum])
-            
-            # Add any corresponding GFF3 file if one exists
-            gff3File = f"{FILE_PREFIX}{suffixNum}.gff3"
-            if os.path.exists(os.path.join(genomesDir, gff3File)):
-                filePairs[-1][0] = os.path.join(genomesDir, gff3File)
-    
-    if not len(filePairs) > 0:
-        raise FileNotFoundError(f"generate_bin_collections failed because '{genomesDir}' contains no genome files")
+    for targetGenome in targetGenomes:
+        index = int(targetGenome.prefix.split("genome")[-1])
+        filePairs.append([index, targetGenome.gff3])
     
     # Sort the list for consistency of ordering
-    "If there are gaps in the suffixNum's, ordering is important to keep things paired up"
-    filePairs.sort(key = lambda x: int(x[1]))
-    suffixes = [ int(x[1]) for x in filePairs ]
-    isConsecutive = suffixes == list(range(1, len(suffixes)+1))
+    """This probably is unnecessary, but it doesn't hurt either. Using sorted indices ensures that any lists
+    used later in the program that are similarly ordered by the index number of a genome will match up correctly"""
+    filePairs.sort(key = lambda x: x[0])
+    indices = [ x[0] for x in filePairs ]
+    isConsecutive = ( indices == list(range(1, len(indices)+1)) )
     if not isConsecutive:
-        raise ValueError(f"generate_bin_collections failed because genome files in '{genomesDir}' are not " + 
-                         "consecutively numbered, which is important for later program logic!")
+        raise ValueError(f"generate_bin_collections failed because genome files are not " + 
+                         "consecutively numbered, which is important for later program logic! " + 
+                         "This should not happen unless you have deleted or manually modified files " + 
+                         "within the genomes subdirectory of the BINge working directory...?")
     
     # Start up threads
     collectionList = []
@@ -282,9 +267,9 @@ def generate_bin_collections(genomesDir, threads, isMicrobial):
         processing = []
         for x in range(threads): # begin processing n collections
             if i+x < len(filePairs): # parent loop may excess if n > the number of GMAP files
-                gff3File, _ = filePairs[i+x]
+                index, gff3File = filePairs[i+x]
                 
-                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial) # returns empty BinCollection if no GFF3
+                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial) # returns empty BinCollection if GFF3 is None
                 seedWorkerThread.start()
                 processing.append(seedWorkerThread)
         
@@ -326,13 +311,16 @@ def populate_bin_collections(genomesDir, collectionList, gmapFiles,
         genomeIndex = int(suffixNum) - 1
         
         # Get the location of the genome length index
-        thisGenomeIndex = os.path.join(genomesDir, f"{genomePrefix}.fasta.lengths.pkl")
+        thisGenomeIndex = os.path.join(genomesDir, f"{genomePrefix}.lengths.pkl")
+        if not os.path.exists(thisGenomeIndex + ".ok"):
+            raise FileNotFoundError(f"The genome length index '{thisGenomeIndex}' lacks a .ok flag; " +
+                                    "rerun initialise before attempting to cluster!")
         
         # Get all GMAP files associated with this genome
-        thisGmapFiles = [ gmFile for gmFile in gmapFiles if f"to_{genomePrefix}_" in gmFile]
+        thisGmapFiles = [ gmFile for gmFile in gmapFiles if f"to_{genomePrefix}_" in gmFile] # .ok flags were checked by BINge.py
         
         # Get other data structures for this genome
-        thisBinCollection = collectionList[genomeIndex]
+        thisBinCollection = collectionList[genomeIndex] # generate_bin_collections sorted the list by the index value
         
         # Store for threading
         threadData.append([thisGmapFiles, thisBinCollection, thisGenomeIndex])

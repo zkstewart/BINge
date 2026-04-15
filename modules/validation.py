@@ -3,6 +3,7 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from locations import Locations
+from parsing import read_gz_file
 
 class DirectoryNotFoundError(Exception):
     pass
@@ -79,20 +80,20 @@ def validate_init_args(args):
             if not os.path.isfile(inputFile):
                 raise ValueError(f"Unable to locate the file '{inputFile}' from the -ix argument '{inputArgument}'")
     
-    # Validate -t file locations
+    # Validate -i file locations
     hasGFF3 = False
     for inputArgument in args.targetGenomeFiles:
         if not inputArgument.count(",") <= 1:
-            raise ValueError(f"-t value '{inputArgument}' must have 0 or one comma in it (comma would separate GFF3,genome files)")
+            raise ValueError(f"-i value '{inputArgument}' must have 0 or one comma in it (comma would separate GFF3,genome files)")
         
         hasGFF3 = True if inputArgument.count(",") == 1 else hasGFF3
         for inputFile in inputArgument.split(","):
             if not os.path.isfile(inputFile):
-                raise FileNotFoundError(f"Unable to locate the -t input file '{inputFile}'")
+                raise FileNotFoundError(f"Unable to locate the -i file '{inputFile}'")
     
-    # Validate that at least one value was given to -ig or -ix or -t has a GFF3 file
-    if len(args.inputGff3Files) == 0 and len(args.inputTxomeFiles) == 0 and not hasGFF3:
-        raise ValueError("You must specify at least one -ig, -ix, or -t (with a GFF3) argument")
+    # Validate that at least one value was given to --ig or --ix or -i has a GFF3 file
+    if len(args.inputGff3Files) == 0 and len(args.inputTxomeFiles) == 0 and (not hasGFF3):
+        raise ValueError("You must specify at least one --ig, --ix, or -i (with a GFF3) argument")
     
     # Validate numeric parameters
     if args.threads < 1:
@@ -128,10 +129,6 @@ def validate_cluster_args(args):
     if not 0.0 < args.clusterVoteThreshold <= 1.0:
         raise ValueError("--clusterVoteThreshold should be given a value greater than zero, and equal to " + 
                          "or less than 1")
-    
-    # Locate and validate that sequences exist in the sequences directory
-    sequenceSuffix = ".cds" # always CDS for Salmon mapping
-    args.sequenceFiles = locations.get_sequenceFiles(sequenceSuffix)
     
     # Validate GMAP location
     _validate_gmap(args)
@@ -203,10 +200,6 @@ def validate_blast_args(args):
         raise FileNotFoundError(f"Unable to locate '{locations.sequencesDir}'; " +
                                 "have you run the initialisation step yet?")
     
-    # Locate and validate that sequences exist in the sequences directory
-    sequenceSuffix = ".cds" if args.sequenceType == "nucleotide" else ".aa"
-    args.sequenceFiles = locations.get_sequenceFiles(sequenceSuffix)
-    
     # Validate that the BLAST database exists
     args.targetFile = os.path.abspath(args.targetFile)
     if not os.path.isfile(args.targetFile):
@@ -243,10 +236,6 @@ def validate_salmon_args(args):
         if not os.path.isdir(rDir):
             raise FileNotFoundError(f"Unable to locate the -r reads directory '{args.rDir}'")
     
-    # Locate and validate that sequences exist in the sequences directory
-    sequenceSuffix = ".cds" # always CDS for Salmon mapping
-    args.sequenceFiles = locations.get_sequenceFiles(sequenceSuffix)
-    
     # Validate that salmon executable is locateable
     if args.salmonExe == None:
         salmon = shutil.which("salmon")
@@ -276,8 +265,8 @@ def validate_filter_args(args):
     
     # Validate that the cluster file exists
     args.bingeFile = os.path.join(args.runDir, locations.clusterFile)
-    if not os.path.isfile(args.bingeFile) or not os.path.exists(args.bingeFile + ".ok"):
-        raise FileNotFoundError(f"Unable to locate '{locations.clusterFile}' and " + 
+    if not (os.path.isfile(args.bingeFile) and os.path.exists(args.bingeFile + ".ok")):
+        raise FileNotFoundError(f"Unable to locate '{locations.clusterFile}' and/or " + 
                                 f"'{locations.clusterFile}.ok' within '{args.runDir}'")
     
     # Validate cluster file format
@@ -286,22 +275,13 @@ def validate_filter_args(args):
         raise ValueError(f"The file '{args.bingeFile}' does not appear to be a BINge cluster file; " + 
                          "has this been corrupted somehow?")
     
-    # Locate and validate that sequences exist in the sequences directory
-    sequenceSuffix = ".cds" # always CDS for sequence lengths
-    args.sequenceFiles = locations.get_sequenceFiles(sequenceSuffix)
-    
     # Validate BLAST file (if applicable)
     if args.useBLAST:
         print("# --useBLAST was specified; will attempt to use previous 'blast' file for filtering...")
         args.blastFile = os.path.join(locations.blastDir, locations.blastFile)
-        if not os.path.isfile(args.blastFile) or not os.path.exists(args.blastFile + ".ok"):
+        if not (os.path.isfile(args.blastFile) and os.path.exists(args.blastFile + ".ok")):
             raise FileNotFoundError(f"Unable to locate '{locations.blastFile}' or " + 
                                     f"'{locations.blastFile}.ok' within '{locations.blastDir}'")
-    
-    # Validate GFF3 file (if applicable)
-    if args.useGFF3:
-        print("# --useGFF3 was specified; will attempt to use GFF3 files for filtering...")
-        args.gff3Files = locations.gff3Files
     
     # Validate salmon files (if applicable)
     if args.useSalmon:
@@ -334,11 +314,6 @@ def validate_representatives_args(args):
         raise ValueError(f"The file '{args.bingeFile}' does not appear to be a BINge cluster file; " + 
                          "has this been corrupted somehow?")
     
-    # Locate and validate that sequences exist in the sequences directory
-    args.mrnaSequenceFiles = locations.get_sequenceFiles(".mrna")
-    args.cdsSequenceFiles = locations.get_sequenceFiles(".cds")
-    args.aaSequenceFiles = locations.get_sequenceFiles(".aa")
-    
     # Validate numeric parameters
     if args.evalue < 0:
         raise ValueError("--evalue must be a positive float value >= 0")
@@ -347,14 +322,9 @@ def validate_representatives_args(args):
     if args.useBLAST:
         print("# --useBLAST was specified; will attempt to use previous 'blast' file for representative picking...")
         args.blastFile = os.path.join(locations.blastDir, locations.blastFile)
-        if not os.path.isfile(args.blastFile) or not os.path.exists(args.blastFile + ".ok"):
+        if not (os.path.isfile(args.blastFile) and os.path.exists(args.blastFile + ".ok")):
             raise FileNotFoundError(f"Unable to locate '{locations.blastFile}' or " + 
                                     f"'{locations.blastFile}.ok' within '{locations.blastDir}'")
-    
-    # Validate GFF3 file (if applicable)
-    if args.useGFF3:
-        print("# --useGFF3 was specified; will attempt to use GFF3 files for representative picking...")
-        args.gff3Files = locations.gff3Files
     
     # Validate salmon files (if applicable)
     if args.useSalmon:
@@ -408,7 +378,7 @@ def validate_annotate_args(args):
     
     # Validate BLAST file 
     args.blastFile = os.path.join(locations.blastDir, locations.blastFile)
-    if not os.path.isfile(args.blastFile) or not os.path.exists(args.blastFile + ".ok"):
+    if not (os.path.isfile(args.blastFile) and os.path.exists(args.blastFile + ".ok")):
         raise FileNotFoundError(f"Unable to locate '{locations.blastFile}' or " + 
                                 f"'{locations.blastFile}.ok' within '{locations.blastDir}'; " +
                                 "have you run 'blast' yet?")
@@ -424,11 +394,11 @@ def validate_annotate_args(args):
     # Validate that original target for BLAST search was a UniRef file
     args.targetFile = os.path.join(locations.blastDir, locations.targetFile)
     targetFileResolved = str(Path(args.targetFile).resolve())
-    if not os.path.isfile(args.targetFile) and not os.path.isfile(targetFileResolved):
+    if not (os.path.isfile(args.targetFile) and os.path.isfile(targetFileResolved)):
         raise FileNotFoundError(f"Unable to locate the target file for BLAST search '{locations.targetFile}' -> '{targetFileResolved}'; " +
                                 "have you moved the symlink or the original file it points to?")
     else:
-        with open(args.targetFile, "r") as fileIn:
+        with read_gz_file(args.targetFile) as fileIn:
             firstLine = fileIn.readline()
             if not firstLine.startswith(">UniRef"):
                 raise ValueError(f"The target file for BLAST search '{locations.targetFile}' -> '{targetFileResolved}' " +
@@ -450,7 +420,7 @@ def _locate_raw_or_filtered_results(args, locations):
         
         # Validate that the cluster file exists
         clusterFile = os.path.join(filterRunDir, locations.filteredClusterFile)
-        if not os.path.isfile(clusterFile) or not os.path.exists(clusterFile + ".ok"):
+        if not (os.path.isfile(clusterFile) and os.path.exists(clusterFile + ".ok")):
             raise FileNotFoundError(f"Unable to locate '{locations.filteredClusterFile}' and " +
                                     f"'{locations.filteredClusterFile}.ok' within '{filterRunDir}'")
     else:
@@ -462,7 +432,7 @@ def _locate_raw_or_filtered_results(args, locations):
         
         # Validate that the cluster file exists
         clusterFile = os.path.join(rawRunDir, locations.clusterFile)
-        if not os.path.isfile(clusterFile) or not os.path.exists(clusterFile + ".ok"):
+        if not (os.path.isfile(clusterFile) and os.path.exists(clusterFile + ".ok")):
             raise FileNotFoundError(f"Unable to locate '{locations.clusterFile}' and " +
                                     f"'{locations.clusterFile}.ok' within '{rawRunDir}'")
     return clusterFile
@@ -502,7 +472,7 @@ def validate_fasta(fastaFile):
     Returns:
         isFASTA -- a boolean where True means it is (probably) a FASTA, and False otherwise.
     '''
-    with open(fastaFile, "r") as fileIn:
+    with read_gz_file(fastaFile) as fileIn:
         firstLine = fileIn.readline()
         if not firstLine.startswith(">"):
             return False
@@ -557,7 +527,7 @@ def check_for_duplicates(sequencesDir, fileSuffix):
     foundIDs = set()
     duplicatedIDs = set()
     for fileToCheck in filesToCheck:
-        with open(fileToCheck, "r") as fileIn:
+        with read_gz_file(fileToCheck) as fileIn:
             for line in fileIn:
                 if line.startswith(">"):
                     seqID = line[1:].rstrip("\r\n ")

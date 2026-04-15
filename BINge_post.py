@@ -21,6 +21,7 @@ from modules.parsing import BINge_Results, BLAST_Results, \
     parse_quants, parse_gff3_ids, locate_read_files, parse_binge_representatives
 from modules.annotation import init_table, parse_idmap, update_table_with_gos, \
     update_table_with_seq_details
+from modules.setup import json_to_inputs
 from _version import __version__
 
 # Define functions
@@ -128,7 +129,7 @@ def concatenate_sequences(sequenceFiles, outputFileName):
                          concatenate.
         outputFileName -- a string indicating the location of the output file.
     '''
-    if not os.path.exists(outputFileName) or not os.path.exists(outputFileName + ".ok"):
+    if not (os.path.exists(outputFileName) and os.path.exists(outputFileName + ".ok")):
         print("# Concatenating all sequence files into a single file...")
         with open(outputFileName, "w") as fileOut:
             for fastaFile in sequenceFiles:
@@ -375,7 +376,7 @@ def main():
     # BLAST-subparser arguments
     bparser.add_argument("-t", dest="targetFile",
                          required=True,
-                         help="""Specify the location of a FASTA file to query against.""")
+                         help="Specify the location of a database FASTA file.")
     bparser.add_argument("-s", dest="sequenceType",
                          required=True,
                          choices=["protein", "nucleotide"],
@@ -391,8 +392,8 @@ def main():
     bparser.add_argument("--threads", dest="threads",
                          required=False,
                          type=int,
-                         help="""Optionally, specify how many threads to run search with
-                         (default==1)""",
+                         help="""Optionally, specify how many threads to run MMseqs2 with
+                         (default=1)""",
                          default=1)
     
     # Salmon-subparser arguments
@@ -405,7 +406,8 @@ def main():
                          required=True,
                          help="""Indicate the suffix of your FASTQ files (e.g., '.fastq',
                          '.fq', '.fq.gz'); if your reads are paired, this suffix must
-                         immediately follow the read number (e.g., '_1.fastq', '_2.fastq');
+                         immediately follow the read number (e.g., '.fastq' is the suffix
+                         for paired reads which end with '_1.fastq', '_2.fastq');
                          all files with this suffix in locations provided
                          to -r will be used.""")
     ## Optional (flags)
@@ -425,30 +427,30 @@ def main():
     sparser.add_argument("--threads", dest="threads",
                          required=False,
                          type=int,
-                         help="""Optionally, specify how many threads to run search with
-                         (default==1)""",
+                         help="""Optionally, specify how many threads to run salmon with
+                         (default=1)""",
                          default=1)
     
     # Filter-subparser arguments
     fparser.add_argument("--analysis", dest="analysisFolder",
                          required=False,
                          help="""Specify the analysis folder to filter; if not provided,
-                         the most recent analysis folder will be viewed""",
+                         the most recent analysis folder will be used""",
                          default="most_recent")
     ## Optional (flags)
     fparser.add_argument("--justDropUnbinned", dest="justDropUnbinned",
                          required=False,
                          action="store_true",
-                         help="""Set this flag to remove all unbinned clusters but keep all binned
-                         clusters; this supercedes all other filters.""",
+                         help="""Set this flag to simply remove all unbinned clusters and keep all
+                         binned clusters; this supercedes any other filter arguments.""",
                          default=False)
     fparser.add_argument("--alsoFilterBinned", dest="filterBinned",
                          required=False,
                          action="store_true",
                          help="""Optionally, extend filtering to clusters that were binned. By default,
-                         binned clusters are assumed to be good since they've already met sequence
-                         similarity criteria to the reference genome hence filtering is applied only
-                         to unbinned clusters.""",
+                         sequences within binned clusters are assumed to be accurate since they've
+                         mapped back successfully to a reference genome and hence filtering is applied
+                         only to unbinned clusters.""",
                          default=False)
     fparser.add_argument("--useGFF3", dest="useGFF3",
                          required=False,
@@ -461,7 +463,7 @@ def main():
                          required=False,
                          action="store_true",
                          help="""Set this flag to keep clusters if they contain any sequences with
-                         significant BLAST hits.""",
+                         BLAST hits equal to or better than the --evalue cutoff.""",
                          default=False)
     fparser.add_argument("--useSalmon", dest="useSalmon",
                          required=False,
@@ -473,28 +475,29 @@ def main():
     fparser.add_argument("--evalue", dest="evalue",
                          required=False,
                          type=float,
-                         help="""If using --keepBLAST, specify the E-value cut-off for BLAST hits
-                         to be considered significant (default==1e-10).""",
+                         help="""If using --useBLAST, specify the E-value cut-off for BLAST hits
+                         to be considered significant (default=1e-10).""",
                          default=1e-10)
     fparser.add_argument("--readLength", dest="readLength",
                          required=False,
                          type=int,
                          help="""If specifying --keepSalmon, indicate the length of your reads in
-                         basepairs (default==150; just consider the single end length)""",
+                         basepairs (default=150; just consider the single end length even if your
+                         reads are paired)""",
                          default=150)
     fparser.add_argument("--length", dest="minimumLength",
                          required=False,
                          type=int,
                          help="""Specify the minimum length of an ORF (in base pairs) that must
                          be met for a cluster to pass filtration (if it hasn't passed any other
-                         filter checks already); default==300 (bp)""",
-                         default=300)
+                         filter checks already); default=600 (bp)""",
+                         default=600)
     
     # Representatives-subparser arguments
     rparser.add_argument("--analysis", dest="analysisFolder",
                          required=False,
                          help="""Specify the analysis or filter folder to obtain representatives from;
-                         if not provided, the most recent analysis folder will be viewed""",
+                         if not provided, the most recent folder will be used""",
                          default="most_recent")
     ## Optional (flags)
     rparser.add_argument("--useGFF3", dest="useGFF3",
@@ -506,8 +509,8 @@ def main():
     rparser.add_argument("--useBLAST", dest="useBLAST",
                          required=False,
                          action="store_true",
-                         help="""Set this flag to pick a representative that has a
-                         significant BLAST hit.""",
+                         help="""Set this flag to pick a representative that has a BLAST hit
+                         with E-value equal to or better than the --evalue cutoff""",
                          default=False)
     rparser.add_argument("--useSalmon", dest="useSalmon",
                          required=False,
@@ -519,47 +522,47 @@ def main():
     rparser.add_argument("--evalue", dest="evalue",
                          required=False,
                          type=float,
-                         help="""If using --keepBLAST, specify the E-value cut-off for BLAST hits
-                         to be considered significant (default==1e-10).""",
+                         help="""If using --useBLAST, specify the E-value cut-off for BLAST hits
+                         to be considered significant (default=1e-10).""",
                          default=1e-10)
     
     # DGE-subparser arguments
     dparser.add_argument("--analysis", dest="analysisFolder",
                          required=False,
                          help="""Specify the analysis or filter folder to run DGE on;
-                         if not provided, the most recent analysis folder will be viewed""",
+                         if not provided, the most recent folder will be used""",
                          default="most_recent")
     
     # Annotate-subparser arguments
     aparser.add_argument("-id", dest="idmappingFile",
                          required=True,
-                         help="""Specify the location of the 'idmapping_selected.tab' file""")
+                         help="Specify the location of the 'idmapping_selected.tab' file.")
     aparser.add_argument("-io", dest="oboFile",
                          required=True,
-                         help="""Specify the location of a 'go.obo' file""")
+                         help="Specify the location of a 'go.obo' file.")
     aparser.add_argument("--analysis", dest="analysisFolder",
                          required=False,
                          help="""Specify the analysis or filter folder to annotate clusters for;
-                         if not provided, the most recent analysis folder will be viewed""",
+                         if not provided, the most recent folder will be used.""",
                          default="most_recent")
     ## Optional (parameters)
     aparser.add_argument("--evalue", dest="evalue",
                          required=False,
                          type=float,
                          help="""Specify the E-value cut-off for BLAST hits
-                         to be considered significant (default==1e-10).""",
+                         to be considered significant (default=1e-10).""",
                          default=1e-10)
     aparser.add_argument("--numhits", dest="numHits",
                          required=False,
                          type=int,
-                         help="""Specify the number of hits to report for each sequence
-                         (default==10).""",
+                         help="""Specify the maximum number of hits to report for each sequence
+                         (default=10).""",
                          default=10)
     aparser.add_argument("--largeTable", dest="largeTable",
                          required=False,
                          action="store_true",
                          help="""Set this flag to create a table with full outfmt6 fields
-                         (e.g., gap opens, query start, etc.) rather than just identity,
+                         (e.g., including gap opens, query start, etc.) rather than just identity,
                          E-value, and bitscore.""",
                          default=False)
     
@@ -568,27 +571,27 @@ def main():
     # Split into mode-specific functions
     if args.mode == "blast":
         print("## BINge_post.py - MMseqs2 query ##")
-        locations = validate_blast_args(args) # sets sequenceFiles
+        locations = validate_blast_args(args)
         bmain(args, locations)
     elif args.mode == "salmon":
         print("## BINge_post.py - Salmon read quantification ##")
-        locations = validate_salmon_args(args) # sets sequenceFiles
+        locations = validate_salmon_args(args)
         smain(args, locations)
     elif args.mode == "filter":
         print("## BINge_post.py - Filter clusters ##")
-        locations = validate_filter_args(args) # sets sequenceFiles, runDirName, bingeFile, blastFile, gff3Files, salmonFiles
+        locations = validate_filter_args(args) # sets bingeFile, blastFile, salmonFiles
         fmain(args, locations)
     elif args.mode == "representatives":
         print("## BINge_post.py - Representatives selection ##")
-        locations = validate_representatives_args(args) # sets sequenceFiles, runDirName, bingeFile, blastFile, gff3Files, salmonFiles
+        locations = validate_representatives_args(args) # sets bingeFile, blastFile, salmonFiles
         rmain(args, locations) # sets args.bingeFile
     elif args.mode == "dge":
         print("## BINge_post.py - DGE preparation ##")
-        locations = validate_dge_args(args) # sets runDirName, bingeFile, salmonFiles
+        locations = validate_dge_args(args) # sets bingeFile, salmonFiles
         dmain(args, locations)
     elif args.mode == "annotate":
         print("## BINge_post.py - Cluster annotation ##")
-        locations = validate_annotate_args(args) # sets runDirName, bingeFile, blastFile, targetFile, databaseTag
+        locations = validate_annotate_args(args) # sets bingeFile, blastFile, targetFile, databaseTag
         amain(args, locations)
     
     # Print completion flag if we reach this point
@@ -615,19 +618,23 @@ def bmain(args, locations):
                               "file. To resume program operation, move/rename/delete the file " + 
                               "then try again.")
     
+    # Load the argument objects to identify our input files
+    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    sequenceSuffix = "cds" if args.sequenceType == "nucleotide" else "aa"
+    args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, sequenceSuffix)
+    
     # Concatenate all FASTA files into a single file
-    sequenceSuffix = ".cds" if args.sequenceType == "nucleotide" else ".aa"
-    concatFileName = os.path.join(locations.blastDir, f"concatenated{sequenceSuffix}")
+    concatFileName = os.path.join(locations.blastDir, f"concatenated.{sequenceSuffix}")
     concatenate_sequences(args.sequenceFiles, concatFileName)
     
     # Establish the MMseqs2 query and target databases
     queryDB = MM_DB(concatFileName, os.path.dirname(args.mms2Exe), locations.tmpDir,
-                               args.sequenceType, args.threads)
+                    args.sequenceType, args.threads)
     queryDB.generate()
     queryDB.index()
     
     targetDB = MM_DB(targetLink, os.path.dirname(args.mms2Exe), tmpDir,
-                                args.sequenceType, args.threads)
+                     args.sequenceType, args.threads)
     targetDB.generate()
     targetDB.index()
     
@@ -635,9 +642,8 @@ def bmain(args, locations):
     mms2 = MMseqs(queryDB, targetDB, os.path.dirname(args.mms2Exe), tmpDir)
     mms2.threads = args.threads
     mms2.evalue = 1 # weak threshold, leave it to 'filter' to decide on a good one
-    mms2.isSetup = True
-    mms2.mmseqs(outputFileName, force=True) # force=True to overwrite any existing file if '.ok' is missing
-    touch_ok(outputFileName)
+    mms2.mmseqs(outputFileName, force=True) # force=True to overwrite any existing file since '.ok' is missing
+    #touch_ok(outputFileName) # the MMseqs class will internally handle flag creation
     
     print("BLAST search complete!")
 
@@ -647,17 +653,21 @@ def smain(args, locations):
     
     # Locate read files
     forwardReads, reverseReads, sampleNames = locate_read_files(args.readsDir, args.readsSuffix,
-                                                               args.singleEnd)
+                                                                args.singleEnd)
+    
+    # Load the argument objects to identify our input files
+    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds") # map to CDS
     
     # Concatenate all FASTA files into a single file
-    concatFileName = os.path.join(locations.salmonDir, f"concatenated.cds") # map to CDS
+    concatFileName = os.path.join(locations.salmonDir, f"concatenated.cds")
     concatenate_sequences(args.sequenceFiles, concatFileName)
     
     # Establish the salmon target database
     targetDB = Salmon_DB(concatFileName, os.path.dirname(args.salmonExe),
                                   args.threads)
     salmonDBName = concatFileName + ".salmonDB"
-    if not os.path.exists(salmonDBName) or not os.path.exists(salmonDBName + ".ok"):
+    if not (os.path.exists(salmonDBName) and os.path.exists(salmonDBName + ".ok")):
         print(f"# Indexing '{concatFileName}' for salmon read quantification...")
         targetDB.index()
         touch_ok(salmonDBName)
@@ -680,7 +690,7 @@ def smain(args, locations):
         if not os.path.exists(sampleDir + ".ok"):
             print(f"# Running salmon quantification for '{sampleName}'...")
             salmon.quant(sampleDir)
-            touch_ok(sampleDir + ".ok")
+            touch_ok(sampleDir)
     
     print("Salmon quant complete!")
 
@@ -696,6 +706,22 @@ def fmain(args, locations):
     if os.path.exists(mostRecentDir) or os.path.islink(mostRecentDir):
         os.unlink(mostRecentDir)
     os.symlink(filterRunDir, mostRecentDir)
+    
+    # Load the argument objects to identify our input files
+    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds") # CDS for seq lengths
+    
+    # Validate GFF3 file availability for --useGFF3 (if applicable)
+    """We need to run the validation here, not in validate_filter_args(), to prevent circular import.
+    Later on it would be nice to tidy the code and have validation.py handle all of the json_to_inputs()
+    calls, although this would be a purely aesthetic change and for now it is not functionally necessary."""
+    if args.useGFF3:
+        print("# --useGFF3 was specified; will attempt to use GFF3 files for filtering...")
+        args.gff3Files = locations.get_gff3Files(targetGenomes, annotatedGenomes)
+        if len(args.gff3Files) == 0:
+            raise ValueError("No GFF3 files are available for use as part of --useGFF3 filtering; try running " +
+                             "this again while omitting the --useGFF3 flag, or use 'BINge.py view' to help understand " +
+                             "what input files are available for this analysis.")
     
     # Figure out if we've already filtered this run and exit if so
     outputFileName = os.path.join(filterRunDir, locations.filteredClusterFile)
@@ -716,7 +742,7 @@ def fmain(args, locations):
         return # exit the program here
     
     # Load transcripts into memory for quick access
-    transcriptRecords = FastaCollection(args.sequenceFiles) # args.sequenceFiles lists CDS files
+    transcriptRecords = FastaCollection(args.sequenceFiles)
     
     # Parse BLAST results (if relevant)
     if args.useBLAST:
@@ -849,6 +875,21 @@ def rmain(args, locations):
         os.unlink(mostRecentDir)
     os.symlink(reprRunDir, mostRecentDir)
     
+    # Load the argument objects to identify our input files
+    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    args.mrnaSequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "mrna")
+    args.cdsSequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds")
+    args.aaSequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "aa")
+    
+    # Validate GFF3 file availability for --useGFF3 (if applicable)
+    if args.useGFF3:
+        print("# --useGFF3 was specified; will attempt to use GFF3 files for representative picking...")
+        args.gff3Files = locations.get_gff3Files(targetGenomes, annotatedGenomes)
+        if len(args.gff3Files) == 0:
+            raise ValueError("No GFF3 files are available for use as part of --useGFF3 representative picking; try running " +
+                             "this again while omitting the --useGFF3 flag, or use 'BINge.py view' to help understand " +
+                             "what input files are available for this analysis.")
+    
     # Figure out if we've already gotten representatives for this run and exit if so
     for fileName in [locations.representativeMRNA, locations.representativeCDS, locations.representativeAA]:
         outputFileName = os.path.join(reprRunDir, fileName)
@@ -887,7 +928,7 @@ def rmain(args, locations):
     
     # Parse salmon quant (if relevant)
     if args.useSalmon:
-        sampleNames = [ f"{i}" for i in range(len(args.salmonFiles))] # sample names don't matter
+        sampleNames = [ f"{i}" for i in range(len(args.salmonFiles)) ] # sample names don't matter
         quantCollection = parse_quants(args.salmonFiles, sampleNames)
     else:
         quantCollection = None
@@ -997,7 +1038,7 @@ def dmain(args, locations):
     
     # Generate tx2gene file (if not already done)
     tx2geneFile = os.path.join(dgeRunName, locations.tx2geneFile)
-    if not os.path.exists(tx2geneFile) or not os.path.exists(tx2geneFile + ".ok"):
+    if not (os.path.exists(tx2geneFile) and os.path.exists(tx2geneFile + ".ok")):
         print(f"# Generating '{locations.tx2geneFile}' file for cluster count summarisation...")
         write_tx2gene(tx2geneFile, bingeResults)
         touch_ok(tx2geneFile)
@@ -1007,21 +1048,21 @@ def dmain(args, locations):
     
     # Tabulate salmon QC metrics (if not already done)
     salmonQCFile = os.path.join(dgeRunName, locations.salmonQCFile)
-    if not os.path.exists(salmonQCFile) or not os.path.exists(salmonQCFile + ".ok"):
+    if not (os.path.exists(salmonQCFile) and os.path.exists(salmonQCFile + ".ok")):
         print(f"# Generating '{locations.salmonQCFile}' file for salmon QC assessment...")
         write_salmonQC(salmonDirs, salmonQCFile, bingeResults)
         touch_ok(salmonQCFile)
     
     # Write list of samples for DGE analysis (if not already done)
     sampleFile = os.path.join(dgeRunName, locations.salmonSampleFile)
-    if not os.path.exists(sampleFile) or not os.path.exists(sampleFile + ".ok"):
+    if not (os.path.exists(sampleFile) and os.path.exists(sampleFile + ".ok")):
         print(f"# Generating '{locations.salmonSampleFile}' file for sample name listing...")
         write_samples(salmonDirs, sampleFile)
         touch_ok(sampleFile)
     
     # Generate R script for DGE analysis (if not already done)
     rScriptFile = os.path.join(dgeRunName, locations.rScriptFile)
-    if not os.path.exists(rScriptFile) or not os.path.exists(rScriptFile + ".ok"):
+    if not (os.path.exists(rScriptFile) and os.path.exists(rScriptFile + ".ok")):
         print(f"# Generating '{locations.rScriptFile}' file for DGE analysis...")
         write_r_script(locations.salmonDir, sampleFile, tx2geneFile, rScriptFile)
         touch_ok(rScriptFile)
@@ -1053,7 +1094,7 @@ def amain(args, locations):
     "Just use the .aa file since it will be the smallest and IDs are the same across all files"
     representativesFasta = os.path.join(locations.representativesDir, annotateRunName,
                                         locations.representativeAA)
-    if not os.path.exists(representativesFasta) or not os.path.exists(representativesFasta + ".ok"):
+    if not (os.path.exists(representativesFasta) and os.path.exists(representativesFasta + ".ok")):
         raise FileNotFoundError(f"Unable to locate '{representativesFasta}' or '{representativesFasta}.ok'; " +
                                 "have you run 'representatives' yet?")
     
