@@ -619,7 +619,7 @@ def bmain(args, locations):
                               "then try again.")
     
     # Load the argument objects to identify our input files
-    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    targetGenomes, annotatedGenomes, transcriptomes, _ = json_to_inputs(locations) # do not need isMicrobial bool
     sequenceSuffix = "cds" if args.sequenceType == "nucleotide" else "aa"
     args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, sequenceSuffix)
     
@@ -656,7 +656,7 @@ def smain(args, locations):
                                                                 args.singleEnd)
     
     # Load the argument objects to identify our input files
-    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    targetGenomes, annotatedGenomes, transcriptomes, _ = json_to_inputs(locations) # do not need isMicrobial bool
     args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds") # map to CDS
     
     # Concatenate all FASTA files into a single file
@@ -708,7 +708,7 @@ def fmain(args, locations):
     os.symlink(filterRunDir, mostRecentDir)
     
     # Load the argument objects to identify our input files
-    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    targetGenomes, annotatedGenomes, transcriptomes, _ = json_to_inputs(locations) # do not need isMicrobial bool
     args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds") # CDS for seq lengths
     
     # Validate GFF3 file availability for --useGFF3 (if applicable)
@@ -876,7 +876,7 @@ def rmain(args, locations):
     os.symlink(reprRunDir, mostRecentDir)
     
     # Load the argument objects to identify our input files
-    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    targetGenomes, annotatedGenomes, transcriptomes, _ = json_to_inputs(locations) # do not need isMicrobial bool
     args.mrnaSequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "mrna")
     args.cdsSequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds")
     args.aaSequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "aa")

@@ -335,15 +335,6 @@ def main():
                          required=False,
                          help="""Optionally, if GMAP is not discoverable in your PATH, specify the
                          directory containing the 'gmap' and 'gmap_build' executables""")
-    cparser.add_argument("--microbial", dest="isMicrobial",
-                         required=False,
-                         action="store_true",
-                         help="""Optionally, specify this flag if you are inputting GFF3
-                         files from bacteria, archaea, or any other organism in which the GFF3
-                         does not contain mRNA and exon features; in this case, the GFF3 features
-                         will occur with a parental 'gene' and child 'CDS' features with no
-                         'mRNA' intermediary.""",
-                         default=False)
     cparser.add_argument("--clusterer", dest="unbinnedClusterer",
                          required=False,
                          choices=["mmseqs-cascade", "mmseqs-linclust", "cd-hit"],
@@ -515,7 +506,7 @@ def imain(args, locations):
                   locations.mappingDir, args.gmapDir, args.threads)
     
     # Store the argument objects for use during clustering
-    inputs_to_json(locations, targetGenomes, annotatedGenomes, transcriptomes)
+    inputs_to_json(locations, targetGenomes, annotatedGenomes, transcriptomes, args.isMicrobial)
     
     print("Initialisation complete!")
 
@@ -536,7 +527,7 @@ def cmain(args, locations):
     os.symlink(runDir, mostRecentDir)
     
     # Load the argument objects to identify our input files
-    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    targetGenomes, annotatedGenomes, transcriptomes, isMicrobial = json_to_inputs(locations)
     args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds")
     
     # Store the parameters used in this run
@@ -568,7 +559,7 @@ def cmain(args, locations):
     # ... or begin pre-external clustering BINge
     else:
         # Set up a bin collection structure for each genome
-        collectionList = generate_bin_collections(targetGenomes, args.threads, args.isMicrobial)
+        collectionList = generate_bin_collections(targetGenomes, args.threads, isMicrobial)
         if args.debug:
             print(f"# Generated a list with {len(collectionList)} collections")
             for index, _cl in enumerate(collectionList):
@@ -647,7 +638,7 @@ def vmain(args, locations):
     print()
     
     # Derive the files used in the analysis
-    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    targetGenomes, annotatedGenomes, transcriptomes, isMicrobial = json_to_inputs(locations)
     
     print("## File inputs:")
     print("# -i reference targets:")

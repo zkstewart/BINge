@@ -295,13 +295,14 @@ class Transcriptome:
     def __repr__(self):
         return f"<Transcriptome;prefix={self.prefix};mrna={self.mrna};cds={self.cds};aa={self.aa}>"
 
-def inputs_to_json(locations, targetGenomes, annotatedGenomes, transcriptomes):
+def inputs_to_json(locations, targetGenomes, annotatedGenomes, transcriptomes, isMicrobial):
     with open(os.path.join(locations.workingDirectory, locations.inputsJson), "w") as jsonOut:
         json.dump(
             {
                 "targetGenomes": [ x.__dict__ for x in targetGenomes ],
                 "annotatedGenomes": [ x.__dict__ for x in annotatedGenomes ],
-                "transcriptomes": [ x.__dict__ for x in transcriptomes ]
+                "transcriptomes": [ x.__dict__ for x in transcriptomes ],
+                "isMicrobial": isMicrobial
             }, jsonOut)
 
 def json_to_inputs(locations):
@@ -334,5 +335,5 @@ def json_to_inputs(locations):
         transcriptome._cds = d["_cds"]
         transcriptome._aa = d["_aa"]
         transcriptomes.append(transcriptome)
-
-    return targetGenomes, annotatedGenomes, transcriptomes
+    
+    return targetGenomes, annotatedGenomes, transcriptomes, data["isMicrobial"]
