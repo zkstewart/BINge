@@ -321,7 +321,7 @@ def json_to_inputs(locations):
     annotatedGenomes = []
     for d in data["annotatedGenomes"]:
         index = d["prefix"].split("annotations")[-1]
-        annotatedGenome = AnnotatedGenome(index, locations, d["fasta"], d["_gff3"])
+        annotatedGenome = AnnotatedGenome(index, locations, d["_fasta"], d["_gff3"])
         annotatedGenome.mrna = d["mrna"]
         annotatedGenome.cds = d["cds"]
         annotatedGenome.aa = d["aa"]

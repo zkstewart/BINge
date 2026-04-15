@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
-import os, sys, unittest
+import os, sys, shutil, unittest
 import networkx as nx
+from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -10,10 +11,14 @@ from modules.gff3 import GmapGFF3
 from modules.bin_handling import GmapBinProcess, CollectionSeedProcess, \
     find_overlapping_bins, add_bin_to_collection
 from modules.parsing import BINge_Results
+from modules.setup import TargetGenome, AnnotatedGenome, Transcriptome, \
+    inputs_to_json, json_to_inputs
+from modules.locations import Locations
 
 # Specify data locations
 baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 dataDir = os.path.join(baseDir, "tests", "data")
+workDir = os.path.join(dataDir, "tmp")
 
 ###
 
@@ -125,9 +130,248 @@ def populate_bin_collections(collectionList, gmapFiles, threads=1):
     
     return collectionList
 
+def setup_working_directory(targetHasGFF3=True, txomeIsPreExtracted=True):
+    # Clean any existing workdir and setup a fresh dir
+    if os.path.exists(workDir):
+        shutil.rmtree(workDir)
+    if not os.path.exists(workDir):
+        os.makedirs(workDir)
+    
+    # Establish locations variable and its downstream folders
+    locations = Locations(workDir)
+    os.makedirs(locations.sequencesDir, exist_ok=True)
+    os.makedirs(locations.gff3Dir, exist_ok=True)
+    os.makedirs(locations.txDir, exist_ok=True)
+    os.makedirs(locations.genomesDir, exist_ok=True)
+    os.makedirs(locations.mappingDir, exist_ok=True)
+    os.makedirs(locations.analysisDir, exist_ok=True)
+    
+    # Establish variables
+    targetGenomes = [
+        TargetGenome("1", locations, os.path.join(dataDir, "genome1.fasta"),
+                     gff3=os.path.join(dataDir, "genome1.gff3") if targetHasGFF3 else None),
+        TargetGenome(2, locations, os.path.join(dataDir, "genome2.fasta"),
+                     gff3=os.path.join(dataDir, "genome2.gff3") if targetHasGFF3 else None)
+    ]
+    annotatedGenomes = [
+        AnnotatedGenome(1, locations, os.path.join(dataDir, "genome1.fasta"), os.path.join(dataDir, "genome1.gff3")),
+        AnnotatedGenome("2", locations, os.path.join(dataDir, "genome2.fasta"), os.path.join(dataDir, "genome2.gff3"))
+    ]
+    transcriptomes = [
+        Transcriptome("1", locations, mrnaFasta=os.path.join(dataDir, "genome1.ttable1.mrna"),
+                                      cdsFasta=os.path.join(dataDir, "genome1.ttable1.cds") if txomeIsPreExtracted else None,
+                                      protFasta=os.path.join(dataDir, "genome1.ttable1.aa") if txomeIsPreExtracted else None)
+    ]
+    transcriptomes[0].extract_sequences(1) # translation table==1; need to extract to set .ok flags
+    
+    return targetGenomes, annotatedGenomes, transcriptomes, locations
+
 ###
 
 # Define unit tests
+class TestLocations(unittest.TestCase):
+    def test_locations_init(self):
+        # Arrange
+        os.makedirs(workDir, exist_ok=True)
+        locations = Locations(workDir)
+        
+        # Act
+        ## N/A
+        
+        # Assert
+        self.assertEqual(locations.workingDirectory, os.path.abspath(workDir))
+    
+    def test_get_gff3Files(self):
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        expectedGff3Prefixes = set(["genome1", "genome2", "annotations1", "annotations2"])
+        
+        # Act
+        gff3Files = locations.get_gff3Files(targetGenomes, annotatedGenomes)
+        gff3Prefixes = set([ os.path.basename(x).split(".")[0] for x in gff3Files ])
+        
+        # Assert
+        self.assertEqual(len(gff3Files), 4, "Should be 4 GFF3s after setup_working_directory()")
+        self.assertEqual(expectedGff3Prefixes, gff3Prefixes, f"Should have gff3 prefixes of '{expectedGff3Prefixes}'")
+    
+    def test_get_sequenceFiles(self):
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        expectedSeqPrefix = set(["transcriptome1"]) # no other sequences are fed in pre-extracted other than mRNA
+        
+        # Act
+        aaFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "aa")
+        aaPrefixes = set([ os.path.basename(x).split(".")[0] for x in aaFiles ])
+        
+        # Assert
+        self.assertEqual(len(aaFiles), 1, "Should be 1 .aa file after setup_working_directory()")
+        self.assertEqual(expectedSeqPrefix, aaPrefixes, f"Should have seq prefixes of '{expectedSeqPrefix}'")
+    
+    def test_resolve_runName(self):
+        '''
+        This test doesn't fully test the resolution process, but it's had enough real-life testing
+        that this function should really just be a sanity check to make sure things didn't magically break.
+        '''
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        runDir = os.path.join(locations.analysisDir, locations.runName)
+        os.makedirs(runDir, exist_ok=True)
+        
+        # Act
+        resolvedRunName = locations.resolve_runName(locations.analysisDir) # performs validation implicitly
+        
+        # Assert
+        self.assertEqual(runDir, resolvedRunName, f"Should be '{runDir}'")
+
+class TestTargetGenome(unittest.TestCase):
+    def test_targetGenome_extract_1(self):
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        with open(os.path.join(dataDir, "genome1.ttable1.aa"), "r") as fileIn:
+            previousAA = fileIn.read()
+        
+        # Act
+        targetGenome = targetGenomes[0] # just the first one
+        targetGenome.extract_sequences(False, 1) # isMicrobial, translationTable
+        with open(targetGenome.aa, "r") as fileIn:
+            thisAA = fileIn.read()
+        
+        # Assert
+        self.assertEqual(thisAA, previousAA, "TargetGenome extraction and genome1.ttable1.aa should be equivalent (translation table == 1)")
+    
+    def test_targetGenome_extract_5(self):
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        with open(os.path.join(dataDir, "genome1.ttable5.aa"), "r") as fileIn:
+            previousAA = fileIn.read()
+        
+        # Act
+        targetGenome = targetGenomes[0] # just the first one
+        targetGenome.extract_sequences(False, 5) # isMicrobial, translationTable
+        with open(targetGenome.aa, "r") as fileIn:
+            thisAA = fileIn.read()
+        
+        # Assert
+        self.assertEqual(thisAA, previousAA, "TargetGenome extraction and genome1.ttable1.aa should be equivalent (translation table == 5)")
+
+class TestAnnotatedGenome(unittest.TestCase):
+    def test_annotatedGenome_extract_1(self):
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        with open(os.path.join(dataDir, "genome1.ttable1.aa"), "r") as fileIn:
+            previousAA = fileIn.read()
+        
+        # Act
+        annotatedGenome = annotatedGenomes[0] # just the first one
+        annotatedGenome.extract_sequences(False, 1) # isMicrobial, translationTable
+        with open(annotatedGenome.aa, "r") as fileIn:
+            thisAA = fileIn.read()
+        
+        # Assert
+        self.assertEqual(thisAA, previousAA, "AnnotatedGenome extraction and genome1.ttable1.aa should be equivalent (translation table == 1)")
+    
+    def test_annotatedGenome_extract_5(self):
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        with open(os.path.join(dataDir, "genome1.ttable5.aa"), "r") as fileIn:
+            previousAA = fileIn.read()
+        
+        # Act
+        annotatedGenome = annotatedGenomes[0] # just the first one
+        annotatedGenome.extract_sequences(False, 5) # isMicrobial, translationTable
+        with open(annotatedGenome.aa, "r") as fileIn:
+            thisAA = fileIn.read()
+        
+        # Assert
+        self.assertEqual(thisAA, previousAA, "AnnotatedGenome extraction and genome1.ttable1.aa should be equivalent (translation table == 5)")
+
+class TestTranscriptome(unittest.TestCase):
+    def test_transcriptome_extract_1(self):
+        "This test wasn't what I initially expected; it isn't very useful, but it still is a behaviour that can be tested"
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory(txomeIsPreExtracted=False)
+        #with open(os.path.join(dataDir, "genome1.ttable1.aa"), "r") as fileIn:
+        #    previousAA = fileIn.read()
+        
+        # Act
+        transcriptome = transcriptomes[0]
+        transcriptome.extract_sequences(1) # isMicrobial
+        with open(transcriptome.aa, "r") as fileIn:
+            thisAA = fileIn.read()
+        
+        # Assert
+        self.assertEqual(thisAA, "", "Transcriptome extraction will not produce an output as no valid ORFs exist")
+    
+    def test_transcriptome_symlinking(self):
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        originalAA = os.path.join(dataDir, "genome1.ttable1.aa")
+        
+        # Act
+        transcriptome = transcriptomes[0]
+        transcriptome.extract_sequences(1) # isMicrobial
+        aaSymlink = transcriptome.aa
+        resolvedSymlink = str(Path(aaSymlink).resolve())
+        
+        # Assert
+        self.assertTrue(os.path.exists(aaSymlink), f"'{aaSymlink}' should have been created")
+        self.assertTrue(os.path.isfile(aaSymlink), f"'{aaSymlink}' should be a file")
+        self.assertTrue(os.path.islink(aaSymlink), f"'{aaSymlink}' should be a symlink")
+        self.assertEqual(originalAA, resolvedSymlink, f"Transcriptome.extract_sequences() should symlink back to {originalAA}")
+
+class TestSetup(unittest.TestCase):
+    def test_json_fidelity_1(self):
+        '''
+        Ensure that inputs_to_json() and json_to_inputs() maintain argument fidelity
+        '''
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        isMicrobial = True
+        
+        targetKeys = targetGenomes[0].__dict__.keys()
+        annotatedKeys = annotatedGenomes[0].__dict__.keys()
+        txomeKeys = transcriptomes[0].__dict__.keys()
+        
+        # Act
+        inputs_to_json(locations, targetGenomes, annotatedGenomes, transcriptomes, isMicrobial)
+        _targetGenomes, _annotatedGenomes, _transcriptomes, _isMicrobial = json_to_inputs(locations)
+        
+        targetsSame = [ targetGenomes[i].__dict__[key] == _targetGenomes[i].__dict__[key] for i in range(len(targetGenomes)) for key in targetKeys ]
+        annotatedSame = [ annotatedGenomes[i].__dict__[key] == _annotatedGenomes[i].__dict__[key] for i in range(len(annotatedGenomes)) for key in annotatedKeys ]
+        txomeSame = [ transcriptomes[i].__dict__[key] == _transcriptomes[i].__dict__[key] for i in range(len(transcriptomes)) for key in txomeKeys ]
+        
+        # Assert
+        self.assertTrue(all(targetsSame), "JSON reconstitution of TargetGenomes should give identical values")
+        self.assertTrue(all(annotatedSame), "JSON reconstitution of AnnotatedGenomes should give identical values")
+        self.assertTrue(all(txomeSame), "JSON reconstitution of Transcriptomes should give identical values")
+        self.assertEqual(isMicrobial, _isMicrobial, f"JSON reconstitution of isMicrobial should give {isMicrobial}")
+    
+    def test_json_fidelity_2(self):
+        '''
+        Ensure that inputs_to_json() and json_to_inputs() maintain argument fidelity
+        '''
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory(targetHasGFF3=False, txomeIsPreExtracted=False)
+        isMicrobial = False
+        
+        targetKeys = targetGenomes[0].__dict__.keys()
+        annotatedKeys = annotatedGenomes[0].__dict__.keys()
+        txomeKeys = transcriptomes[0].__dict__.keys()
+        
+        # Act
+        inputs_to_json(locations, targetGenomes, annotatedGenomes, transcriptomes, isMicrobial)
+        _targetGenomes, _annotatedGenomes, _transcriptomes, _isMicrobial = json_to_inputs(locations)
+        
+        targetsSame = [ targetGenomes[i].__dict__[key] == _targetGenomes[i].__dict__[key] for i in range(len(targetGenomes)) for key in targetKeys ]
+        annotatedSame = [ annotatedGenomes[i].__dict__[key] == _annotatedGenomes[i].__dict__[key] for i in range(len(annotatedGenomes)) for key in annotatedKeys ]
+        txomeSame = [ transcriptomes[i].__dict__[key] == _transcriptomes[i].__dict__[key] for i in range(len(transcriptomes)) for key in txomeKeys ]
+        
+        # Assert
+        self.assertTrue(all(targetsSame), "JSON reconstitution of TargetGenomes should give identical values")
+        self.assertTrue(all(annotatedSame), "JSON reconstitution of AnnotatedGenomes should give identical values")
+        self.assertTrue(all(txomeSame), "JSON reconstitution of Transcriptomes should give identical values")
+        self.assertEqual(isMicrobial, _isMicrobial, f"JSON reconstitution of isMicrobial should give {isMicrobial}")
+
 class TestBinCollection(unittest.TestCase):
     def test_binCollection_init(self):
         # Arrange
