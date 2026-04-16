@@ -506,23 +506,14 @@ def touch_ok(fileName):
         fileName = f"{fileName}.ok"
     open(fileName, "w").close()
 
-def check_for_duplicates(sequencesDir, fileSuffix):
+def check_for_duplicates(filesToCheck):
     '''
     Checks the sequences being used by BINge for sequence ID duplication which will
     complicate/induce bugs in downstream activities.
     
     Parameters:
-        sequencesDir -- a string indicating the folder to check files for
-                        sequence ID duplicates
-        fileSuffix -- a string indicating the suffix of the files we want to check
+        filesToCheck -- a list of strings indicating the FASTA files to look through
     '''
-    # Locate all the files for checking
-    filesToCheck = [
-        os.path.join(sequencesDir, f)
-        for f in os.listdir(sequencesDir)
-        if f.endswith(fileSuffix)
-    ]
-    
     # Check all sequences for duplicate IDs
     foundIDs = set()
     duplicatedIDs = set()
@@ -550,7 +541,7 @@ def check_for_duplicates(sequencesDir, fileSuffix):
         
         # Format the message for error reporting
         errorMsg = (f"There are {numDuplicates} sequences with duplicated IDs across or within the sequence files " + 
-                    f"being used by BINge at '{sequencesDir}'. You should adjust your input files to have unique " +
+                    f"being used by BINge. You should adjust your input files to make sure they all have unique " +
                     f"identifiers for each sequence. Duplicated sequence identifiers include: {examples}"
         )
         

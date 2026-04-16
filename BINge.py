@@ -25,8 +25,7 @@ from modules.parsing import BINge_Results
 from modules.validation import validate_args, validate_init_args, \
     validate_cluster_args, validate_view_args, validate_fasta, \
     check_for_duplicates, handle_symlink_change, touch_ok
-from modules.fasta_handling import FastaCollection, \
-    generate_sequence_length_index
+from modules.fasta_handling import FastaCollection
 from modules.setup import TargetGenome, AnnotatedGenome, Transcriptome, \
     inputs_to_json, json_to_inputs
 from _version import __version__
@@ -499,7 +498,9 @@ def imain(args, locations):
             transcriptomes.append(futureResult)
     
     # Validate that sequence duplication does not exist
-    check_for_duplicates(locations.sequencesDir, ".aa") # AA files are smaller than CDS or mRNA with identical IDs
+    check_for_duplicates(locations.get_sequenceFiles(
+        targetGenomes, annotatedGenomes,transcriptomes, "aa") # AA files are smaller than CDS or mRNA with identical IDs
+    )
     
     # Perform GMAP mapping
     auto_gmapping(targetGenomes, annotatedGenomes, transcriptomes,
