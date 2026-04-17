@@ -553,6 +553,10 @@ class GFF3Graph:
                             self.add(feature)
                         else:
                             raise DuplicateFeatureError(f"Feature ID '{featureID}' occurs more than once in file '{self.fileLocation}'")
+        
+        # Raise an error if we parsed no valid GFF3 features
+        if len(self.features) == 0:
+            raise ValueError(f"'{self.fileLocation}' does not appear to be a valid GFF3 file; is it empty or improperly formatted?")
     
     def add(self, feature):
         # Store a new feature within the graph
@@ -782,5 +786,5 @@ class GmapGFF3:
         if thisAlignment != []:
             dataDict = GmapGFF3._build_data_to_yield(thisAlignment)
         else:
-            raise Exception(f"'{self.fileLocation}' does not appear to be a valid GFF3 file!")
+            raise ValueError(f"'{self.fileLocation}' does not appear to be a valid GFF3 file; is it empty or improperly formatted?")
         yield dataDict

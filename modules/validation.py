@@ -506,6 +506,19 @@ def touch_ok(fileName):
         fileName = f"{fileName}.ok"
     open(fileName, "w").close()
 
+def format_examples(idsToFormat):
+    # Format information for error reporting
+    numIDs = len(idsToFormat)
+    examples = []
+    for seqID in idsToFormat:
+        if len(examples) == 10:
+            examples.append("...")
+            break
+        examples.append(seqID)
+    examples = ", ".join(examples)
+    
+    return numIDs, examples
+
 def check_for_duplicates(filesToCheck):
     '''
     Checks the sequences being used by BINge for sequence ID duplication which will
@@ -530,20 +543,52 @@ def check_for_duplicates(filesToCheck):
     # Report the error (if relevant)
     if len(duplicatedIDs) != 0:
         # Format information for error reporting
-        numDuplicates = len(duplicatedIDs)
-        examples = []
-        for dupeID in duplicatedIDs:
-            if len(examples) == 10:
-                examples.append("...")
-                break
-            examples.append(dupeID)
-        examples = ", ".join(examples)
+        numDuplicates, examples = format_examples(duplicatedIDs)
         
-        # Format the message for error reporting
+        # Raise the error with an informative message
         errorMsg = (f"There are {numDuplicates} sequences with duplicated IDs across or within the sequence files " + 
                     f"being used by BINge. You should adjust your input files to make sure they all have unique " +
                     f"identifiers for each sequence. Duplicated sequence identifiers include: {examples}"
         )
-        
-        # Raise the error with informative message
         raise ValueError(errorMsg)
+
+def check_for_seqid_consistency(mrna, cds, aa):
+    '''
+    Checks the sequences provided for a transcriptome (trio of mrna,cds,aa) for
+    equivalency in their sequence identifiers. This is important to prevent
+    later issues with BINge_post representative extraction.
+    
+    Note: it might be expected that mrna sequences unextracted by txome_to_orfs()
+    into a corresponding cds or aa file would lead to inconsistency issues. However,
+    since only the cds file is used during GMAP alignment and subsequent BINge clustering,
+    it is OK for a sequence to exist only in the mrna or even the aa. It is only a problem if a
+    sequence occurs in the cds that does NOT occur in the mrna and aa as well. Because
+    of this, our set checks in this function treat set membership accordingly.
+    
+    Parameters:
+        mrna, cds, aa -- strings pointing to FASTA files which should contain identical
+                         sequence identifiers
+    '''
+    # Obtain the identifiers of each file's sequences
+    trioIDs = [set(), set(), set()]
+    for i, fileToCheck in enumerate([mrna, cds, aa]):
+        with read_gz_file(fileToCheck) as fileIn:
+            for line in fileIn:
+                if line.startswith(">"):
+                    seqID = line[1:].rstrip("\r\n ")
+                    trioIDs[i].add(seqID)
+    
+    # Ensure that all CDS identifiers occur in the AA and mRNA files
+    inCdsNotAa = trioIDs[1].difference(trioIDs[2])
+    inCdsNotMrna = trioIDs[1].difference(trioIDs[0])
+    for inCdsSet, otherFile in zip([inCdsNotAa, inCdsNotMrna], [aa, mrna]):
+        if len(inCdsSet) > 1:
+            numDifferences, examples = format_examples(inCdsSet)
+            
+            # Raise the error with an informative message
+            errorMsg = (f"There are {numDifferences} sequences within '{cds}' which do not occur within '{otherFile}'. " + 
+                        "You should make sure the CDS and AA files provided through 'initialise' --ix contain the " + 
+                        "same sequences (with different molecule type) represented through their having identical " +
+                        f"sequence identifiers. Problem sequence identifiers include: {examples}"
+            )
+            raise ValueError(errorMsg)

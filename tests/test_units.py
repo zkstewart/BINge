@@ -7,7 +7,9 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.bins import BinCollection, Bin, BinBundle
-from modules.gff3 import GmapGFF3
+from modules.gff3 import GmapGFF3, GFF3Graph
+from modules.gff3tofasta import gff3_to_fasta
+from modules.fasta_handling import txome_to_orfs
 from modules.bin_handling import GmapBinProcess, CollectionSeedProcess, \
     find_overlapping_bins, add_bin_to_collection
 from modules.gmap_handling import GMAP
@@ -15,7 +17,7 @@ from modules.parsing import BINge_Results, load_sequence_length_index
 from modules.setup import TargetGenome, AnnotatedGenome, Transcriptome, \
     inputs_to_json, json_to_inputs
 from modules.locations import Locations
-from modules.validation import check_for_duplicates
+from modules.validation import check_for_duplicates, check_for_seqid_consistency
 
 # Specify data locations
 baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -161,7 +163,7 @@ def make_working_directory(locations):
     os.makedirs(locations.mappingDir, exist_ok=True)
     os.makedirs(locations.analysisDir, exist_ok=True)
 
-def obtain_input_args():
+def obtain_input_args1():
     i_gff1 = os.path.join(dataDir, "genome1.gff3")
     i_fasta1 = os.path.join(dataDir, "genome1.fasta")
     
@@ -180,6 +182,20 @@ def obtain_input_args():
     
     return i_gff1, i_fasta1, i_gff2, i_fasta2, ig_gff1, ig_fasta1, ig_gff2, ig_fasta2, ix_mrna, ix_cds, ix_aa
 
+def obtain_input_args2():
+    'Alternate input arguments which allow (e.g.) --ix args to be extracted without errors'
+    gff4 = os.path.join(dataDir, "genome4.gff3")
+    fasta4 = os.path.join(dataDir, "genome4.fasta")
+    
+    gff5 = os.path.join(dataDir, "genome5.gff3")
+    fasta5 = os.path.join(dataDir, "genome5.fasta")
+    
+    mrna6 = os.path.join(dataDir, "genome6.ttable1.mrna")
+    cds6 = os.path.join(dataDir, "genome6.ttable1.cds")
+    aa6 = os.path.join(dataDir, "genome6.ttable1.aa")
+    
+    return gff4, fasta4, gff5, fasta5, mrna6, cds6, aa6
+
 def setup_working_directory(targetHasGFF3=True, txomeIsPreExtracted=True, translationTable=1):
     '''
     Replicates the behaviour of the BINge.py's equivalently named function, but
@@ -193,7 +209,7 @@ def setup_working_directory(targetHasGFF3=True, txomeIsPreExtracted=True, transl
     
     # Establish variables
     i_gff1, i_fasta1, i_gff2, i_fasta2, ig_gff1, ig_fasta1, ig_gff2, ig_fasta2, ix_mrna, ix_cds, ix_aa = \
-        obtain_input_args()
+        obtain_input_args1()
     
     targetGenomes = [
         TargetGenome("1", locations, i_fasta1,
@@ -267,7 +283,7 @@ class TestMain(unittest.TestCase):
         locations = Locations(workDir)
         
         i_gff1, i_fasta1, _, _, _, _, _, _, _, _, _ = \
-            obtain_input_args()
+            obtain_input_args1()
         fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap")
         threads = 1
         
@@ -300,8 +316,6 @@ class TestMain(unittest.TestCase):
         self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
         self.assertTrue(os.path.isfile(clusterFile + ".ok"),
                         f"Expected '{clusterFile}' to have an .ok file")
-        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "genome1_to_genome1_gmap.gff3.ok")),
-                        f"Expected GMAP mapping for 'genome1' to 'genome1' to have a .ok file")
     
     def test_with_ipair_ig_noix(self):
         # Arrange: obtain variables
@@ -309,7 +323,7 @@ class TestMain(unittest.TestCase):
         locations = Locations(workDir)
         
         i_gff1, i_fasta1, _, _, ig_gff1, ig_fasta1, ig_gff2, ig_fasta2, _, _, _ = \
-            obtain_input_args()
+            obtain_input_args1()
         fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap")
         threads = 1
         
@@ -329,6 +343,8 @@ class TestMain(unittest.TestCase):
                         f"Expected GMAP dir for 'genome1' to have an .ok file")
         self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "genome1_to_genome1_gmap.gff3.ok")),
                         f"Expected GMAP GFF3 for 'genome1' to 'genome1' to have a .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "annotations1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'annotations1' to 'genome1' to have a .ok file")
         
         # Cluster
         cmd = [
@@ -343,16 +359,30 @@ class TestMain(unittest.TestCase):
         self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
         self.assertTrue(os.path.isfile(clusterFile + ".ok"),
                         f"Expected '{clusterFile}' to have an .ok file")
-        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "genome1_to_genome1_gmap.gff3.ok")),
-                        f"Expected GMAP mapping for 'genome1' to 'genome1' to have a .ok file")
     
     def test_with_ipair_ig_ix_extract(self):
+        '''This test can't be implemented since we end up trying to use MMseqs2 to cluster
+        two unbinned sequences (couldn't map because low complexity) which are shorter
+        than 14 bp in length which triggers a MMseqs2 error which cannot be handled
+        by BINge'''
+        pass
+    
+    def test_with_ipair_ig_ix_symlink(self):
+        '''Same scenario as test_with_ipair_ig_ix_extract()'''
+        pass
+    
+    def test_with_ipair_noig_ix_extract_1(self):
+        '''
+        This test was originally intended to check normal behaviour, but now with the empty file error
+        checking in, it can remain useful as a full system test that it gets triggered during init as
+        expected.
+        '''
         # Arrange: obtain variables
         cleanup_working_directory()
         locations = Locations(workDir)
         
-        i_gff1, i_fasta1, _, _, _, _, ig_gff2, ig_fasta2, ix_mrna, ix_cds, ix_aa = \
-            obtain_input_args()
+        i_gff1, i_fasta1, _, _, _, _, _, _, ix_mrna, _, _ = \
+            obtain_input_args1()
         fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap")
         threads = 1
         
@@ -361,8 +391,79 @@ class TestMain(unittest.TestCase):
             PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
             "-d", workDir,
             "-i", f"{i_gff1},{i_fasta1}",
-            "--ig", f"{ig_gff2},{ig_fasta2}",
-            
+            "--ix", ix_mrna, # ix_mrna can't be extracted as the ORF is too short and has no ATG start codon
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        self.assertTrue("is the file empty or does it not contain any valid open reading frames?" in stderr,
+                        f"Should have been unable to extract an ORF from '{ix_mrna}'")
+    
+    def test_with_ipair_noig_ix_extract_2(self):
+        '''
+        This test is to perform the original purpose of test_with_ipair_noig_ix_extract_1()
+        i.e., testing of --ix when it should extract a gene sequence.
+        '''        
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        
+        gff4, fasta4, gff5, fasta5, mrna6, cds6, aa6 = obtain_input_args2()
+        fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap") # note: it's still called genome1
+        threads = 1
+        
+        # Init act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
+            "-d", workDir,
+            "-i", f"{gff4},{fasta4}",
+            "--ix", mrna6,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Init assert
+        self.assertTrue(stderr == "", f"'init' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(fasta1_gmap_db + ".ok"),
+                        f"Expected GMAP dir for 'genome4' to have an .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "genome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP GFF3 for 'genome1' to 'genome1' to have a .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "transcriptome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'transcriptome1' to 'genome1' to have a .ok file")
+        
+        # Cluster act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "cluster",
+            "-d", workDir,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        clusterFile = os.path.join(locations.analysisDir, locations.runName, locations.clusterFile)
+        bingeResults = BINge_Results()
+        bingeResults.parse(clusterFile)
+        
+        # Cluster assert
+        self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(clusterFile + ".ok"),
+                        f"Expected '{clusterFile}' to have an .ok file")
+        self.assertTrue(len(bingeResults.unbinned) == 0, "All sequences should have been binned")
+        self.assertTrue(len(bingeResults.binned) == 1, "All sequences should have been binned into one cluster")
+    
+    def test_with_ipair_noig_ix_symlink(self):
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        
+        gff4, fasta4, gff5, fasta5, mrna6, cds6, aa6 = obtain_input_args2()
+        fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap") # note: it's still called genome1
+        threads = 1
+        
+        # Init act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
+            "-d", workDir,
+            "-i", f"{gff4},{fasta4}",
+            "--ix", f"{mrna6},{cds6},{aa6}",
             "--threads", str(threads)
         ]
         returncode, stdout, stderr = run_subprocess(cmd)
@@ -373,8 +474,10 @@ class TestMain(unittest.TestCase):
                         f"Expected GMAP dir for 'genome1' to have an .ok file")
         self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "genome1_to_genome1_gmap.gff3.ok")),
                         f"Expected GMAP GFF3 for 'genome1' to 'genome1' to have a .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "transcriptome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'transcriptome1' to 'genome1' to have a .ok file")
         
-        # Cluster
+        # Cluster act
         cmd = [
             PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "cluster",
             "-d", workDir,
@@ -382,16 +485,16 @@ class TestMain(unittest.TestCase):
         ]
         returncode, stdout, stderr = run_subprocess(cmd)
         
-        # Cluster assert
         clusterFile = os.path.join(locations.analysisDir, locations.runName, locations.clusterFile)
+        bingeResults = BINge_Results()
+        bingeResults.parse(clusterFile)
+        
+        # Cluster assert
         self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
         self.assertTrue(os.path.isfile(clusterFile + ".ok"),
                         f"Expected '{clusterFile}' to have an .ok file")
-        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "genome1_to_genome1_gmap.gff3.ok")),
-                        f"Expected GMAP mapping for 'genome1' to 'genome1' to have a .ok file")
-    
-    def test_with_ipair_ig_ix_symlink(self):
-        pass ## TBD
+        self.assertTrue(len(bingeResults.unbinned) == 0, "All sequences should have been binned")
+        self.assertTrue(len(bingeResults.binned) == 1, "All sequences should have been binned into one cluster")
     
     def test_with_isingle_ig_noix(self):
         pass ## TBD
@@ -591,18 +694,24 @@ class TestTranscriptome(unittest.TestCase):
         pass ## TBD
     
     def test_transcriptome_extract_1(self):
-        "This test wasn't what I initially expected; it isn't very useful, but it still is a behaviour that can be tested"
-        # Arrange
-        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory(txomeIsPreExtracted=False)
+        """
+        This test wasn't what I initially expected; it isn't very useful, but it still is a behaviour that can be tested.
+        Edit: However, it now raises an intentional error and hence this test no longer serves a purpose. No valid ORFs
+        does not produce an empty file, it now produces an error.
+        """
+        pass
         
-        # Act
-        transcriptome = transcriptomes[0]
-        transcriptome.extract_sequences(1) # isMicrobial
-        with open(transcriptome.aa, "r") as fileIn:
-            thisAA = fileIn.read()
+        # # Arrange
+        # targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory(txomeIsPreExtracted=False)
         
-        # Assert
-        self.assertEqual(thisAA, "", "Transcriptome extraction will not produce an output as no valid ORFs exist")
+        # # Act
+        # transcriptome = transcriptomes[0]
+        # transcriptome.extract_sequences(1) # isMicrobial
+        # with open(transcriptome.aa, "r") as fileIn:
+        #     thisAA = fileIn.read()
+        
+        # # Assert
+        # self.assertEqual(thisAA, "", "Transcriptome extraction will not produce an output as no valid ORFs exist")
     
     def test_transcriptome_symlinking(self):
         # Arrange
@@ -653,7 +762,10 @@ class TestSetup(unittest.TestCase):
         Ensure that inputs_to_json() and json_to_inputs() maintain argument fidelity
         '''
         # Arrange
-        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory(targetHasGFF3=False, txomeIsPreExtracted=False)
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory(
+            targetHasGFF3=False,
+            txomeIsPreExtracted=True # this was originally False, but it now triggers an (intentional) error
+        )
         isMicrobial = False
         
         targetKeys = targetGenomes[0].__dict__.keys()
@@ -741,15 +853,56 @@ class TestBinCollection(unittest.TestCase):
             self.assertNotEqual(bin.data.start, 51, f"Should not have start of 51")
 
 class TestValidation(unittest.TestCase):
-    def test_check_for_duplicates(self):
+    def test_check_for_duplicates_1(self):
+        'This check should trigger an exception as the target and annotated genomes have duplicated IDs'
         # Arrange
         targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
         
         # Act & Assert
         with self.assertRaises(ValueError):
             check_for_duplicates(locations.get_sequenceFiles(
-                targetGenomes, annotatedGenomes,transcriptomes, "aa") # AA files are smaller than CDS or mRNA with identical IDs
+                targetGenomes, annotatedGenomes,transcriptomes, "aa")
             )
+    
+    def test_check_for_duplicates_2(self):
+        'This check should NOT trigger an exception as there are no duplicated IDs'
+        # Arrange
+        file1 = os.path.join(dataDir, "genome1.ttable1.aa")
+        file2 = os.path.join(dataDir, "genome3.ttable1.aa")
+        
+        # Act & Assert
+        try:
+            check_for_duplicates([file1, file2])
+            self.assertTrue(True)
+        except:
+            self.assertTrue(False, f"Duplication issue should not exist for '{file1}' and '{file2}'")
+    
+    def test_check_for_consistency_1(self):
+        'This check should trigger an exception as the provided files have different sequence identifiers'
+        # Arrange
+        mrna = os.path.join(dataDir, "genome1.ttable1.mrna")
+        cds = os.path.join(dataDir, "genome1.ttable1.cds")
+        aa = os.path.join(dataDir, "genome3.ttable1.aa")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            check_for_seqid_consistency(mrna, cds, aa)
+    
+    def test_check_for_consistency_2(self):
+        'This check should NOT trigger an exception as the provided files all have consistent sequence identifiers'
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        
+        # Act
+        transcriptome = transcriptomes[0]
+        mrna, cds, aa = transcriptome.mrna, transcriptome.cds, transcriptome.aa
+        
+        # Act & Assert
+        try:
+            check_for_seqid_consistency(mrna, cds, aa)
+            self.assertTrue(True)
+        except:
+            self.assertTrue(False, f"Consistency issue should not exist for '{transcriptome}'")
 
 class TestBin(unittest.TestCase):
     def test_bin_add(self):
@@ -823,20 +976,102 @@ class TestBin(unittest.TestCase):
         self.assertIn("genome1.1.mrna", bin1.ids, "Should contain genome1.1.mrna")   
         self.assertIn("genome1.2.mrna", bin1.ids, "Should contain genome1.2.mrna")
 
-class TestGff3Iterate(unittest.TestCase):
+class TestGff3ToFasta(unittest.TestCase):
+    def test_ncrna_gff3_1(self):
+        'No sequences should be created, and we consequently expect an error to occur within gff3_to_fasta()'
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        
+        gff3FileIn = os.path.join(dataDir, "no_gene_features.gff3")
+        fastaFileIn = os.path.join(dataDir, "genome1.fasta")
+        
+        mrnaFileOut = os.path.join(locations.sequencesDir, "test.mrna")
+        cdsFileOut = os.path.join(locations.sequencesDir, "test.cds")
+        protFileOut = os.path.join(locations.sequencesDir, "test.aa")
+        
+        isMicrobial = False
+        translationTable = 1
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            gff3_to_fasta(gff3FileIn, fastaFileIn, mrnaFileOut, cdsFileOut,
+                          protFileOut, isMicrobial, translationTable)
+    
+    def test_ncrna_gff3_2(self):
+        'Similar to test_ncrna_gff3_1(), but with isMicrobial==True'
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        
+        gff3FileIn = os.path.join(dataDir, "no_gene_features.gff3")
+        fastaFileIn = os.path.join(dataDir, "genome1.fasta")
+        
+        mrnaFileOut = os.path.join(locations.sequencesDir, "test.mrna")
+        cdsFileOut = os.path.join(locations.sequencesDir, "test.cds")
+        protFileOut = os.path.join(locations.sequencesDir, "test.aa")
+        
+        isMicrobial = True
+        translationTable = 11
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            gff3_to_fasta(gff3FileIn, fastaFileIn, mrnaFileOut, cdsFileOut,
+                          protFileOut, isMicrobial, translationTable)
+
+class TestTxomeToOrfs(unittest.TestCase):
+    def test_txome_to_orfs_1(self):
+        'No sequences should be created, and we consequently expect an error to occur within txome_to_orfs()'
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        
+        mrnaFileIn = os.path.join(dataDir, "genome3.ttable1.mrna")
+        
+        cdsFileOut = os.path.join(locations.sequencesDir, "test.cds")
+        protFileOut = os.path.join(locations.sequencesDir, "test.aa")
+        
+        translationTable = 1
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            txome_to_orfs(mrnaFileIn, cdsFileOut, protFileOut, translationTable)
+    
+    def test_txome_to_orfs_2(self):
+        'Similar to test_txome_to_orfs_1(), but with translationTable==11'
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        
+        mrnaFileIn = os.path.join(dataDir, "genome3.ttable1.mrna")
+        
+        cdsFileOut = os.path.join(locations.sequencesDir, "test.cds")
+        protFileOut = os.path.join(locations.sequencesDir, "test.aa")
+        
+        translationTable = 11
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            txome_to_orfs(mrnaFileIn, cdsFileOut, protFileOut, translationTable)
+
+class TestGmapGFF3(unittest.TestCase):
     def test_iterate_through_empty_file(self):
+        'GmapGFF3 class should error out on an empty file'
         # Arrange
         gmapFile = os.path.join(dataDir, "empty_file")
         gmapGff3Obj = GmapGFF3(gmapFile)
         
         # Act and assert
-        try:
+        with self.assertRaises(ValueError):
             for feature in gmapGff3Obj:
                 pass
-        except:
-            self.assertTrue(True, "Should error out here")
     
     def test_iterate_through_gff3(self):
+        'GmapGFF3 should parse out the expected information from a normal GMAP file'
         # Arrange
         gmapFile = os.path.join(dataDir, "gmap_normal.gff3")
         gmapGff3Obj = GmapGFF3(gmapFile)
@@ -849,8 +1084,37 @@ class TestGff3Iterate(unittest.TestCase):
             mrnaIDs.append(feature["Name"])
         
         # Assert
-        self.assertEqual(numFeatures, 2, "Should contain 2 bins")
+        self.assertEqual(numFeatures, 2, "GMAP GFF3 should contain 2 features")
         self.assertEqual(mrnaIDs, ['genome1.1', 'genome1.2'],
+                         "Should be ['genome1.1', 'genome1.2']")
+
+class TestGFF3Graph(unittest.TestCase):
+    def test_init_with_empty_file(self):
+        'GFF3Graph class should error out during initial parsing of an empty file'
+        # Arrange
+        gff3File = os.path.join(dataDir, "empty_file")
+        
+        # Act and assert
+        with self.assertRaises(ValueError):
+            graphObj = GFF3Graph(gff3File)
+    
+    def test_iterate_through_gff3(self):
+        'GFF3Graph should parse out the expected information from a normal GFF3 file'
+        # Arrange
+        gff3File = os.path.join(dataDir, "gmap_normal.gff3")
+        graphObj = GFF3Graph(gff3File)
+        
+        # Act
+        numFeatures = 0
+        mrnaIDs = []
+        for featureID in graphObj.ftypes["mRNA"]:
+            feature = graphObj[featureID]
+            numFeatures += 1
+            mrnaIDs.append(feature.ID)
+        
+        # Assert
+        self.assertEqual(numFeatures, 2, "GMAP GFF3 should contain 2 features")
+        self.assertEqual(mrnaIDs, ['genome1.1.mrna1', 'genome1.2.mrna1'],
                          "Should be ['genome1.1', 'genome1.2']")
 
 class TestNovelPopulate(unittest.TestCase):

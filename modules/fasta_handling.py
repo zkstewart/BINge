@@ -375,13 +375,34 @@ def txome_to_orfs(mrnaFileIn, cdsFileOut, protFileOut, translationTable):
     orfFinder.translationTable = translationTable
     
     # Produce the CDS and protein sequence files
+    emptyOutput = True # no sequences found error flag
+    numSkipped = 0
+    numSeqs = 0
     with open(cdsFileOut, "w") as cdsOut, open(protFileOut, "w") as protOut:
         for mrnaID, protSeq, cdsSeq in orfFinder.process():
+            numSeqs += 1
             if protSeq == "-" or cdsSeq == "-": # '-' is a blank from ORF_Find
+                numSkipped += 1
                 continue
             
             cdsOut.write(f">{mrnaID}\n{cdsSeq}\n")
             protOut.write(f">{mrnaID}\n{protSeq}\n")
+            emptyOutput = False
+    
+    # Raise an error if no output was produced
+    if emptyOutput:
+        raise ValueError(f"No ORFs were found within '{mrnaFileIn}'; is the file empty or does it not " + 
+                         f"contain any valid open reading frames?")
+    
+    # Otherwise, produce a warning message if many sequences ended up having no ORFs found
+    if numSkipped > 0:
+        skippedPct = str(round(numSkipped / numSeqs, 2)) + "%"
+        plural = "s" if numSkipped > 1 else ""
+        print(f"# WARNING: ORF prediction from '{mrnaFileIn}' failed to predict ORFs for " + 
+              f"{numSkipped} sequence{plural} (out of a total of {numSeqs}). If the percentage " + 
+              f"of sequences which led to no ORF prediction ({skippedPct}) is excessively " + 
+              "high, you might consider extracting ORFs yourself and providing the trio of mrna,cds,aa " +
+              "as input to the 'initialise' --ix argument.")
     
     # Touch the OK files
     touch_ok(cdsFileOut)

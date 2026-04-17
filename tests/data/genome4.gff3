@@ -1,0 +1,10 @@
+## genome4.1; normal gene
+genome4	.	gene	1	1182	.	+	.	ID=genome4.1;Name=genome4.1
+genome4	.	mRNA	1	1182	.	+	.	ID=genome4.1.mrna;Parent=genome4.1;Name=genome4.1.mrna
+genome4	.	exon	1	1182	.	+	.	ID=genome4.1.exon1;Parent=genome4.1.mrna;Name=genome4.1.exon1
+genome4	.	CDS	1	1182	.	+	.	ID=genome4.1.cds1;Parent=genome4.1.mrna;Name=genome4.1.cds1
+## genome4.2; normal gene
+genome4	.	gene	1183	2364	.	+	.	ID=genome4.2;Name=genome4.2
+genome4	.	mRNA	1183	2364	.	+	.	ID=genome4.2.mrna;Parent=genome4.2;Name=genome4.2.mrna
+genome4	.	exon	1183	2364	.	+	.	ID=genome4.2.exon1;Parent=genome4.2.mrna;Name=genome4.2.exon1
+genome4	.	CDS	1183	2364	.	+	.	ID=genome4.2.cds1;Parent=genome4.2.mrna;Name=genome4.2.cds1

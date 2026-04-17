@@ -1,0 +1,6 @@
+## contig1.1; normal gene
+contig1	gmap	ncRNA	1	50	.	+	.	ID=contig1.1.ncrna1;Name=contig1.1;coverage=40.0;identity=58.5;indels=10
+contig1	gmap	exon	1	50	98	+	.	ID=contig1.1.ncrna1.exon1;Parent=contig1.1.ncrna1;Name=contig1.1
+## contig1.2; normal gene
+contig1	gmap	ncRNA	51	100	.	+	.	ID=contig1.2.ncrna1;Name=contig1.2;coverage=40.0;identity=58.5;indels=10
+contig1	gmap	exon	51	100	98	+	.	ID=contig1.2.ncrna1.exon1;Parent=contig1.2.ncrna1;Name=contig1.2

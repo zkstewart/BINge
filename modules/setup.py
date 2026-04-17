@@ -196,6 +196,11 @@ class Transcriptome:
     Note that mrnaFasta is allowed to be set as None during object initialisation, despite this
     being nonsensical. This behaviour is solely implemented to allow json_to_inputs() to
     reconstitute an object without pain.
+    
+    The self.wasExtracted attribute is specified here but not in TargetGenome or AnnotatedGenome
+    as it lets other program components determine whether the files were provided as a trio
+    to --ix (and hence need validation) or if we can trust that sequence identifiers are
+    consistent (since we made them internally within BINge, and hence we can skip the validation)
     '''
     def __init__(self, index, locations, mrnaFasta=None, cdsFasta=None, protFasta=None):
         self.prefix = f"transcriptome{index}"
@@ -206,6 +211,8 @@ class Transcriptome:
         self.mrna = mrnaFasta
         self.cds = cdsFasta
         self.aa = protFasta
+        
+        self.wasExtracted = False
     
     @property
     def mrna(self):
@@ -278,6 +285,8 @@ class Transcriptome:
         if self.cds == None or self.aa == None:
             self._cds, self._aa = orf_extractor(self.extractionDirectory, self.mrna, # bypass the property to avoid
                                                 self.prefix, translationTable) # creating a symlink
+            self.wasExtracted = True # these values should not need any validation by check_for_seqid_consistency()
+        
         # Otherwise, create new symlinks in self.extractionDirectory pointing to the underlying symlinks in self.directory
         else:
             self._cds = linker(self.extractionDirectory, self.prefix, "cds", self.cds)

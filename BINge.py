@@ -24,7 +24,7 @@ from modules.clustering import cluster_unbinned_sequences
 from modules.parsing import BINge_Results
 from modules.validation import validate_args, validate_init_args, \
     validate_cluster_args, validate_view_args, validate_fasta, \
-    check_for_duplicates, handle_symlink_change, touch_ok
+    check_for_duplicates, check_for_seqid_consistency, handle_symlink_change, touch_ok
 from modules.fasta_handling import FastaCollection
 from modules.setup import TargetGenome, AnnotatedGenome, Transcriptome, \
     inputs_to_json, json_to_inputs
@@ -501,6 +501,11 @@ def imain(args, locations):
     check_for_duplicates(locations.get_sequenceFiles(
         targetGenomes, annotatedGenomes,transcriptomes, "aa") # AA files are smaller than CDS or mRNA with identical IDs
     )
+    
+    # Check that sequence IDs for --ix trios are consistent
+    for transcriptome in transcriptomes:
+        if not transcriptome.wasExtracted:
+            check_for_seqid_consistency(transcriptome.mrna, transcriptome.cds, transcriptome.aa)
     
     # Perform GMAP mapping
     auto_gmapping(targetGenomes, annotatedGenomes, transcriptomes,
