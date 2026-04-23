@@ -365,11 +365,101 @@ class TestMain(unittest.TestCase):
         two unbinned sequences (couldn't map because low complexity) which are shorter
         than 14 bp in length which triggers a MMseqs2 error which cannot be handled
         by BINge'''
-        pass
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        
+        gff4, fasta4, gff5, fasta5, mrna6, _, _ = obtain_input_args2()
+        fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap") # note: it's still called genome1
+        threads = 1
+        
+        # Init act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
+            "-d", workDir,
+            "-i", f"{gff4},{fasta4}",
+            "--ig", f"{gff5},{fasta5}",
+            "--ix", mrna6,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Init assert
+        self.assertTrue(stderr == "", f"'init' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(fasta1_gmap_db + ".ok"),
+                        f"Expected GMAP dir for 'genome1' to have an .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "genome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP GFF3 for 'genome1' to 'genome1' to have a .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "transcriptome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'transcriptome1' to 'genome1' to have a .ok file")
+        
+        # Cluster act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "cluster",
+            "-d", workDir,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        clusterFile = os.path.join(locations.analysisDir, locations.runName, locations.clusterFile)
+        bingeResults = BINge_Results()
+        bingeResults.parse(clusterFile)
+        
+        # Cluster assert
+        self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(clusterFile + ".ok"),
+                        f"Expected '{clusterFile}' to have an .ok file")
+        self.assertTrue(len(bingeResults.unbinned) == 0, "All sequences should have been binned")
+        self.assertTrue(len(bingeResults.binned) == 1, "All sequences should have been binned into one cluster")
     
     def test_with_ipair_ig_ix_symlink(self):
         '''Same scenario as test_with_ipair_ig_ix_extract()'''
-        pass
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        
+        gff4, fasta4, gff5, fasta5, mrna6, cds6, aa6 = obtain_input_args2()
+        fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap") # note: it's still called genome1
+        threads = 1
+        
+        # Init act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
+            "-d", workDir,
+            "-i", f"{gff4},{fasta4}",
+            "--ig", f"{gff5},{fasta5}",
+            "--ix", f"{mrna6},{cds6},{aa6}",
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Init assert
+        self.assertTrue(stderr == "", f"'init' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(fasta1_gmap_db + ".ok"),
+                        f"Expected GMAP dir for 'genome1' to have an .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "genome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP GFF3 for 'genome1' to 'genome1' to have a .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "transcriptome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'transcriptome1' to 'genome1' to have a .ok file")
+        
+        # Cluster act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "cluster",
+            "-d", workDir,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        clusterFile = os.path.join(locations.analysisDir, locations.runName, locations.clusterFile)
+        bingeResults = BINge_Results()
+        bingeResults.parse(clusterFile)
+        
+        # Cluster assert
+        self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(clusterFile + ".ok"),
+                        f"Expected '{clusterFile}' to have an .ok file")
+        self.assertTrue(len(bingeResults.unbinned) == 0, "All sequences should have been binned")
+        self.assertTrue(len(bingeResults.binned) == 1, "All sequences should have been binned into one cluster")
     
     def test_with_ipair_noig_ix_extract_1(self):
         '''
@@ -497,37 +587,408 @@ class TestMain(unittest.TestCase):
         self.assertTrue(len(bingeResults.binned) == 1, "All sequences should have been binned into one cluster")
     
     def test_with_isingle_ig_noix(self):
-        pass ## TBD
-    
-    def test_with_isingle_ig_ix_extract(self):
-        pass ## TBD
-    
-    def test_with_isingle_ig_ix_symlink(self):
-        pass ## TBD
-    
-    def test_with_isingle_noig_ix(self):
-        pass ## TBD
-    
-    def test_full_1(self):
-        # Init
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        
+        _, i_fasta1, _, _, ig_gff1, ig_fasta1, ig_gff2, ig_fasta2, _, _, _ = \
+            obtain_input_args1()
+        fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap")
+        threads = 1
+        
+        # Init act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
+            "-d", workDir,
+            "-i", i_fasta1,
+            "--ig", f"{ig_gff2},{ig_fasta2}",
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Init assert
+        self.assertTrue(stderr == "", f"'init' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(fasta1_gmap_db + ".ok"),
+                        f"Expected GMAP dir for 'genome1' to have an .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "annotations1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'annotations1' to 'genome1' to have a .ok file")
         
         # Cluster
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "cluster",
+            "-d", workDir,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
         
-        # BLAST
+        # Cluster assert
+        clusterFile = os.path.join(locations.analysisDir, locations.runName, locations.clusterFile)
+        self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(clusterFile + ".ok"),
+                        f"Expected '{clusterFile}' to have an .ok file")
+    
+    def test_with_isingle_ig_ix_extract(self):
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
         
-        # Salmon
+        _, fasta4, gff5, fasta5, mrna6, _, _ = obtain_input_args2()
+        fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap") # note: it's still called genome1
+        threads = 1
         
-        # Filter
+        # Init act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
+            "-d", workDir,
+            "-i", fasta4,
+            "--ig", f"{gff5},{fasta5}",
+            "--ix", mrna6,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
         
-        # Representatives
+        # Init assert
+        self.assertTrue(stderr == "", f"'init' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(fasta1_gmap_db + ".ok"),
+                        f"Expected GMAP dir for 'genome1' to have an .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "annotations1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'annotations1' to 'genome1' to have a .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "transcriptome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'transcriptome1' to 'genome1' to have a .ok file")
         
-        # DGE
+        # Cluster act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "cluster",
+            "-d", workDir,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
         
-        # Annotate
-        pass ## TBD
-
-
-####
+        clusterFile = os.path.join(locations.analysisDir, locations.runName, locations.clusterFile)
+        bingeResults = BINge_Results()
+        bingeResults.parse(clusterFile)
+        
+        # Cluster assert
+        self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(clusterFile + ".ok"),
+                        f"Expected '{clusterFile}' to have an .ok file")
+        self.assertTrue(len(bingeResults.unbinned) == 0, "All sequences should have been binned")
+        self.assertTrue(len(bingeResults.binned) == 1, "All sequences should have been binned into one cluster")
+    
+    def test_with_isingle_ig_ix_symlink(self):
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        
+        _, fasta4, gff5, fasta5, mrna6, cds6, aa6 = obtain_input_args2()
+        fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap") # note: it's still called genome1
+        threads = 1
+        
+        # Init act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
+            "-d", workDir,
+            "-i", fasta4,
+            "--ig", f"{gff5},{fasta5}",
+            "--ix", f"{mrna6},{cds6},{aa6}",
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Init assert
+        self.assertTrue(stderr == "", f"'init' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(fasta1_gmap_db + ".ok"),
+                        f"Expected GMAP dir for 'genome1' to have an .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "annotations1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'annotations1' to 'genome1' to have a .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "transcriptome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'transcriptome1' to 'genome1' to have a .ok file")
+        
+        # Cluster act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "cluster",
+            "-d", workDir,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        clusterFile = os.path.join(locations.analysisDir, locations.runName, locations.clusterFile)
+        bingeResults = BINge_Results()
+        bingeResults.parse(clusterFile)
+        
+        # Cluster assert
+        self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(clusterFile + ".ok"),
+                        f"Expected '{clusterFile}' to have an .ok file")
+        self.assertTrue(len(bingeResults.unbinned) == 0, "All sequences should have been binned")
+        self.assertTrue(len(bingeResults.binned) == 1, "All sequences should have been binned into one cluster")
+    
+    def test_with_isingle_noig_ix_extract(self):
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        
+        _, fasta4, _, _, mrna6, _, _ = obtain_input_args2()
+        fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap") # note: it's still called genome1
+        threads = 1
+        
+        # Init act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
+            "-d", workDir,
+            "-i", fasta4,
+            "--ix", mrna6,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Init assert
+        self.assertTrue(stderr == "", f"'init' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(fasta1_gmap_db + ".ok"),
+                        f"Expected GMAP dir for 'genome1' to have an .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "transcriptome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'transcriptome1' to 'genome1' to have a .ok file")
+        
+        # Cluster act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "cluster",
+            "-d", workDir,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        clusterFile = os.path.join(locations.analysisDir, locations.runName, locations.clusterFile)
+        bingeResults = BINge_Results()
+        bingeResults.parse(clusterFile)
+        
+        # Cluster assert
+        self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(clusterFile + ".ok"),
+                        f"Expected '{clusterFile}' to have an .ok file")
+        self.assertTrue(len(bingeResults.unbinned) == 0, "All sequences should have been binned")
+        self.assertTrue(len(bingeResults.binned) == 1, "All sequences should have been binned into one cluster")
+    
+    def test_with_isingle_noig_ix_symlink(self):
+        # Arrange: obtain variables
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        
+        _, fasta4, _, _, mrna6, cds6, aa6 = obtain_input_args2()
+        fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap") # note: it's still called genome1
+        threads = 1
+        
+        # Init act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
+            "-d", workDir,
+            "-i", fasta4,
+            "--ix", f"{mrna6},{cds6},{aa6}",
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Init assert
+        self.assertTrue(stderr == "", f"'init' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(fasta1_gmap_db + ".ok"),
+                        f"Expected GMAP dir for 'genome1' to have an .ok file")
+        self.assertTrue(os.path.isfile(os.path.join(locations.mappingDir, "transcriptome1_to_genome1_gmap.gff3.ok")),
+                        f"Expected GMAP mapping for 'transcriptome1' to 'genome1' to have a .ok file")
+        
+        # Cluster act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "cluster",
+            "-d", workDir,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        clusterFile = os.path.join(locations.analysisDir, locations.runName, locations.clusterFile)
+        bingeResults = BINge_Results()
+        bingeResults.parse(clusterFile)
+        
+        # Cluster assert
+        self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(clusterFile + ".ok"),
+                        f"Expected '{clusterFile}' to have an .ok file")
+        self.assertTrue(len(bingeResults.unbinned) == 0, "All sequences should have been binned")
+        self.assertTrue(len(bingeResults.binned) == 1, "All sequences should have been binned into one cluster")
+    
+    def test_full_1(self):
+        'Full system test of all BINge and BINge_post modules'
+        # Init arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        
+        gff4, fasta4, gff5, fasta5, mrna6, cds6, aa6 = obtain_input_args2()
+        fasta1_gmap_db = os.path.join(locations.genomesDir, "genome1.gmap") # note: it's still called genome1
+        threads = 1
+        
+        # Init act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "initialise",
+            "-d", workDir,
+            "-i", f"{gff4},{fasta4}",
+            "--ix", f"{mrna6},{cds6},{aa6}",
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Init assert
+        self.assertTrue(stderr == "", f"'init' has stderr output: {stderr}")
+        
+        # Cluster act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge.py"), "cluster",
+            "-d", workDir,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Cluster assert
+        self.assertTrue(stderr == "", f"'cluster' has stderr output: {stderr}")
+        
+        # BLAST arrange
+        queryFile = os.path.join(dataDir, "example_uniref90.fasta")
+        blastFile = os.path.join(locations.blastDir, locations.blastFile)
+        
+        # BLAST act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge_post.py"), "blast",
+            "-d", workDir,
+            "-t", queryFile,
+            "-s", "protein",
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # BLAST assert
+        self.assertTrue(stderr == "", f"'blast' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(blastFile + ".ok"),
+                        f"Expected '{blastFile}' to have an .ok file")
+        
+        # Salmon arrange
+        readSuffix = "P.fastq"
+        salmonResultFile = os.path.join(locations.salmonDir, "genome4_rnaseq")
+        quantFile = os.path.join(salmonResultFile, "quant.sf")
+        
+        # Salmon act
+        ## Test reads must have at least 10 sequences or --minAssignedFrags error occurs
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge_post.py"), "salmon",
+            "-d", workDir,
+            "-r", dataDir,
+            "-s", readSuffix,
+            "--threads", str(threads)
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Salmon assert
+        self.assertTrue(stderr == "", f"'salmon' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(salmonResultFile + ".ok"),
+                        f"Expected '{salmonResultFile}' to have an .ok file")
+        
+        with open(quantFile, "r") as fileIn:
+            quantContents = fileIn.read()
+        numReads = float(quantContents.rstrip().split("\t")[-1])
+        
+        self.assertTrue(numReads == 10.0, f"quant.sf should have 10.0 reads, not {numReads}")
+        
+        # Filter arrange
+        filterFile = os.path.join(locations.filterDir, locations.runName, locations.filteredClusterFile)
+        
+        # Filter act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge_post.py"), "filter",
+            "-d", workDir,
+            "--useGFF3", "--useBLAST", "--useSalmon",
+            "--readLength", "100"
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Filter assert
+        self.assertTrue(stderr == "", f"'filter' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(filterFile + ".ok"),
+                        f"Expected '{filterFile}' to have an .ok file")
+        
+        # Representatives arrange
+        repMRNAFile = os.path.join(locations.representativesDir, locations.runName, locations.representativeMRNA)
+        repCDSFile = os.path.join(locations.representativesDir, locations.runName, locations.representativeCDS)
+        repAAFile = os.path.join(locations.representativesDir, locations.runName, locations.representativeAA)
+        
+        # Representatives act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge_post.py"), "representatives",
+            "-d", workDir,
+            "--useGFF3", "--useBLAST", "--useSalmon"
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Representatives assert
+        self.assertTrue(stderr == "", f"'representatives' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(repMRNAFile + ".ok"),
+                        f"Expected '{repMRNAFile}' to have an .ok file")
+        self.assertTrue(os.path.isfile(repCDSFile + ".ok"),
+                        f"Expected '{repCDSFile}' to have an .ok file")
+        self.assertTrue(os.path.isfile(repAAFile + ".ok"),
+                        f"Expected '{repAAFile}' to have an .ok file")
+        
+        # DGE arrange
+        rScriptFile = os.path.join(locations.dgeDir, locations.runName, locations.rScriptFile)
+        salmonQCFile = os.path.join(locations.dgeDir, locations.runName, locations.salmonQCFile)
+        sampleFile = os.path.join(locations.dgeDir, locations.runName, locations.salmonSampleFile)
+        
+        # DGE act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge_post.py"), "dge",
+            "-d", workDir
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # DGE assert
+        self.assertTrue(stderr == "", f"'dge' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(rScriptFile + ".ok"),
+                        f"Expected '{rScriptFile}' to have an .ok file")
+        self.assertTrue(os.path.isfile(salmonQCFile + ".ok"),
+                        f"Expected '{salmonQCFile}' to have an .ok file")
+        self.assertTrue(os.path.isfile(sampleFile + ".ok"),
+                        f"Expected '{sampleFile}' to have an .ok file")
+        
+        # Annotate arrange
+        idMappingFile = os.path.join(dataDir, "example_id_mapping.tab")
+        goOboFile = os.path.join(dataDir, "example_go.obo")
+        annotFile = os.path.join(locations.annotateDir, locations.runName, locations.annotationFile)
+        
+        # Annotate act
+        cmd = [
+            PYTHON_EXE, os.path.join(baseDir, "BINge_post.py"), "annotate",
+            "-d", workDir,
+            "-id", idMappingFile,
+            "-io", goOboFile
+        ]
+        returncode, stdout, stderr = run_subprocess(cmd)
+        
+        # Annotate assert
+        self.assertTrue(stderr == "", f"'annotate' has stderr output: {stderr}")
+        self.assertTrue(os.path.isfile(annotFile + ".ok"),
+                        f"Expected '{annotFile}' to have an .ok file")
+        
+        with open(annotFile, "r") as fileIn:
+            for line in fileIn:
+                if line.startswith("#"):
+                    continue
+                else:
+                    query, source, target_accession, gene_names, taxa_names, \
+                        pct_identity, evalue, bitscore, bestwidmap, \
+                        bestwgo, bestwgoplus = line.rstrip().split("\t")
+                    break
+        
+        self.assertTrue(query == "cluster-0", f"'annotate' file should start with cluster-0, not {query}")
+        self.assertTrue(target_accession.startswith("P04637"),
+                        f"'annotate' file should have a best hit to P04637, not {target_accession}")       
+        self.assertTrue(gene_names == "Cellular tumor antigen p53 [Cellular tumor antigen p53]",
+                        f"'annotate' file should return hits to 'Cellular tumor antigen p53', not {gene_names}")
+        self.assertTrue(bestwgoplus == "GO:0000001",
+                        f"'annotate' file should have a gene ontology of 'GO:0000001', not {bestwgoplus}")
 
 # Simple unit tests
 class TestLocations(unittest.TestCase):
