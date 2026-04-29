@@ -315,7 +315,11 @@ def inputs_to_json(locations, targetGenomes, annotatedGenomes, transcriptomes, i
             }, jsonOut)
 
 def json_to_inputs(locations):
-    with open(os.path.join(locations.workingDirectory, locations.inputsJson), "r") as jsonIn:
+    jsonFile = os.path.join(locations.workingDirectory, locations.inputsJson)
+    if not os.path.isfile(jsonFile):
+        raise FileNotFoundError(f"'{locations.inputsJson}' does not exist within your working directory; has the 'initialise' mode run yet?")
+    
+    with open(jsonFile, "r") as jsonIn:
         data = json.load(jsonIn)
     
     targetGenomes = []
