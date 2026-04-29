@@ -24,6 +24,8 @@ baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 dataDir = os.path.join(baseDir, "tests", "data")
 workDir = os.path.join(dataDir, "tmp")
 
+PYTHON_EXE = "python" # leave as 'python' for release, but internal test development may need to change this
+
 ###
 
 # Define main program behaviour reimplementations
