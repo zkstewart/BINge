@@ -723,7 +723,8 @@ def vmain(args, locations):
         print(f"# Number of unbinned clusters: {len(bingeResults.unbinned)}")
         print(f"# Number of sequences in unbinned clusters: {seqsUnbinned}")
     else:
-        print("No clustering result available")
+        print("No raw clustering result available")
+    print()
     
     print("# Filtered clustering output:")
     filterRunName = os.path.basename(args.runDir)
@@ -742,7 +743,7 @@ def vmain(args, locations):
         print(f"# Number of unbinned clusters: {len(bingeResults.unbinned)}")
         print(f"# Number of sequences in unbinned clusters: {seqsUnbinned}")
     else:
-        print("No clustering result available")
+        print("No filtered clustering result available")
     
     print("Viewing complete!")
 
