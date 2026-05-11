@@ -707,7 +707,8 @@ def vmain(args, locations):
     print()
     
     # Parse the clustering results (if available)
-    print("# Clustering result:")
+    print("## Clustering results:")
+    print("# Raw clustering output:")
     clusterFile = os.path.join(args.runDir, locations.clusterFile)
     if os.path.exists(clusterFile):
         bingeResults = BINge_Results()
@@ -716,6 +717,26 @@ def vmain(args, locations):
         seqsBinned = sum([len(seqIDs) for seqIDs in bingeResults.binned.values()])
         seqsUnbinned = sum([len(seqIDs) for seqIDs in bingeResults.unbinned.values()])
         
+        print(f"# Raw cluster file: {clusterFile}")
+        print(f"# Number of binned clusters: {len(bingeResults.binned)}")
+        print(f"# Number of sequences in binned clusters: {seqsBinned}")
+        print(f"# Number of unbinned clusters: {len(bingeResults.unbinned)}")
+        print(f"# Number of sequences in unbinned clusters: {seqsUnbinned}")
+    else:
+        print("No clustering result available")
+    
+    print("# Filtered clustering output:")
+    filterRunName = os.path.basename(args.runDir)
+    filterRunDir = os.path.join(locations.filterDir, filterRunName)
+    filterClusterFile = os.path.join(filterRunDir, locations.filteredClusterFile)
+    if os.path.exists(filterClusterFile):
+        bingeResults = BINge_Results()
+        bingeResults.parse(filterClusterFile)
+        
+        seqsBinned = sum([len(seqIDs) for seqIDs in bingeResults.binned.values()])
+        seqsUnbinned = sum([len(seqIDs) for seqIDs in bingeResults.unbinned.values()])
+        
+        print(f"# Filtered cluster file: {filterClusterFile}")
         print(f"# Number of binned clusters: {len(bingeResults.binned)}")
         print(f"# Number of sequences in binned clusters: {seqsBinned}")
         print(f"# Number of unbinned clusters: {len(bingeResults.unbinned)}")
