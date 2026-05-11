@@ -19,7 +19,7 @@ def get_codec(fileName):
             f.close()
             return "utf-16"
         except UnicodeDecodeError:
-            print(f"Can't tell what codec '{fileName}' is!!")
+            raise ValueError(f"'{fileName}' cannot be read as it is neither utf-8 nor utf-16 codec")
 
 @contextmanager
 def read_gz_file(filename):

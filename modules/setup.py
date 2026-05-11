@@ -1,15 +1,21 @@
 import os, sys, json
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from validation import validate_fasta, handle_symlink_change, touch_ok
+from validation import validate_fasta, validate_gff3, handle_symlink_change, touch_ok
 from fasta_handling import generate_sequence_length_index, txome_to_orfs
 from gmap_handling import build_index
 from gff3tofasta import gff3_to_fasta
+
+class DirectoryNotFoundError(Exception):
+    pass
 
 def linker(directory, prefix, suffix, file):
     symlink = os.path.join(directory, f"{prefix}.{suffix}" + (".gz" if file.endswith(".gz") else ""))
     if os.path.exists(symlink):
         handle_symlink_change(symlink, file)
+    elif not os.path.isdir(directory):
+        raise DirectoryNotFoundError(f"Cannot create symlink '{symlink}' as its parent location ({directory}) " + 
+                                     "is not a directory or does not exist!")
     else:
         os.symlink(file, symlink)
     return symlink
@@ -100,6 +106,10 @@ class TargetGenome:
             if isFASTA:
                 raise ValueError(f"-i value '{value}' is not a GFF3 file; make sure you order " +
                                  "input as gff3,fasta")
+            isGFF3, failureReason = validate_gff3(value)
+            if not isGFF3:
+                raise ValueError(f"-i value '{value}' is not a valid GFF3 file; expected cause of " +
+                                 f"format failure: {failureReason}")
             
             symlink = linker(self.directory, self.prefix, "gff3", os.path.abspath(value))
             self._gff3 = symlink
@@ -169,6 +179,10 @@ class AnnotatedGenome:
             if isFASTA:
                 raise ValueError(f"--ig value '{value}' is not a GFF3 file; make sure you order " +
                                  "input as gff3,fasta")
+            isGFF3, failureReason = validate_gff3(value)
+            if not isGFF3:
+                raise ValueError(f"-i value '{value}' is not a valid GFF3 file; expected cause of " +
+                                 f"format failure: {failureReason}")
             
             symlink = linker(self.directory, self.prefix, "gff3", os.path.abspath(value))
             self._gff3 = symlink
@@ -225,7 +239,7 @@ class Transcriptome:
         else:
             isFASTA = validate_fasta(value)
             if not isFASTA:
-                raise ValueError(f"--ix value '{value}' is not a FASTA file")
+                raise ValueError(f"--ix mRNA value '{value}' is not a FASTA file")
             
             # Infer where symlink should go
             if os.path.dirname(os.path.abspath(value)) == self.directory: # file is already within the BINge working dir
@@ -247,7 +261,7 @@ class Transcriptome:
         else:
             isFASTA = validate_fasta(value)
             if not isFASTA:
-                raise ValueError(f"--ix value '{value}' is not a FASTA file")
+                raise ValueError(f"--ix CDS value '{value}' is not a FASTA file")
             
             # Infer where symlink should go
             if os.path.dirname(os.path.abspath(value)) == self.directory: # file is already within the BINge working dir
@@ -269,7 +283,7 @@ class Transcriptome:
         else:
             isFASTA = validate_fasta(value)
             if not isFASTA:
-                raise ValueError(f"--ix value '{value}' is not a FASTA file")
+                raise ValueError(f"--ix AA value '{value}' is not a FASTA file")
             
             # Infer where symlink should go
             if os.path.dirname(os.path.abspath(value)) == self.directory: # file is already within the BINge working dir

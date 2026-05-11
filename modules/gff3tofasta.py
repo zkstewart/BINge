@@ -44,6 +44,12 @@ def gff3_to_fasta(gff3FileIn, fastaFileIn, mrnaFileOut, cdsFileOut, protFileOut,
             for featureID in gff3.ftypes[featureType]:
                 feature = gff3[featureID]
                 
+                # Detect incompatible FASTA and GFF3 files
+                if not feature.contig in fasta:
+                    raise KeyError(f"'{feature.ID}' feature in '{gff3FileIn}' is annotated on contig '{feature.contig}', " +
+                                   f"but that contig does not occur in the '{fastaFileIn}' FASTA file, suggesting that " +
+                                   "your GFF3 and FASTA files are mismatched")
+                
                 # Avoid trans-splicing
                 if feature.strand == "?":
                     if not warnedOnce1:

@@ -17,7 +17,8 @@ from modules.parsing import BINge_Results, load_sequence_length_index
 from modules.setup import TargetGenome, AnnotatedGenome, Transcriptome, \
     inputs_to_json, json_to_inputs
 from modules.locations import Locations
-from modules.validation import check_for_duplicates, check_for_seqid_consistency
+from modules.validation import validate_fasta, validate_gff3, \
+    check_for_duplicates, check_for_seqid_consistency
 
 # Specify data locations
 baseDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1049,16 +1050,90 @@ class TestLocations(unittest.TestCase):
 
 class TestTargetGenome(unittest.TestCase):
     def test_targetGenome_empty_gff3(self):
-        pass ## TBD
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        emptyFile = os.path.join(dataDir, "empty_file")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            targetGenome = TargetGenome(1, locations, fastaFile, gff3=emptyFile)
     
-    def test_targetGenome_invalid_gff3(self):
-        pass ## TBD
+    def test_targetGenome_invalid_gff3_1(self):
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        invalidFile = os.path.join(dataDir, "example_id_mapping.tab")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            targetGenome = TargetGenome(1, locations, fastaFile, gff3=invalidFile)
+    
+    def test_targetGenome_invalid_gff3_2(self):
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        invalidFile = os.path.join(dataDir, "genome4.fasta")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            targetGenome = TargetGenome(1, locations, fastaFile, gff3=invalidFile)
+    
+    def test_targetGenome_invalid_gff3_3(self):
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        invalidFile = os.path.join(dataDir, "length_index.pkl")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            targetGenome = TargetGenome(1, locations, fastaFile, gff3=invalidFile)
     
     def test_targetGenome_empty_fasta(self):
-        pass ## TBD
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        emptyFile = os.path.join(dataDir, "empty_file")
+        gff3File = os.path.join(dataDir, "genome4.gff3")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            targetGenome = TargetGenome(1, locations, emptyFile, gff3=gff3File)
     
     def test_targetGenome_invalid_fasta(self):
-        pass ## TBD
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        invalidFile = os.path.join(dataDir, "example_id_mapping.tab")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            targetGenome = TargetGenome(1, locations, invalidFile, gff3=None)
+    
+    def test_targetGenome_mismatched_genome(self):
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        gff3File = os.path.join(dataDir, "genome5.gff3")
+        
+        # Act
+        targetGenome = TargetGenome(1, locations, fastaFile, gff3=gff3File)
+        
+        # Assert
+        with self.assertRaises(KeyError):
+            targetGenome.extract_sequences(False, 1) # isMicrobial, translationTable
     
     def test_targetGenome_extract_1(self):
         # Arrange
@@ -1105,16 +1180,91 @@ class TestTargetGenome(unittest.TestCase):
 
 class TestAnnotatedGenome(unittest.TestCase):
     def test_annotatedGenome_empty_gff3(self):
-        pass ## TBD
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        emptyFile = os.path.join(dataDir, "empty_file")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            annotatedGenome = AnnotatedGenome(1, locations, fastaFile, emptyFile)
     
-    def test_annotatedGenome_invalid_gff3(self):
-        pass ## TBD
+    def test_annotatedGenome_invalid_gff3_1(self):
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        invalidFile = os.path.join(dataDir, "example_id_mapping.tab")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            annotatedGenome = AnnotatedGenome(1, locations, fastaFile, invalidFile)
+    
+    def test_annotatedGenome_invalid_gff3_2(self):
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        invalidFile = os.path.join(dataDir, "genome4.fasta")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            annotatedGenome = AnnotatedGenome(1, locations, fastaFile, invalidFile)
+    
+    def test_annotatedGenome_invalid_gff3_3(self):
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        invalidFile = os.path.join(dataDir, "length_index.pkl")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            annotatedGenome = AnnotatedGenome(1, locations, fastaFile, invalidFile)
     
     def test_annotatedGenome_empty_fasta(self):
-        pass ## TBD
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        emptyFile = os.path.join(dataDir, "empty_file")
+        gff3File = os.path.join(dataDir, "genome4.gff3")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            annotatedGenome = AnnotatedGenome(1, locations, emptyFile, gff3File)
     
     def test_annotatedGenome_invalid_fasta(self):
-        pass ## TBD
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        invalidFile = os.path.join(dataDir, "example_id_mapping.tab")
+        gff3File = os.path.join(dataDir, "genome4.gff3")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            annotatedGenome = AnnotatedGenome(1, locations, invalidFile, gff3File)
+    
+    def test_targetGenome_mismatched_genome(self):
+        # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        gff3File = os.path.join(dataDir, "genome5.gff3")
+        
+        # Act
+        annotatedGenome = AnnotatedGenome(1, locations, fastaFile, gff3File)
+        
+        # Assert
+        with self.assertRaises(KeyError):
+            annotatedGenome.extract_sequences(False, 1) # isMicrobial, translationTable
     
     def test_annotatedGenome_extract_1(self):
         # Arrange
@@ -1147,14 +1297,47 @@ class TestAnnotatedGenome(unittest.TestCase):
         self.assertEqual(thisAA, previousAA, "AnnotatedGenome extraction and genome1.ttable5.aa should be equivalent (translation table == 5)")
 
 class TestTranscriptome(unittest.TestCase):
-    def test_transcriptome_empty_mrna(self):
-        pass ## TBD
+    def test_transcriptome_empty_files(self):
+         # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        emptyFile = os.path.join(dataDir, "empty_file")
+        mrnaFile = os.path.join(dataDir, "genome3.ttable1.mrna")
+        cdsFile = os.path.join(dataDir, "genome3.ttable1.cds")
+        protFile = os.path.join(dataDir, "genome3.ttable1.aa")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            transcriptome = Transcriptome(1, locations, mrnaFasta=emptyFile,
+                                          cdsFasta=cdsFile, protFasta=protFile)
+        with self.assertRaises(ValueError):
+            transcriptome = Transcriptome(1, locations, mrnaFasta=mrnaFile,
+                                          cdsFasta=emptyFile, protFasta=protFile)
+        with self.assertRaises(ValueError):
+            transcriptome = Transcriptome(1, locations, mrnaFasta=mrnaFile,
+                                          cdsFasta=cdsFile, protFasta=emptyFile)
     
-    def test_transcriptome_empty_cds(self):
-        pass ## TBD
-    
-    def test_transcriptome_empty_aa(self):
-        pass ## TBD
+    def test_transcriptome_invalid_files(self):
+         # Arrange
+        cleanup_working_directory()
+        locations = Locations(workDir)
+        make_working_directory(locations)
+        invalidFile = os.path.join(dataDir, "genome4.gff3")
+        mrnaFile = os.path.join(dataDir, "genome3.ttable1.mrna")
+        cdsFile = os.path.join(dataDir, "genome3.ttable1.cds")
+        protFile = os.path.join(dataDir, "genome3.ttable1.aa")
+        
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            transcriptome = Transcriptome(1, locations, mrnaFasta=invalidFile,
+                                          cdsFasta=cdsFile, protFasta=protFile)
+        with self.assertRaises(ValueError):
+            transcriptome = Transcriptome(1, locations, mrnaFasta=mrnaFile,
+                                          cdsFasta=invalidFile, protFasta=protFile)
+        with self.assertRaises(ValueError):
+            transcriptome = Transcriptome(1, locations, mrnaFasta=mrnaFile,
+                                          cdsFasta=cdsFile, protFasta=invalidFile)
     
     def test_transcriptome_extract_1(self):
         """
@@ -1366,7 +1549,55 @@ class TestValidation(unittest.TestCase):
             self.assertTrue(True)
         except:
             self.assertTrue(False, f"Consistency issue should not exist for '{transcriptome}'")
-
+    
+    def test_fasta_empty(self):
+        'An empty fasta should be detected as having an invalid FASTA format'
+        # Arrange
+        emptyFile = os.path.join(dataDir, "empty_file")
+        
+        # Act
+        isFasta = validate_fasta(emptyFile)
+        
+        # Assert
+        self.assertFalse(isFasta, "Empty file should not be considered a valid FASTA format")
+    
+    def test_fasta_gff3(self):
+        'An GFF3 should be detected as having an invalid FASTA format'
+        # Arrange
+        gff3File = os.path.join(dataDir, "genome4.gff3")
+        
+        # Act
+        isFasta = validate_fasta(gff3File)
+        
+        # Assert
+        self.assertFalse(isFasta, "GFF3 file should not be considered a valid FASTA format")
+    
+    def test_gff3_empty(self):
+        'An empty GFF3 should be detected as having an invalid format'
+        # Arrange
+        emptyFile = os.path.join(dataDir, "empty_file")
+        expectedReason = "file may be empty"
+        
+        # Act
+        isGFF3, reason = validate_gff3(emptyFile)
+        
+        # Assert
+        self.assertFalse(isGFF3, "Empty file should not be considered a valid GFF3 format")
+        self.assertEqual(reason, expectedReason, f"Format validation failure reason should be '{expectedReason}' not '{reason}'")
+    
+    def test_gff3_fasta(self):
+        'An fasta should be detected as having an invalid GFF3 format'
+        # Arrange
+        fastaFile = os.path.join(dataDir, "genome4.fasta")
+        expectedReason = "is a FASTA file"
+        
+        # Act
+        isGFF3, reason = validate_gff3(fastaFile)
+        
+        # Assert
+        self.assertFalse(isGFF3, "Fasta file should not be considered a valid GFF3 format")
+        self.assertEqual(reason, expectedReason, f"Format validation failure reason should be '{expectedReason}' not '{reason}'")
+        
 class TestBin(unittest.TestCase):
     def test_bin_add(self):
         # Arrange

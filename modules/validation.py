@@ -458,7 +458,7 @@ def validate_cluster_file(clusterFile):
             errorMsg = (f"The input file '{clusterFile}' does not appear to be a BINge or " + 
                         "CD-HIT cluster file.\nYou should check your inputs and try again.")
             raise ValueError(errorMsg)
-
+    
     return isBinge
 
 def validate_fasta(fastaFile):
@@ -477,6 +477,48 @@ def validate_fasta(fastaFile):
         if not firstLine.startswith(">"):
             return False
         return True
+
+def validate_gff3(gff3File):
+    '''
+    Simple validator which just checks that at least one line exists in a GFF3 file
+    which loosely fits the format expectations. Specifically, that means the line
+    must be tab-delimited and be composed of 9 columns with some general data type
+    expectations. Comments ("#") are skipped over in search of the first non-comment
+    line.
+    
+    Parameters:
+        gff3File -- a string indicating the location of a file to check.
+    Returns:
+        isGFF3 -- a boolean where True means it is (probably) a GFF3, and False otherwise.
+        errorMsg -- a string with the reason for why the format was detected as invalid, OR
+                    None if isGFF3 == True
+    '''
+    with read_gz_file(gff3File) as fileIn:
+        for line in fileIn:
+            if not line.startswith("#"):
+                if line.startswith(">"):
+                    return False, "is a FASTA file"
+                
+                if not "\t" in line:
+                    return False, "is not tab-delimited"
+                
+                sl = line.rstrip().split("\t")
+                if not len(sl) == 9:
+                    return False, f"is {len(sl)} columns, should be 9 columns"
+                
+                start, end = sl[3:5]
+                try:
+                    start = int(start)
+                    end = int(end)
+                except:
+                    return False, f"column 4 ({start}) and 5 ({end}) should both be integers"
+                
+                attributes = sl[8]
+                if not "=" in attributes:
+                    return False, f"column 9 ({attributes}) should have 'KEY=VALUE;' layout"
+                
+                return True, None
+    return False, "file may be empty"
 
 def handle_symlink_change(existingLink, newLinkLocation):
     '''
