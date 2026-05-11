@@ -1,0 +1,57 @@
+## genome2.1; normal gene
+genome2	.	gene	1	50	.	+	.	ID=genome2.1;Name=genome2.1
+genome2	.	mRNA	1	50	.	+	.	ID=genome2.1.mrna;Parent=genome2.1;Name=genome2.1.mrna
+genome2	.	exon	1	50	.	+	.	ID=genome2.1.exon1;Parent=genome2.1.mrna;Name=genome2.1.exon1
+genome2	.	CDS	1	50	.	+	.	ID=genome2.1.cds1;Parent=genome2.1.mrna;Name=genome2.1.cds1
+## genome2.2; normal gene
+genome2	.	gene	51	100	.	+	.	ID=genome2.2;Name=genome2.2
+genome2	.	mRNA	51	100	.	+	.	ID=genome2.2.mrna;Parent=genome2.2;Name=genome2.2.mrna
+genome2	.	exon	51	100	.	+	.	ID=genome2.2.exon1;Parent=genome2.2.mrna;Name=genome2.2.exon1
+genome2	.	CDS	51	100	.	+	.	ID=genome2.2.cds1;Parent=genome2.2.mrna;Name=genome2.2.cds1
+## genome2.3; adjacent genes
+genome2	.	gene	110	150	.	+	.	ID=genome2.3;Name=genome2.3
+genome2	.	mRNA	110	150	.	+	.	ID=genome2.3.mrna;Parent=genome2.3;Name=genome2.3.mrna
+genome2	.	exon	110	150	.	+	.	ID=genome2.3.exon1;Parent=genome2.3.mrna;Name=genome2.3.exon1
+genome2	.	CDS	110	150	.	+	.	ID=genome2.3.cds1;Parent=genome2.3.mrna;Name=genome2.3.cds1
+## genome2.4; adjacent genes
+genome2	.	gene	151	200	.	-	.	ID=genome2.4;Name=genome2.4
+genome2	.	mRNA	151	200	.	-	.	ID=genome2.4.mrna;Parent=genome2.4;Name=genome2.4.mrna
+genome2	.	exon	151	200	.	-	.	ID=genome2.4.exon1;Parent=genome2.4.mrna;Name=genome2.4.exon1
+genome2	.	CDS	151	200	.	-	.	ID=genome2.4.cds1;Parent=genome2.4.mrna;Name=genome2.4.cds1
+## genome2.5; nested genes 1
+genome2	.	gene	210	300	.	+	.	ID=genome2.5;Name=genome2.5
+genome2	.	mRNA	210	300	.	+	.	ID=genome2.5.mrna;Parent=genome2.5;Name=genome2.5.mrna
+genome2	.	exon	210	240	.	+	.	ID=genome2.5.exon1;Parent=genome2.5.mrna;Name=genome2.5.exon1
+genome2	.	exon	280	300	.	+	.	ID=genome2.5.exon2;Parent=genome2.5.mrna;Name=genome2.5.exon2
+genome2	.	CDS	210	240	.	+	.	ID=genome2.5.cds1;Parent=genome2.5.mrna;Name=genome2.5.cds1
+genome2	.	CDS	280	300	.	+	.	ID=genome2.5.cds2;Parent=genome2.5.mrna;Name=genome2.5.cds2
+## genome2.6.1; nested genes 1.1
+genome2	.	gene	241	279	.	+	.	ID=genome2.6.1;Name=genome2.6.1
+genome2	.	mRNA	241	279	.	+	.	ID=genome2.6.1.mrna;Parent=genome2.6.1;Name=genome2.6.1.mrna
+genome2	.	exon	241	279	.	+	.	ID=genome2.6.1.exon1;Parent=genome2.6.1.mrna;Name=genome2.6.1.exon1
+genome2	.	CDS	241	279	.	+	.	ID=genome2.6.1.cds1;Parent=genome2.6.1.mrna;Name=genome2.6.1.cds1
+## genome2.6.2; nested genes 1.2
+genome2	.	gene	241	279	.	-	.	ID=genome2.6.2;Name=genome2.6.2
+genome2	.	mRNA	241	279	.	-	.	ID=genome2.6.2.mrna;Parent=genome2.6.2;Name=genome2.6.2.mrna
+genome2	.	exon	241	279	.	-	.	ID=genome2.6.2.exon1;Parent=genome2.6.2.mrna;Name=genome2.6.2.exon1
+genome2	.	CDS	241	279	.	-	.	ID=genome2.6.2.cds1;Parent=genome2.6.2.mrna;Name=genome2.6.2.cds1
+## genome2.7; overlapping genes 1
+genome2	.	gene	310	351	.	+	.	ID=genome2.7;Name=genome2.7
+genome2	.	mRNA	310	351	.	+	.	ID=genome2.7.mrna;Parent=genome2.7;Name=genome2.7.mrna
+genome2	.	exon	310	351	.	+	.	ID=genome2.7.exon1;Parent=genome2.7.mrna;Name=genome2.7.exon1
+genome2	.	CDS	310	351	.	+	.	ID=genome2.7.cds1;Parent=genome2.7.mrna;Name=genome2.7.cds1
+## genome2.8; overlapping genes 1
+genome2	.	gene	350	400	.	+	.	ID=genome2.8;Name=genome2.8
+genome2	.	mRNA	350	400	.	+	.	ID=genome2.8.mrna;Parent=genome2.8;Name=genome2.8.mrna
+genome2	.	exon	350	400	.	+	.	ID=genome2.8.exon1;Parent=genome2.8.mrna;Name=genome2.8.exon1
+genome2	.	CDS	350	400	.	+	.	ID=genome2.8.cds1;Parent=genome2.8.mrna;Name=genome2.8.cds1
+## genome2.9; overlapping genes 2
+genome2	.	gene	310	351	.	-	.	ID=genome2.9;Name=genome2.9
+genome2	.	mRNA	310	351	.	-	.	ID=genome2.9.mrna;Parent=genome2.9;Name=genome2.9.mrna
+genome2	.	exon	310	351	.	-	.	ID=genome2.9.exon1;Parent=genome2.9.mrna;Name=genome2.9.exon1
+genome2	.	CDS	310	351	.	-	.	ID=genome2.9.cds1;Parent=genome2.9.mrna;Name=genome2.9.cds1
+## genome2.10; overlapping genes 2
+genome2	.	gene	350	400	.	-	.	ID=genome2.10;Name=genome2.10
+genome2	.	mRNA	350	400	.	-	.	ID=genome2.10.mrna;Parent=genome2.10;Name=genome2.10.mrna
+genome2	.	exon	350	400	.	-	.	ID=genome2.10.exon1;Parent=genome2.10.mrna;Name=genome2.10.exon1
+genome2	.	CDS	350	400	.	-	.	ID=genome2.10.cds1;Parent=genome2.10.mrna;Name=genome2.10.cds1

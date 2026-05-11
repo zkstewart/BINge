@@ -54,7 +54,7 @@ def get_counts_cutoff_by_percentiles(bingeResults, quantCollection):
     
     # If we have binnedCounts, derive a good cutoff from that
     percentiles = [20, 30, 40, 50, 60, 70, 80, 90, 99]
-    if binnedCounts != []:
+    if len(binnedCounts) != 0 and len(unbinnedCounts) != 0:
         # Find out where we first start seeing actual read alignments for binned dict
         for percentile in percentiles:
             binnedPercentileMean = np.percentile(binnedCounts, percentile)
@@ -71,8 +71,8 @@ def get_counts_cutoff_by_percentiles(bingeResults, quantCollection):
         "If not even the 99th percentile meets the cutoff, we just take it anyway"
         return unbinnedPercentileMean
     
-    # If we do not have binnedCounts, just derive a cutoff de novo
-    else:
+    # If we do not have binnedCounts but we DO have unbinnedCounts, derive a cutoff de novo
+    elif len(unbinnedCounts) != 0:
         "This won't work as well, but is only a problem CD-HIT faces"
         for percentile in percentiles:
             unbinnedPercentileMean = np.percentile(unbinnedCounts, percentile)
@@ -82,6 +82,11 @@ def get_counts_cutoff_by_percentiles(bingeResults, quantCollection):
         # This becomes our countCutoff value (if it is >= 1)
         "If it doesn't even == 1, we just set 1 so this filter will NEVER save a cluster"
         return unbinnedPercentileMean if unbinnedPercentileMean >= 1 else 1
+    
+    # If we have no counts whatsoever, return an impossible value to deactivate salmon filtering
+    else:
+        "A value of 1 here means that a later '> 1' check for the variable 'countCutoff' will fail"
+        return 1
 
 def determine_if_1x_filter(transcriptCounts, seqIDs, transcriptRecords, readLength, sequenceType="nucleotide"):
     '''
@@ -619,7 +624,7 @@ def bmain(args, locations):
                               "then try again.")
     
     # Load the argument objects to identify our input files
-    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    targetGenomes, annotatedGenomes, transcriptomes, _ = json_to_inputs(locations) # do not need isMicrobial bool
     sequenceSuffix = "cds" if args.sequenceType == "nucleotide" else "aa"
     args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, sequenceSuffix)
     
@@ -656,7 +661,7 @@ def smain(args, locations):
                                                                 args.singleEnd)
     
     # Load the argument objects to identify our input files
-    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    targetGenomes, annotatedGenomes, transcriptomes, _ = json_to_inputs(locations) # do not need isMicrobial bool
     args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds") # map to CDS
     
     # Concatenate all FASTA files into a single file
@@ -708,7 +713,7 @@ def fmain(args, locations):
     os.symlink(filterRunDir, mostRecentDir)
     
     # Load the argument objects to identify our input files
-    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    targetGenomes, annotatedGenomes, transcriptomes, _ = json_to_inputs(locations) # do not need isMicrobial bool
     args.sequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds") # CDS for seq lengths
     
     # Validate GFF3 file availability for --useGFF3 (if applicable)
@@ -855,7 +860,7 @@ def fmain(args, locations):
     # Print some statistics for the user
     print("# BINge_post.py 'filter' statistics:")
     if args.useSalmon:
-        print(f"> A salmon quant value >= {countCutoff} resulted in cluster retention")
+        print(f"> A salmon quant value >= {countCutoff} results in cluster retention")
     print(f"> Removed {len(toDropBinned)} binned clusters")
     print(f"> Removed {len(toDropUnbinned)} unbinned clusters")
     print(f"> Result contains {len(bingeResults)} clusters")
@@ -876,7 +881,7 @@ def rmain(args, locations):
     os.symlink(reprRunDir, mostRecentDir)
     
     # Load the argument objects to identify our input files
-    targetGenomes, annotatedGenomes, transcriptomes = json_to_inputs(locations)
+    targetGenomes, annotatedGenomes, transcriptomes, _ = json_to_inputs(locations) # do not need isMicrobial bool
     args.mrnaSequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "mrna")
     args.cdsSequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "cds")
     args.aaSequenceFiles = locations.get_sequenceFiles(targetGenomes, annotatedGenomes, transcriptomes, "aa")

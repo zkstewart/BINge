@@ -153,3 +153,4 @@ cython_debug/
 
 # BINge testing files
 TestBINge_Results.test_write.tsv
+tests/data/tmp

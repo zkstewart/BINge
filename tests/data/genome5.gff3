@@ -1,0 +1,10 @@
+## genome5.1; normal gene
+genome5	.	gene	1	1182	.	+	.	ID=genome5.1;Name=genome5.1
+genome5	.	mRNA	1	1182	.	+	.	ID=genome5.1.mrna;Parent=genome5.1;Name=genome5.1.mrna
+genome5	.	exon	1	1182	.	+	.	ID=genome5.1.exon1;Parent=genome5.1.mrna;Name=genome5.1.exon1
+genome5	.	CDS	1	1182	.	+	.	ID=genome5.1.cds1;Parent=genome5.1.mrna;Name=genome5.1.cds1
+## genome5.2; normal gene
+genome5	.	gene	1183	2364	.	+	.	ID=genome5.2;Name=genome5.2
+genome5	.	mRNA	1183	2364	.	+	.	ID=genome5.2.mrna;Parent=genome5.2;Name=genome5.2.mrna
+genome5	.	exon	1183	2364	.	+	.	ID=genome5.2.exon1;Parent=genome5.2.mrna;Name=genome5.2.exon1
+genome5	.	CDS	1183	2364	.	+	.	ID=genome5.2.cds1;Parent=genome5.2.mrna;Name=genome5.2.cds1

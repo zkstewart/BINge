@@ -32,6 +32,7 @@ def gff3_to_fasta(gff3FileIn, fastaFileIn, mrnaFileOut, cdsFileOut, protFileOut,
         subfeature = ["mRNA", "transcript"]
     
     # Generate sequences
+    emptyOutput = True # no sequences found error flag
     warnedOnce1 = False # trans-splicing warning
     warnedOnce2 = False # empty CDS warning
     warnedOnce3 = False # internal stop codon warning
@@ -42,6 +43,12 @@ def gff3_to_fasta(gff3FileIn, fastaFileIn, mrnaFileOut, cdsFileOut, protFileOut,
             
             for featureID in gff3.ftypes[featureType]:
                 feature = gff3[featureID]
+                
+                # Detect incompatible FASTA and GFF3 files
+                if not feature.contig in fasta:
+                    raise KeyError(f"'{feature.ID}' feature in '{gff3FileIn}' is annotated on contig '{feature.contig}', " +
+                                   f"but that contig does not occur in the '{fastaFileIn}' FASTA file, suggesting that " +
+                                   "your GFF3 and FASTA files are mismatched")
                 
                 # Avoid trans-splicing
                 if feature.strand == "?":
@@ -63,6 +70,13 @@ def gff3_to_fasta(gff3FileIn, fastaFileIn, mrnaFileOut, cdsFileOut, protFileOut,
                 cdsSequence = feature.as_gene_model(fasta, "CDS")
                 proteinSequence = cdsSequence.translate(translationTable)
                 
+                # Raise a warning if an internal stop codon was found
+                if not warnedOnce3: # prevent str search if the warning has already occurred, for efficiency
+                    if "*" in proteinSequence[:-1]: # this will likely have a performance impact but it's important to check
+                        print(f"WARNING: '{featureID}' in '{gff3FileIn}' contains an internal stop codon; further " + 
+                              "warnings will be suppressed")
+                        warnedOnce3 = True
+                
                 # Obtain the exon/mRNA depending on whether this is a microbial annotation
                 if isMicrobial:
                     exonSequence = cdsSequence
@@ -73,6 +87,14 @@ def gff3_to_fasta(gff3FileIn, fastaFileIn, mrnaFileOut, cdsFileOut, protFileOut,
                 mrnaOut.write(exonSequence.format())
                 cdsOut.write(cdsSequence.format())
                 protOut.write(proteinSequence.format())
+                
+                emptyOutput = False
+    
+    # Raise an error if no output was produced
+    if emptyOutput:
+        formattedSubfeatures = " or ".join(subfeature)
+        raise ValueError(f"No gene models were output from '{gff3FileIn}'; is the file empty or does it not " + 
+                         f"contain any {formattedSubfeatures} features?")
     
     # Touch the .ok files to indicate completion
     touch_ok(mrnaFileOut)

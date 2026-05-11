@@ -152,14 +152,19 @@ def mmseqs_clustering(fastaFile, algorithm, mmseqsDir, tmpDir, threads, evalue, 
     clusterer.cluster()
     
     # Generate the tabular output
-    tmpFileName = "tmp_BINge_mms2clusttable_{0}.tsv".format(get_hash_for_input_sequences(fastaFile))
+    tableOutputDir = os.path.dirname(fastaFile) # derives the bingeTmpDir value from cluster_unbinned_sequences() without needing to pass it in
+    tmpFileName = os.path.join(tableOutputDir, f"tmp_BINge_mms2clusttable_{get_hash_for_input_sequences(fastaFile)}.tsv")
+    tmpOkFileName = f"{tmpFileName}.ok"
     clusterer.tabulate(tmpFileName)
+    if not os.path.exists(tmpOkFileName):
+        raise FileNotFoundError(f"Cluster result tabulation appears to have failed as the '.ok' file was not found for '{tmpFileName}'")
     
     # Parse it into a form that BINge can use
     resultClusters = clusterer.parse_tsv(tmpFileName)
     
     # Clean up temporary files
     os.unlink(tmpFileName) # clean up tabular output
+    os.unlink(tmpOkFileName) # clean up tabular output
     mmDB.clean_all() # clean up sequence database generation and indexing
     clusterer.clean_all() # clean up clustering outputs
     

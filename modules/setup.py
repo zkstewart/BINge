@@ -1,15 +1,21 @@
 import os, sys, json
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from validation import validate_fasta, handle_symlink_change, touch_ok
+from validation import validate_fasta, validate_gff3, handle_symlink_change, touch_ok
 from fasta_handling import generate_sequence_length_index, txome_to_orfs
 from gmap_handling import build_index
 from gff3tofasta import gff3_to_fasta
+
+class DirectoryNotFoundError(Exception):
+    pass
 
 def linker(directory, prefix, suffix, file):
     symlink = os.path.join(directory, f"{prefix}.{suffix}" + (".gz" if file.endswith(".gz") else ""))
     if os.path.exists(symlink):
         handle_symlink_change(symlink, file)
+    elif not os.path.isdir(directory):
+        raise DirectoryNotFoundError(f"Cannot create symlink '{symlink}' as its parent location ({directory}) " + 
+                                     "is not a directory or does not exist!")
     else:
         os.symlink(file, symlink)
     return symlink
@@ -100,6 +106,10 @@ class TargetGenome:
             if isFASTA:
                 raise ValueError(f"-i value '{value}' is not a GFF3 file; make sure you order " +
                                  "input as gff3,fasta")
+            isGFF3, failureReason = validate_gff3(value)
+            if not isGFF3:
+                raise ValueError(f"-i value '{value}' is not a valid GFF3 file; expected cause of " +
+                                 f"format failure: {failureReason}")
             
             symlink = linker(self.directory, self.prefix, "gff3", os.path.abspath(value))
             self._gff3 = symlink
@@ -169,6 +179,10 @@ class AnnotatedGenome:
             if isFASTA:
                 raise ValueError(f"--ig value '{value}' is not a GFF3 file; make sure you order " +
                                  "input as gff3,fasta")
+            isGFF3, failureReason = validate_gff3(value)
+            if not isGFF3:
+                raise ValueError(f"-i value '{value}' is not a valid GFF3 file; expected cause of " +
+                                 f"format failure: {failureReason}")
             
             symlink = linker(self.directory, self.prefix, "gff3", os.path.abspath(value))
             self._gff3 = symlink
@@ -196,6 +210,11 @@ class Transcriptome:
     Note that mrnaFasta is allowed to be set as None during object initialisation, despite this
     being nonsensical. This behaviour is solely implemented to allow json_to_inputs() to
     reconstitute an object without pain.
+    
+    The self.wasExtracted attribute is specified here but not in TargetGenome or AnnotatedGenome
+    as it lets other program components determine whether the files were provided as a trio
+    to --ix (and hence need validation) or if we can trust that sequence identifiers are
+    consistent (since we made them internally within BINge, and hence we can skip the validation)
     '''
     def __init__(self, index, locations, mrnaFasta=None, cdsFasta=None, protFasta=None):
         self.prefix = f"transcriptome{index}"
@@ -206,6 +225,8 @@ class Transcriptome:
         self.mrna = mrnaFasta
         self.cds = cdsFasta
         self.aa = protFasta
+        
+        self.wasExtracted = False
     
     @property
     def mrna(self):
@@ -218,7 +239,7 @@ class Transcriptome:
         else:
             isFASTA = validate_fasta(value)
             if not isFASTA:
-                raise ValueError(f"--ix value '{value}' is not a FASTA file")
+                raise ValueError(f"--ix mRNA value '{value}' is not a FASTA file")
             
             # Infer where symlink should go
             if os.path.dirname(os.path.abspath(value)) == self.directory: # file is already within the BINge working dir
@@ -240,7 +261,7 @@ class Transcriptome:
         else:
             isFASTA = validate_fasta(value)
             if not isFASTA:
-                raise ValueError(f"--ix value '{value}' is not a FASTA file")
+                raise ValueError(f"--ix CDS value '{value}' is not a FASTA file")
             
             # Infer where symlink should go
             if os.path.dirname(os.path.abspath(value)) == self.directory: # file is already within the BINge working dir
@@ -262,7 +283,7 @@ class Transcriptome:
         else:
             isFASTA = validate_fasta(value)
             if not isFASTA:
-                raise ValueError(f"--ix value '{value}' is not a FASTA file")
+                raise ValueError(f"--ix AA value '{value}' is not a FASTA file")
             
             # Infer where symlink should go
             if os.path.dirname(os.path.abspath(value)) == self.directory: # file is already within the BINge working dir
@@ -278,6 +299,8 @@ class Transcriptome:
         if self.cds == None or self.aa == None:
             self._cds, self._aa = orf_extractor(self.extractionDirectory, self.mrna, # bypass the property to avoid
                                                 self.prefix, translationTable) # creating a symlink
+            self.wasExtracted = True # these values should not need any validation by check_for_seqid_consistency()
+        
         # Otherwise, create new symlinks in self.extractionDirectory pointing to the underlying symlinks in self.directory
         else:
             self._cds = linker(self.extractionDirectory, self.prefix, "cds", self.cds)
@@ -295,17 +318,22 @@ class Transcriptome:
     def __repr__(self):
         return f"<Transcriptome;prefix={self.prefix};mrna={self.mrna};cds={self.cds};aa={self.aa}>"
 
-def inputs_to_json(locations, targetGenomes, annotatedGenomes, transcriptomes):
+def inputs_to_json(locations, targetGenomes, annotatedGenomes, transcriptomes, isMicrobial):
     with open(os.path.join(locations.workingDirectory, locations.inputsJson), "w") as jsonOut:
         json.dump(
             {
                 "targetGenomes": [ x.__dict__ for x in targetGenomes ],
                 "annotatedGenomes": [ x.__dict__ for x in annotatedGenomes ],
-                "transcriptomes": [ x.__dict__ for x in transcriptomes ]
+                "transcriptomes": [ x.__dict__ for x in transcriptomes ],
+                "isMicrobial": isMicrobial
             }, jsonOut)
 
 def json_to_inputs(locations):
-    with open(os.path.join(locations.workingDirectory, locations.inputsJson), "r") as jsonIn:
+    jsonFile = os.path.join(locations.workingDirectory, locations.inputsJson)
+    if not os.path.isfile(jsonFile):
+        raise FileNotFoundError(f"'{locations.inputsJson}' does not exist within your working directory; has the 'initialise' mode run yet?")
+    
+    with open(jsonFile, "r") as jsonIn:
         data = json.load(jsonIn)
     
     targetGenomes = []
@@ -320,7 +348,7 @@ def json_to_inputs(locations):
     annotatedGenomes = []
     for d in data["annotatedGenomes"]:
         index = d["prefix"].split("annotations")[-1]
-        annotatedGenome = AnnotatedGenome(index, locations, d["fasta"], d["_gff3"])
+        annotatedGenome = AnnotatedGenome(index, locations, d["_fasta"], d["_gff3"])
         annotatedGenome.mrna = d["mrna"]
         annotatedGenome.cds = d["cds"]
         annotatedGenome.aa = d["aa"]
@@ -334,5 +362,5 @@ def json_to_inputs(locations):
         transcriptome._cds = d["_cds"]
         transcriptome._aa = d["_aa"]
         transcriptomes.append(transcriptome)
-
-    return targetGenomes, annotatedGenomes, transcriptomes
+    
+    return targetGenomes, annotatedGenomes, transcriptomes, data["isMicrobial"]
