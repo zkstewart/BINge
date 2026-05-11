@@ -96,4 +96,4 @@ If you try to rerun a previously completed analysis, you might encounter an erro
 # How to cite
 Stewart, Z., Perrin, D., Papanicolaou, A., & Prentis, P. (2026). BINge: Multispecies Ortholog Clustering for Differential Gene Expression Analyses. Molecular Ecology Resources, 26(4), e70137.
 
-You can access the article through its [doi](https://doi.org/10.1111/1755-0998.70137) or through the PubMed ID [19451168](http://www.ncbi.nlm.nih.gov/pubmed/19451168)
+You can access the article through its [doi](https://doi.org/10.1111/1755-0998.70137) or through the PubMed ID [42037260](http://www.ncbi.nlm.nih.gov/pubmed/42037260)
