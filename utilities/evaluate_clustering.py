@@ -329,7 +329,7 @@ def main():
     # Parse the CD-HIT / BINge cluster file, changing cluster IDs to not overlap
     if args.clusterer == "binge":
         bingeResults = BINge_Results(args.clusterFile)
-        testDict = { k:v for k,v in bingeResults } # we will 'test' this against our ground truth
+        testDict = { k:[ seqID for prefix, seqID in v ] for k,v in bingeResults } # we will 'test' this against our ground truth (which uses bare IDs)
     elif args.clusterer == "cdhit":
         testDict = CDHIT.parse_clstr_file(args.clusterFile) 
     elif args.clusterer == "corset":

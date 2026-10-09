@@ -22,6 +22,7 @@ from modules.parsing import BINge_Results, BLAST_Results, \
 from modules.annotation import init_table, parse_idmap, update_table_with_gos, \
     update_table_with_seq_details
 from modules.setup import json_to_inputs
+from modules.identifiers import key_to_str, str_to_key, prefix_from_file
 from _version import __version__
 
 # Define functions
@@ -37,19 +38,19 @@ def get_counts_cutoff_by_percentiles(bingeResults, quantCollection):
     '''
     # Get counts for each bin dictionary
     binnedCounts = [
-        np.mean(quantCollection.get_transcript_count(seqID))
-        
+        np.mean(quantCollection.get_transcript_count(key_to_str(seqID)))
+
         for seqIDs in bingeResults.binned.values()
         for seqID in seqIDs
-        if seqID in quantCollection.quant
+        if key_to_str(seqID) in quantCollection.quant
     ]
-    
+
     unbinnedCounts = [
-        np.mean(quantCollection.get_transcript_count(seqID))
-        
+        np.mean(quantCollection.get_transcript_count(key_to_str(seqID)))
+
         for seqIDs in bingeResults.unbinned.values()
         for seqID in seqIDs
-        if seqID in quantCollection.quant
+        if key_to_str(seqID) in quantCollection.quant
     ]
     
     # If we have binnedCounts, derive a good cutoff from that
@@ -98,7 +99,7 @@ def determine_if_1x_filter(transcriptCounts, seqIDs, transcriptRecords, readLeng
                             cluster, where sublists contain integer values indicating the
                             amount of read alignments made to that transcript from each
                             sample.
-        seqIDs -- a list containing strings of transcript identifiers.
+        seqIDs -- a list containing transcript sequence keys i.e., (prefix, seqID) tuples.
         transcriptRecords -- a pyfaidx.Fasta or FastaCollection which can be indexed to
                              retrieve all transcripts identified in transcriptIDs.
         readLength -- an integer indicating the average read length from sequencing.
@@ -127,8 +128,10 @@ def determine_if_1x_filter(transcriptCounts, seqIDs, transcriptRecords, readLeng
 def concatenate_sequences(sequenceFiles, outputFileName):
     '''
     Helper function to concatenate all sequence files into a single file, as needed
-    when running BLAST or salmon read quantification.
-    
+    when running BLAST or salmon read quantification. Sequence IDs are namespaced
+    by their file's prefix (e.g., 'transcriptome1::seqID') so that they remain unique
+    once combined.
+
     Parameters:
         sequenceFiles -- a list of strings indicating the locations of FASTA files to
                          concatenate.
@@ -138,8 +141,11 @@ def concatenate_sequences(sequenceFiles, outputFileName):
         print("# Concatenating all sequence files into a single file...")
         with open(outputFileName, "w") as fileOut:
             for fastaFile in sequenceFiles:
+                prefix = prefix_from_file(fastaFile)
                 with open(fastaFile, "r") as fileIn:
                     for line in fileIn:
+                        if line.startswith(">"):
+                            line = ">" + key_to_str((prefix, line[1:]))
                         fileOut.write(line)
                 if not line.endswith("\n"):
                     fileOut.write("\n")
@@ -152,15 +158,15 @@ def format_representative(clusterNum, representativeID, representativeSeq):
     
     Parameters:
         clusterNum -- an int or string digit identifying the cluster.
-        representativeID -- a string of the sequence ID of the representative of
-                            this cluster.
+        representativeID -- a (prefix, seqID) tuple of the sequence key of the representative
+                            of this cluster.
         representativeSeq -- a string of the sequence itself for the representative
                              of this cluster.
     Returns:
         fastaString -- a string of the representative sequence formatted for writing
                        to file.
     '''
-    return f">cluster-{clusterNum} representative={representativeID}\n{representativeSeq}\n"
+    return f">cluster-{clusterNum} representative={key_to_str(representativeID)}\n{representativeSeq}\n"
 
 def write_tx2gene(tx2geneFile, bingeResults):
     '''
@@ -175,7 +181,7 @@ def write_tx2gene(tx2geneFile, bingeResults):
         fileOut.write("TXNAME\tGENEID\n")
         for clusterNum, seqIDs in bingeResults:
             for seqID in seqIDs:
-                fileOut.write(f"{seqID}\tcluster-{clusterNum}\n")
+                fileOut.write(f"{key_to_str(seqID)}\tcluster-{clusterNum}\n") # matches salmon's namespaced IDs
 
 def write_salmonQC(salmonDirs, salmonQCFile, bingeResults):
     '''
@@ -297,7 +303,8 @@ def main():
     (sequence length). If you do not indicate the use of BLAST or salmon read alignment
     evidence, this script will pick a  representative on the basis of sequence length
     (longest being best). The output is a FASTA file containing these representatives.
-    The ID for each sequence follows a format like '>Cluster-1 representative=transcript_92'.
+    The ID for each sequence follows a format like '>cluster-1 representative=transcriptome1::transcript_92'
+    where the representative is identified by its input file and sequence ID.
     """
     
     dgeDescription = """'dge' aims to streamline the preparation of data for downstream
@@ -755,16 +762,17 @@ def fmain(args, locations):
         blastResults.evalue = args.evalue
         blastResults.num_hits = 1 # only need to keep the best hit for each sequence
         blastResults.parse()
-        blastDict = blastResults.results
-    
+        blastDict = { str_to_key(qid): hits for qid, hits in blastResults.results.items() } # BLAST was run with namespaced IDs
+
     # Parse annotation file (if relevant)
     if args.useGFF3:
         annotIDs = set()
         for gff3File in args.gff3Files:
-            annotIDs = annotIDs.union(parse_gff3_ids(gff3File))
+            prefix = prefix_from_file(gff3File)
+            annotIDs = annotIDs.union({ (prefix, annotID) for annotID in parse_gff3_ids(gff3File) })
     else:
         annotIDs = set()
-    
+
     # Parse salmon quant (if relevant)
     if args.useSalmon:
         sampleNames = [ f"{i}" for i in range(len(args.salmonFiles))] # sample names don't matter
@@ -795,9 +803,9 @@ def fmain(args, locations):
             # Handle read alignment values
             if args.useSalmon:
                 transcriptCounts = [
-                    quantCollection.get_transcript_count(seqID)
+                    quantCollection.get_transcript_count(key_to_str(seqID))
                     for seqID in seqIDs
-                    if seqID in quantCollection.quant
+                    if key_to_str(seqID) in quantCollection.quant
                 ]
                 
                 # Check 2: FILTER if it lacks 1x coverage
@@ -919,15 +927,16 @@ def rmain(args, locations):
         blastResults.evalue = args.evalue
         blastResults.num_hits = 1 # only need to keep the best hit for each sequence
         blastResults.parse()
-        blastDict = blastResults.results
+        blastDict = { str_to_key(qid): hits for qid, hits in blastResults.results.items() } # BLAST was run with namespaced IDs
     else:
         blastDict = {}
-    
+
     # Parse annotation file (if relevant)
     if args.useGFF3:
         annotIDs = set()
         for gff3File in args.gff3Files:
-            annotIDs = annotIDs.union(parse_gff3_ids(gff3File))
+            prefix = prefix_from_file(gff3File)
+            annotIDs = annotIDs.union({ (prefix, annotID) for annotID in parse_gff3_ids(gff3File) })
     else:
         annotIDs = set()
     
@@ -956,14 +965,17 @@ def rmain(args, locations):
                 for seqID in seqIDs:
                     # Raise error for non-existing sequences
                     if not seqID in cdsRecords:
-                        raise KeyError(f"'{seqID}' not found in any input FASTA files; have you modified " +
-                                       "any files after initialisation or clustering?")
-                    
+                        raise KeyError(f"'{seqID[1]}' not found in the '{seqID[0]}' input FASTA file; have you " +
+                                       "modified any files after initialisation or clustering?")
+
                     # Tolerantly handle counts that can be filtered by salmon
-                    try:
-                        counts = sum(salmonCollection.get_transcript_count(seqID))
-                    except: # this happens if Salmon filtered something out
+                    if quantCollection is None:
                         counts = 0
+                    else:
+                        try:
+                            counts = sum(quantCollection.get_transcript_count(key_to_str(seqID)))
+                        except KeyError: # this happens if Salmon filtered something out
+                            counts = 0
                     
                     # Now store the evidence
                     """We prioritise annotID values ONLY if there's a single one in the cluster;

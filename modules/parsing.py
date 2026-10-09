@@ -3,6 +3,7 @@ from contextlib import contextmanager
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from salmon import EquivalenceClassCollection, QuantCollection, DGEQuantCollection
+from identifiers import str_to_key
 
 def get_codec(fileName):
     try:
@@ -164,8 +165,15 @@ class BLAST_Results:
         )
 
 class BINge_Results:
+    '''
+    Holds the clustering results of BINge, where each cluster is a collection of
+    sequence keys i.e., (prefix, seqID) tuples. In the results file, these occur
+    as the 'sequence_id' and 'sequence_file' columns, respectively.
+    '''
     seqFileRegex = re.compile(r"#sequence_file_(\d+)=(.+)")
-    
+    HEADER = ["cluster_num", "sequence_id", "cluster_type", "sequence_file"]
+    LEGACY_HEADER = ["cluster_num", "sequence_id", "cluster_type"]
+
     def __init__(self):
         self._binned = {}
         self._unbinned = {}
@@ -223,7 +231,7 @@ class BINge_Results:
         
         Parameters:
             unbinnedClusterDict -- a dictionary where keys are integers and values are
-                                   lists of sequence IDs (strings)
+                                   lists of sequence keys i.e., (prefix, seqID) tuples
         '''
         return { k+self._highestBinnedNumber+1:v for k,v in unbinnedClusterDict.items() }
     
@@ -237,7 +245,7 @@ class BINge_Results:
         Sets:
             self.binned / self.unbinned -- a dictionary with structure like:
                         {
-                            0: [seqid1, seqid2, ...],
+                            0: [(prefix1, seqid1), (prefix2, seqid2), ...],
                             1: [ ... ],
                             ...
                         }
@@ -270,22 +278,27 @@ class BINge_Results:
                     
                     # Handle column labels
                     if firstUncommented:
-                        assert sl == ["cluster_num", "sequence_id", "cluster_type"], \
+                        if sl == BINge_Results.LEGACY_HEADER:
+                            raise ValueError(f"'{bingeFile}' was produced by an older version of BINge which " +
+                                             "lacks the 'sequence_file' column; re-run BINge 'cluster' to " +
+                                             "generate a compatible file.")
+                        assert sl == BINge_Results.HEADER, \
                             ("BINge file is expected to have a specific header line on the first uncommented line! " +
                             "Your file is hence not recognised as a valid BINge cluster file.")
                         firstUncommented = False
                     # Handle all subsequent information-containing lines
                     else:
-                        clustNum, seqID, clusterType = int(sl[0]), sl[1], sl[2]
-                        
+                        clustNum, seqID, clusterType, prefix = int(sl[0]), sl[1], sl[2], sl[3]
+                        seqKey = (prefix, seqID)
+
                         if clusterType == "binned":
                             self.binned.setdefault(clustNum, [])
-                            self.binned[clustNum].append(seqID)
+                            self.binned[clustNum].append(seqKey)
                             if clustNum > self._highestBinnedNumber:
                                 self._highestBinnedNumber = clustNum
                         elif clusterType == "unbinned":
                             self.unbinned.setdefault(clustNum, [])
-                            self.unbinned[clustNum].append(seqID)
+                            self.unbinned[clustNum].append(seqKey)
                             if clustNum > self._highestUnbinnedNumber:
                                 self._highestUnbinnedNumber = clustNum
                         else:
@@ -336,17 +349,17 @@ class BINge_Results:
         with open(outputFileName, "w") as fileOut:
             # Write header lines
             fileOut.write("#BINge clustering information file\n")
-            fileOut.write("cluster_num\tsequence_id\tcluster_type\n")
-            
+            fileOut.write("\t".join(BINge_Results.HEADER) + "\n")
+
             # Write content lines
             if (clusterTypes == "all" or clusterTypes == "binned") and hasattr(self, "binned"):
                 for clusterNum, seqValues in self.binned.items():
-                    for seqID in seqValues:
-                        fileOut.write(f"{clusterNum}\t{seqID}\tbinned\n")
+                    for prefix, seqID in seqValues:
+                        fileOut.write(f"{clusterNum}\t{seqID}\tbinned\t{prefix}\n")
             if (clusterTypes == "all" or clusterTypes == "unbinned") and hasattr(self, "unbinned"):
                 for clusterNum, seqValues in self.unbinned.items():
-                    for seqID in seqValues:
-                        fileOut.write(f"{clusterNum}\t{seqID}\tunbinned\n")
+                    for prefix, seqID in seqValues:
+                        fileOut.write(f"{clusterNum}\t{seqID}\tunbinned\t{prefix}\n")
     
     def __iter__(self):
         for key, value in self.binned.items():
@@ -411,6 +424,11 @@ def parse_quants(quantFiles, sampleNames):
         sample = sampleNames[i]
         
         quantCollection.parse_quant_file(quantFile, sample)
+
+    # Salmon should have been run against BINge's namespaced sequence IDs
+    for name in quantCollection.quant:
+        str_to_key(name) # raises an informative error if the IDs are not namespaced
+        break
     return quantCollection
 
 def parse_dge_quants(quantFiles, sampleNames):

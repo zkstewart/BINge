@@ -9,7 +9,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.bins import BinCollection, Bin, BinBundle
 from modules.gff3 import GmapGFF3, GFF3Graph
 from modules.gff3tofasta import gff3_to_fasta
-from modules.fasta_handling import txome_to_orfs
+from modules.fasta_handling import txome_to_orfs, FastaCollection
+from modules.identifiers import key_to_str, str_to_key
 from modules.bin_handling import GmapBinProcess, CollectionSeedProcess, \
     find_overlapping_bins, add_bin_to_collection
 from modules.gmap_handling import GMAP
@@ -39,9 +40,9 @@ def _generate_bin_collections_via_seeder(gff3Files, threads):
         for x in range(threads): # begin processing n collections
             if i+x < len(gff3Files): # parent loop may excess if n > the number of GMAP files
                 gff3File = gff3Files[i+x]
-                
-                seedWorkerThread = CollectionSeedProcess(gff3File)
-                
+
+                seedWorkerThread = CollectionSeedProcess(gff3File, False, f"genome{i+x+1}") # isMicrobial==False
+
                 processing.append(seedWorkerThread)
                 seedWorkerThread.start()
         
@@ -77,7 +78,7 @@ def generate_bin_collections(gff3Files, threads=1, isMicrobial=False):
             if i+x < len(gff3Files): # parent loop may excess if n > the number of GMAP files
                 gff3File = gff3Files[i+x]
                 
-                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial) # returns empty BinCollection if no GFF3
+                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial, f"genome{i+x+1}") # returns empty BinCollection if no GFF3
                 seedWorkerThread.start()
                 processing.append(seedWorkerThread)
         
@@ -107,7 +108,7 @@ def populate_bin_collections(collectionList, gmapFiles, threads=1):
     threadData = []
     for i in range(len(collectionList)):
         # Get all GMAP files associated with this genome
-        thisGmapFiles = [gmapFiles[i]]
+        thisGmapFiles = [["transcriptome1", gmapFiles[i]]] # [queryPrefix, gmapFile] pairs
         
         # Get other data structures for this genome
         thisBinCollection = collectionList[i]
@@ -1463,7 +1464,7 @@ class TestBinCollection(unittest.TestCase):
         self.assertEqual(binOverlap[0].contig, "genome1", "Should be genome1")
         
         self.assertEqual(len(binOverlap[0].ids), 1, "Should contain 1")
-        self.assertIn("genome1.1.mrna", binOverlap[0].ids, "Should contain genome1.1.mrna")
+        self.assertIn(("genome1", "genome1.1.mrna"), binOverlap[0].ids, "Should contain genome1.1.mrna")
         
         self.assertEqual(len(binOverlap2), 2, "Should be 2")
     
@@ -1500,15 +1501,30 @@ class TestBinCollection(unittest.TestCase):
 
 class TestValidation(unittest.TestCase):
     def test_check_for_duplicates_1(self):
-        'This check should trigger an exception as the target and annotated genomes have duplicated IDs'
+        'This check should NOT trigger an exception as IDs are only duplicated across (not within) files'
         # Arrange
         targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
-        
+
         # Act & Assert
-        with self.assertRaises(ValueError):
+        try:
             check_for_duplicates(locations.get_sequenceFiles(
                 targetGenomes, annotatedGenomes,transcriptomes, "aa")
             )
+            self.assertTrue(True)
+        except:
+            self.assertTrue(False, "IDs shared across different files should not be considered duplicates")
+
+    def test_check_for_duplicates_3(self):
+        'This check should trigger an exception as a single file has duplicated IDs'
+        # Arrange
+        os.makedirs(workDir, exist_ok=True)
+        dupeFile = os.path.join(workDir, "duplicated.aa")
+        with open(dupeFile, "w") as fileOut:
+            fileOut.write(">seq1\nMAAA\n>seq2\nMCCC\n>seq1\nMGGG\n")
+
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            check_for_duplicates([dupeFile])
     
     def test_check_for_duplicates_2(self):
         'This check should NOT trigger an exception as there are no duplicated IDs'
@@ -1645,7 +1661,7 @@ class TestBin(unittest.TestCase):
         self.assertEqual(len(bin1.ids), 1, "Should contain 1 id")
         self.assertEqual(len(bin2.ids), 1, "Should contain 1 id")
         
-        self.assertIn("genome1.2.mrna", bin2.ids, "Should contain genome1.2.mrna")
+        self.assertIn(("genome1", "genome1.2.mrna"), bin2.ids, "Should contain genome1.2.mrna")
     
     def test_bin_merge(self):
         # Arrange
@@ -1667,8 +1683,8 @@ class TestBin(unittest.TestCase):
         
         self.assertEqual(len(bin1.ids), 2, "Should contain 2 ids")
         
-        self.assertIn("genome1.1.mrna", bin1.ids, "Should contain genome1.1.mrna")   
-        self.assertIn("genome1.2.mrna", bin1.ids, "Should contain genome1.2.mrna")
+        self.assertIn(("genome1", "genome1.1.mrna"), bin1.ids, "Should contain genome1.1.mrna")
+        self.assertIn(("genome1", "genome1.2.mrna"), bin1.ids, "Should contain genome1.2.mrna")
 
 class TestGff3ToFasta(unittest.TestCase):
     def test_ncrna_gff3_1(self):
@@ -1840,7 +1856,7 @@ class TestNovelPopulate(unittest.TestCase):
         
         # Assert
         self.assertEqual(len(binCollection), 9, "Should contain 9 bins")
-        self.assertTrue(not any([x.startswith("contig1") for x in binIDs]),
+        self.assertTrue(not any([seqID.startswith("contig1") for prefix, seqID in binIDs]),
                         "Should not contain any contig1 IDs")
     
     def test_populate_novel_only(self):
@@ -2005,7 +2021,7 @@ class TestBinSeederThread(unittest.TestCase):
         
         # Act and Assert
         try:
-            seedWorkerThread = CollectionSeedProcess(gff3File)
+            seedWorkerThread = CollectionSeedProcess(gff3File, False, "genome1")
             seedWorkerThread.start()
             seedWorkerThread.join()
             seedWorkerThread.check_errors()
@@ -2018,7 +2034,7 @@ class TestBinSeederThread(unittest.TestCase):
         gff3File = os.path.join(dataDir, "gmap_normal.gff3")
         
         # Act
-        seedWorkerThread = CollectionSeedProcess(gff3File)
+        seedWorkerThread = CollectionSeedProcess(gff3File, False, "genome1")
         seedWorkerThread.start()
         seedWorkerThread.join()
         seedWorkerThread.check_errors()
@@ -2031,10 +2047,10 @@ class TestGmapBinProcess(unittest.TestCase):
     def test_gmap_bin_process(self):
         # Arrange
         threads=4
-        gff3Files = [os.path.join(dataDir, "gmap_normal.gff3")]
+        gff3Files = [["transcriptome1", os.path.join(dataDir, "gmap_normal.gff3")]]
         indexFile = os.path.join(dataDir, "length_index.pkl")
         binCollection = BinCollection()
-        
+
         # Act
         processor = GmapBinProcess(gff3Files, binCollection, indexFile)
         #gmapFiles, binCollection, indexFileName = gff3Files, binCollection, indexFile
@@ -2045,13 +2061,40 @@ class TestGmapBinProcess(unittest.TestCase):
         
         # Assert
         self.assertEqual(len(resultCollection), 2, "Should have two bins")
+        for bin in resultCollection:
+            for prefix, seqID in bin.data.ids:
+                self.assertEqual(prefix, "transcriptome1", "GMAP IDs should be keyed by their query prefix")
+
+    def test_gmap_bin_process_shared_ids(self):
+        'The same sequence ID aligned from two different files should be kept as two sequences'
+        # Arrange
+        gmapFile = os.path.join(dataDir, "gmap_normal.gff3")
+        gmapFiles = [["annotations1", gmapFile], ["transcriptome1", gmapFile]]
+        indexFile = os.path.join(dataDir, "length_index.pkl")
+        binCollection = BinCollection()
+
+        # Act
+        processor = GmapBinProcess(gmapFiles, binCollection, indexFile)
+        processor.start()
+        resultCollection = processor.get_result()
+        processor.join()
+        processor.check_errors()
+
+        # Assert
+        self.assertEqual(len(resultCollection), 2, "Should have two bins")
+        for bin in resultCollection:
+            prefixes = set([ prefix for prefix, seqID in bin.data.ids ])
+            seqIDs = set([ seqID for prefix, seqID in bin.data.ids ])
+            self.assertEqual(len(bin.data.ids), 2, "Each bin should contain the same ID from both files")
+            self.assertEqual(prefixes, {"annotations1", "transcriptome1"}, "Each bin should have one ID from each file")
+            self.assertEqual(len(seqIDs), 1, "Both sequences should share the same sequence ID")
 
 class TestBINge_Results(unittest.TestCase):
     def test_parse(self):
         # Arrange
         resultFile = os.path.join(dataDir, "clustering_result_1.tsv")
-        trueBinnedIDs = [f"g{i}" for i in range(1, 8)] # g1 through g7
-        trueUnbinnedIDs = [f"g{i}" for i in range(8, 11)] # g8 through g10
+        trueBinnedIDs = [("annotations1", f"g{i}") for i in range(1, 8)] # g1 through g7
+        trueUnbinnedIDs = [("transcriptome1", f"g{i}") for i in range(8, 11)] # g8 through g10
         
         # Act
         bingeResults = BINge_Results()
@@ -2086,8 +2129,10 @@ class TestBINge_Results(unittest.TestCase):
         bingeResults = BINge_Results()
         bingeResults.parse(resultFile)
         
-        binnedClusters = {0: ['g1'], 1: ['g2'], 2: ['g3'], 3: ['g4', 'g5'], 4: ['g6', 'g7']}
-        unbinnedClusters = {0: ['g8', 'g9'], 1: ['g10']}
+        binnedClusters = {0: [('annotations1', 'g1')], 1: [('annotations1', 'g2')], 2: [('annotations1', 'g3')],
+                          3: [('annotations1', 'g4'), ('annotations1', 'g5')],
+                          4: [('annotations1', 'g6'), ('annotations1', 'g7')]}
+        unbinnedClusters = {0: [('transcriptome1', 'g8'), ('transcriptome1', 'g9')], 1: [('transcriptome1', 'g10')]}
         
         # Act
         bingeResults2 = BINge_Results()
@@ -2122,18 +2167,18 @@ class TestBINge_Results(unittest.TestCase):
         bingeResults.parse(resultFile)
         
         trueClusterIDs = list(range(0, 7)) # [0,1,2,3,4,5,6,]
-        trueSeqIDs = [f"g{i}" for i in range(1, 11)] # g1 through g10
+        trueSeqKeys = [("annotations1" if i < 8 else "transcriptome1", f"g{i}") for i in range(1, 11)] # g1 through g10
         
         # Act
         foundClusterIDs = []
-        foundSeqIDs = []
-        for clusterID, seqIDs in bingeResults:
+        foundSeqKeys = []
+        for clusterID, seqKeys in bingeResults:
             foundClusterIDs.append(int(clusterID))
-            foundSeqIDs.extend(seqIDs)
+            foundSeqKeys.extend(seqKeys)
         
         # Assert
         self.assertEqual(foundClusterIDs, trueClusterIDs, f"Cluster IDs should be {trueClusterIDs}, not {foundClusterIDs}")
-        self.assertEqual(foundSeqIDs, trueSeqIDs, f"Sequence IDs should be {trueSeqIDs}, not {foundSeqIDs}")
+        self.assertEqual(foundSeqKeys, trueSeqKeys, f"Sequence IDs should be {trueSeqKeys}, not {foundSeqKeys}")
     
     def test_write(self):
         # Arrange
@@ -2151,6 +2196,90 @@ class TestBINge_Results(unittest.TestCase):
         # Assert
         self.assertEqual(bingeResults.binned, bingeResults2.binned, "Binned .write should be equal to .parse data")
         self.assertEqual(bingeResults.unbinned, bingeResults2.unbinned, "Unbinned .write should be equal to .parse data")
+
+    def test_write_shared_ids(self):
+        'The same sequence ID from different files should survive a write and parse as distinct sequences'
+        # Arrange
+        bingeResults = BINge_Results()
+        bingeResults.binned = {0: {("annotations1", "gene1"), ("annotations2", "gene1")}}
+        bingeResults.unbinned = bingeResults.update_unbinned_ids({0: [("transcriptome1", "gene1")]})
+
+        os.makedirs(workDir, exist_ok=True)
+        tmpFile = os.path.join(workDir, "TestBINge_Results.test_write_shared_ids.tsv")
+
+        # Act
+        bingeResults.write(tmpFile)
+        bingeResults2 = BINge_Results()
+        bingeResults2.parse(tmpFile)
+
+        # Assert
+        self.assertEqual(set(bingeResults2.binned[0]), {("annotations1", "gene1"), ("annotations2", "gene1")},
+                         "Both files' 'gene1' should be retained in the binned cluster")
+        self.assertEqual(bingeResults2.unbinned[1], [("transcriptome1", "gene1")],
+                         "The unbinned 'gene1' should be retained separately")
+
+    def test_parse_legacy(self):
+        'A results file lacking the sequence_file column should raise an informative error'
+        # Arrange
+        os.makedirs(workDir, exist_ok=True)
+        tmpFile = os.path.join(workDir, "TestBINge_Results.test_parse_legacy.tsv")
+        with open(tmpFile, "w") as fileOut:
+            fileOut.write("#BINge clustering information file\ncluster_num\tsequence_id\tcluster_type\n0\tg1\tbinned\n")
+
+        # Act & Assert
+        with self.assertRaises(ValueError):
+            BINge_Results().parse(tmpFile)
+
+class TestSequenceKeys(unittest.TestCase):
+    def test_namespaced_roundtrip(self):
+        'Namespaced IDs should convert back to their original key, even when the seqID contains the separator'
+        # Arrange
+        seqKeys = [("transcriptome1", "TRINITY_DN1_c0_g1_i1"), ("annotations2", "Gene.1::TRINITY_DN1::g.1")]
+
+        # Act
+        roundtripped = [ str_to_key(key_to_str(seqKey)) for seqKey in seqKeys ]
+
+        # Assert
+        self.assertEqual(roundtripped, seqKeys, "Sequence keys should survive conversion to and from strings")
+
+    def test_fasta_collection_shared_ids(self):
+        'A FastaCollection should keep identical IDs from different files separate'
+        # Arrange
+        targetGenomes, annotatedGenomes, transcriptomes, locations = setup_working_directory()
+        genomeCDS = targetGenomes[0].cds # genome1 and annotations1 are extracted from the same GFF3
+        annotCDS = annotatedGenomes[0].cds
+
+        # Act
+        records = FastaCollection([genomeCDS, annotCDS])
+        seqKeys = list(records)
+
+        # Assert
+        self.assertIn(("genome1", "genome1.1.mrna"), seqKeys, "Should contain genome1's genome1.1.mrna")
+        self.assertIn(("annotations1", "genome1.1.mrna"), seqKeys, "Should contain annotations1's genome1.1.mrna")
+        self.assertEqual(str(records[("genome1", "genome1.1.mrna")]), str(records[("annotations1", "genome1.1.mrna")]),
+                         "Both keys should retrieve their own (identical) sequence")
+        self.assertNotIn(("transcriptome1", "genome1.1.mrna"), records, "Unknown files should not be found")
+
+    def test_cooccurrence_shared_ids(self):
+        'Identical IDs from different files should be clustered as distinct sequences'
+        # Arrange
+        bin1 = Bin("contig1", 1, 100)
+        bin1.add(("annotations1", "gene1"))
+        bin1.add(("annotations2", "gene1"))
+        bin2 = Bin("contig2", 1, 100)
+        bin2.add(("annotations1", "gene2"))
+
+        binBundle = BinBundle()
+        binBundle.add(bin1)
+        binBundle.add(bin2)
+
+        # Act
+        clusterDict, eliminations = binBundle.cluster_by_cooccurrence()
+        clusters = sorted([ sorted(seqKeys) for seqKeys in clusterDict.values() ])
+
+        # Assert
+        self.assertEqual(clusters, [[("annotations1", "gene1"), ("annotations2", "gene1")], [("annotations1", "gene2")]],
+                         "Both 'gene1' sequences should cluster together, separately from 'gene2'")
 
 if __name__ == '__main__':
     unittest.main()

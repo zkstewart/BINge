@@ -563,16 +563,17 @@ def format_examples(idsToFormat):
 
 def check_for_duplicates(filesToCheck):
     '''
-    Checks the sequences being used by BINge for sequence ID duplication which will
-    complicate/induce bugs in downstream activities.
-    
+    Checks the sequences being used by BINge for sequence ID duplication within each
+    file, which will complicate/induce bugs in downstream activities. The same ID may
+    occur in different files, since BINge identifies sequences by their file and ID.
+
     Parameters:
         filesToCheck -- a list of strings indicating the FASTA files to look through
     '''
-    # Check all sequences for duplicate IDs
-    foundIDs = set()
-    duplicatedIDs = set()
     for fileToCheck in filesToCheck:
+        # Check this file's sequences for duplicate IDs
+        foundIDs = set()
+        duplicatedIDs = set()
         with read_gz_file(fileToCheck) as fileIn:
             for line in fileIn:
                 if line.startswith(">"):
@@ -581,18 +582,18 @@ def check_for_duplicates(filesToCheck):
                         foundIDs.add(seqID)
                     else:
                         duplicatedIDs.add(seqID)
-    
-    # Report the error (if relevant)
-    if len(duplicatedIDs) != 0:
-        # Format information for error reporting
-        numDuplicates, examples = format_examples(duplicatedIDs)
-        
-        # Raise the error with an informative message
-        errorMsg = (f"There are {numDuplicates} sequences with duplicated IDs across or within the sequence files " + 
-                    f"being used by BINge. You should adjust your input files to make sure they all have unique " +
-                    f"identifiers for each sequence. Duplicated sequence identifiers include: {examples}"
-        )
-        raise ValueError(errorMsg)
+
+        # Report the error (if relevant)
+        if len(duplicatedIDs) != 0:
+            # Format information for error reporting
+            numDuplicates, examples = format_examples(duplicatedIDs)
+
+            # Raise the error with an informative message
+            errorMsg = (f"There are {numDuplicates} sequences with duplicated IDs within '{fileToCheck}'. " +
+                        f"You should adjust your input file to make sure it has unique " +
+                        f"identifiers for each sequence. Duplicated sequence identifiers include: {examples}"
+            )
+            raise ValueError(errorMsg)
 
 def check_for_seqid_consistency(mrna, cds, aa):
     '''

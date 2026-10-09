@@ -1,4 +1,7 @@
-import os, subprocess, platform
+import os, sys, subprocess, platform
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from identifiers import key_to_str, str_to_key
 
 class Salmon:
     '''
@@ -138,7 +141,7 @@ class Salmon:
                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         
         salmonout, salmonerr = run_salmon.communicate()
-        if "writing output" not in salmonerr.decode("utf-8"):
+        if ("writing output" not in salmonerr.decode("utf-8")) and ("writing results to" not in salmonerr.decode("utf-8")):
             raise Exception('salmon searching error text below\n' +
                             salmonerr.decode("utf-8"))
 
@@ -246,7 +249,7 @@ class Salmon_DB:
         indexout, indexerr = run_index.communicate()
         
         # Raise exception if final part of stderr from successful run isn't found
-        if "done building index" not in indexerr.decode("utf-8"):
+        if ("done building index" not in indexerr.decode("utf-8")) and ("index built: " not in indexerr.decode("utf-8")) :
             raise Exception('salmon indexing error text below\n' + indexerr.decode("utf-8"))
 
 class EquivalenceClassCollection():
@@ -533,6 +536,8 @@ class SalmonQC():
                     firstLine = False
                 else:
                     name, _, _, _, numReads = sl
+                    if len(self.numReads[sample]) == 0:
+                        str_to_key(name) # salmon should have been run against BINge's namespaced sequence IDs
                     numReads = float(numReads)
                     self.numReads[sample][name] = numReads
                     total += numReads
@@ -549,10 +554,15 @@ class SalmonQC():
         mappingRate = None
         with open(logFile, "r") as fileIn:
             for line in fileIn:
-                if "[info] Mapping rate =" in line:
+                if "[info] Mapping rate =" in line: # older salmon
                     mappingRate = line.rstrip("\r\n ").split(" = ")[1].rstrip("%")
                     foundMappingRate = True
                     break
+                elif line.startswith("mapping rate: "): # new rust port of salmon
+                    mappingRate = line.rstrip("\r\n ").split(": ")[1].rstrip("%")
+                    foundMappingRate = True
+                    break
+        
         if mappingRate == None:
             raise ValueError(f"Cannot locate mapping rate in '{logFile}'!")
         
@@ -593,8 +603,9 @@ class SalmonQC():
         for sample, numReads in self.totalReads.items():
             # Get the number of reads that clustered for this sample
             clusteredNumReads = 0
-            for clusterNum, seqIDs in bingeResults:
-                for seqID in seqIDs:
+            for clusterNum, seqKeys in bingeResults:
+                for seqKey in seqKeys:
+                    seqID = key_to_str(seqKey) # salmon was run against namespaced sequence IDs
                     if seqID in self.numReads[sample]:
                         clusteredNumReads += self.numReads[sample][seqID]
                     else:

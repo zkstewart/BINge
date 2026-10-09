@@ -222,7 +222,7 @@ def main():
     if args.clusterer == "binge":
         bingeResults = BINge_Results()
         bingeResults.parse(args.clusterFile)
-        testDict = { k:v for k,v in bingeResults }
+        testDict = { k:[ seqID for prefix, seqID in v ] for k,v in bingeResults } # ground truth uses bare IDs
     elif args.clusterer == "mmseqs":
         testDict = parse_mmseqs_clusters(args.clusterFile)
     elif args.clusterer == "orthofinder":

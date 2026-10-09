@@ -7,6 +7,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from thread_workers import BasicProcess
 from validation import handle_symlink_change, touch_ok
 from parsing import read_gz_file
+from identifiers import prefix_from_file
 
 # Define classes
 class FastaParser:
@@ -21,22 +22,30 @@ class FastaParser:
 class FastaCollection:
     '''
     Wrapper for pyfaidx Fasta objects which allows multiple to be combined
-    and queried as one logical entity.
-    
+    and queried as one logical entity. Sequences are queried with sequence keys
+    i.e., (prefix, seqID) tuples, where prefix identifies the file the sequence
+    is from; hence, sequence IDs only need to be unique within each file.
+
     Parameters:
         fastaFiles -- a list of strings pointing to the locations of FASTA files
-                      which are to be loaded in using pyfaidx.Fasta
+                      which are to be loaded in using pyfaidx.Fasta; each file
+                      should be named in the BINge working directory style of
+                      '{prefix}.{suffix}'
     '''
     def __init__(self, fastaFiles):
         self.fastaFiles = fastaFiles
-        self.records = []
-        self.pipePrefixes = []
-        
+        self.records = {}
+        self.pipePrefixes = {}
+
         self._parse_fastas()
-    
+
     def _parse_fastas(self):
         for fastaFile in self.fastaFiles:
-            self.records.append(Fasta(fastaFile))
+            prefix = prefix_from_file(fastaFile)
+            if prefix in self.records:
+                raise ValueError(f"FastaCollection received multiple files with the prefix '{prefix}'")
+
+            self.records[prefix] = Fasta(fastaFile)
             # Extract pipe prefixes from FASTA titles
             pipePrefixes = set()
             with read_gz_file(fastaFile) as fileIn:
@@ -46,30 +55,34 @@ class FastaCollection:
                         if "|" in seqPrefix:
                             pipePrefix = seqPrefix.split("|")[0] + "|"
                             pipePrefixes.add(pipePrefix)
-            self.pipePrefixes.append(pipePrefixes)
-    
-    def __getitem__(self, key):
-        for i, records in enumerate(self.records):
+            self.pipePrefixes[prefix] = pipePrefixes
+
+    def __getitem__(self, seqKey):
+        prefix, seqID = seqKey
+        if prefix in self.records:
+            records = self.records[prefix]
             try:
-                return records[key]
+                return records[seqID]
             except:
-                for pipePrefix in self.pipePrefixes[i]:
+                for pipePrefix in self.pipePrefixes[prefix]:
                     try:
-                        return records[pipePrefix + key]
+                        return records[pipePrefix + seqID]
                     except:
                         pass
-        raise KeyError(f"'{key}' not found in collection")
-    
-    def __contains__(self, key):
+        raise KeyError(f"'{seqID}' from '{prefix}' not found in collection")
+
+    def __contains__(self, seqKey):
         try:
-            self[key] # __getitem__ raises exception if the key isn't found
+            self[seqKey] # __getitem__ raises exception if the key isn't found
             return True
         except:
             return False
-    
+
     def __iter__(self):
-        for records in self.records:
-            yield from records
+        'Yields the (prefix, seqID) key of every sequence in the collection'
+        for prefix, records in self.records.items():
+            for record in records:
+                yield (prefix, record.name)
     
     def __repr__(self):
         return (f"<FastaCollection object;num_records='{len(self.records)}';" +

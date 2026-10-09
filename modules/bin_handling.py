@@ -17,20 +17,22 @@ class CollectionSeedProcess(ReturningProcess):
         isMicrobial -- a boolean indicating whether the genomes are microbial or not which,
                        in turn, determines whether we will parse mRNA features (False) or
                        gene features (True).
+        prefix -- a string indicating the prefix of the genome this GFF3 belongs to
+                  (e.g., 'genome1'), which forms part of each sequence's key.
     '''
-    def task(self, gff3File, isMicrobial=False):
+    def task(self, gff3File, isMicrobial, prefix):
         binCollection = BinCollection()
-        
+
         # Seed bin collection if GFF3 is available
         if gff3File != None:
             gff3Obj = GFF3Graph(gff3File)
-            
+
             for mrnaID, contig, strand, exon, cds in gff3Obj.binge_iterator(isMicrobial):
                 # Create a bin for each exon feature
                 exonBins = []
                 for exonStart, exonEnd, frame in exon: # uninterested in frame
                     exonBin = Bin(contig, exonStart, exonEnd)
-                    exonBin.add(mrnaID)
+                    exonBin.add((prefix, mrnaID))
                     exonBins.append(exonBin)
                 
                 # Iteratively handle exon bins
@@ -45,28 +47,32 @@ class GmapBinProcess(ReturningProcess):
     Bins GMAP alignments into each genome's BinCollection object.
     
     Parameters:
-        gmapFile -- a string indicating the location of a GMAP GFF3 for parsing.
+        gmapFiles -- a list of [queryPrefix, gmapFile] pairs, where gmapFile is a string
+                     indicating the location of a GMAP GFF3 for parsing, and queryPrefix
+                     is the prefix of the sequence file that was aligned (e.g., 'transcriptome1').
         binCollection -- an existing BinCollection object to add GMAP alignments to.
         indexFileName -- a string indicating the location of a pickled dictionary
                          linking sequence IDs (key) to lengths (value).
     '''
     @staticmethod
-    def process_block(thisBlockData, seqLenDict, binCollection):
+    def process_block(thisBlockData, seqLenDict, binCollection, queryPrefix):
         '''
         Decides whether any of the GMAP alignments for this gene ("block") are
         good enough to be added to the bin collection. Called by the task()
         method of this class.
-        
+
         Note that this function uses a lot of static parameters which have been
         hand tuned to work well based on test data. However, this represents
         a potential area for improvement in the future, as these parameters
         may not be as optimal as possible.
-        
+
         Parameters:
             thisBlockData -- a list of dictionaries, one for each GMAP alignment
             seqLenDict -- a dictionary linking sequence IDs (key) to lengths (value).
-            binCollection -- an existing BinCollection object to add sequence IDs to
+            binCollection -- an existing BinCollection object to add sequence keys to
                              as new bins or added into existing bins.
+            queryPrefix -- a string indicating the prefix of the sequence file that
+                           was aligned, used to form each sequence's key.
         '''
         
         # Static behavioural parameters (static for now, may change later)
@@ -128,7 +134,7 @@ class GmapBinProcess(ReturningProcess):
             for exonStart, exonEnd in blockDataDict["exons"]:
                 # Create a bin for each exon feature
                 exonBin = Bin(blockDataDict["contig"], exonStart, exonEnd)
-                exonBin.add(blockDataDict["Name"])
+                exonBin.add((queryPrefix, blockDataDict["Name"]))
                 
                 # See if this overlaps an existing bin
                 binOverlap = find_overlapping_bins(binCollection, exonBin)
@@ -141,7 +147,7 @@ class GmapBinProcess(ReturningProcess):
         seqLenDict = load_sequence_length_index(indexFileName)
         
         # Iterate through GMAP files
-        for gmapFile in gmapFiles:
+        for queryPrefix, gmapFile in gmapFiles:
             # Hold onto the GMAP alignments for each gene
             """GMAP is guaranteed to return alignments for each gene together, but not ordered
             by quality. We'll sort them by quality and then process them iteratively"""
@@ -159,13 +165,13 @@ class GmapBinProcess(ReturningProcess):
                     thisBlockData.append(dataDict)
                 # Otherwise, process the block of data
                 else:
-                    GmapBinProcess.process_block(thisBlockData, seqLenDict, binCollection)
-                    
+                    GmapBinProcess.process_block(thisBlockData, seqLenDict, binCollection, queryPrefix)
+
                     # Reset for next iteration
                     thisBlockID, thisBlockData = dataDict["Name"], [dataDict]
-            
+
             # Process the last block of data
-            GmapBinProcess.process_block(thisBlockData, seqLenDict, binCollection)
+            GmapBinProcess.process_block(thisBlockData, seqLenDict, binCollection, queryPrefix)
         
         return binCollection
 
@@ -268,8 +274,8 @@ def generate_bin_collections(targetGenomes, threads, isMicrobial):
         for x in range(threads): # begin processing n collections
             if i+x < len(filePairs): # parent loop may excess if n > the number of GMAP files
                 index, gff3File = filePairs[i+x]
-                
-                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial) # returns empty BinCollection if GFF3 is None
+
+                seedWorkerThread = CollectionSeedProcess(gff3File, isMicrobial, f"{FILE_PREFIX}{index}") # returns empty BinCollection if GFF3 is None
                 seedWorkerThread.start()
                 processing.append(seedWorkerThread)
         
@@ -317,7 +323,11 @@ def populate_bin_collections(genomesDir, collectionList, gmapFiles,
                                     "rerun initialise before attempting to cluster!")
         
         # Get all GMAP files associated with this genome
-        thisGmapFiles = [ gmFile for gmFile in gmapFiles if f"to_{genomePrefix}_" in gmFile] # .ok flags were checked by BINge.py
+        "auto_gmapping() names files as '{queryPrefix}_to_{genomePrefix}_gmap.gff3'"
+        thisGmapFiles = [
+            [os.path.basename(gmFile).split("_to_")[0], gmFile]
+            for gmFile in gmapFiles if f"to_{genomePrefix}_" in gmFile # .ok flags were checked by BINge.py
+        ]
         
         # Get other data structures for this genome
         thisBinCollection = collectionList[genomeIndex] # generate_bin_collections sorted the list by the index value

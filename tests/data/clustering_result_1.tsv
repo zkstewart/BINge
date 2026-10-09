@@ -1,12 +1,12 @@
 #BINge clustering information file
-cluster_num	sequence_id	cluster_type
-0	g1	binned
-1	g2	binned
-2	g3	binned
-3	g4	binned
-3	g5	binned
-4	g6	binned
-4	g7	binned
-5	g8	unbinned
-5	g9	unbinned
-6	g10	unbinned
+cluster_num	sequence_id	cluster_type	sequence_file
+0	g1	binned	annotations1
+1	g2	binned	annotations1
+2	g3	binned	annotations1
+3	g4	binned	annotations1
+3	g5	binned	annotations1
+4	g6	binned	annotations1
+4	g7	binned	annotations1
+5	g8	unbinned	transcriptome1
+5	g9	unbinned	transcriptome1
+6	g10	unbinned	transcriptome1

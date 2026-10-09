@@ -54,24 +54,34 @@ def write_unbinned_fasta(unbinnedIDs, transcriptRecords, tmpDir):
     A helper function which creates a temporary FASTA file containing all unbinned
     sequences. This file will be used for clustering, after which it can be deleted.
     
+    Sequences are written with temporary IDs, since sequence IDs are only unique within
+    each input file (and so could collide here), and external clusterers may alter IDs
+    with unusual characters.
+
     Parameters:
-        unbinnedIDs -- a set containg sequence IDs that exist in transcriptRecords
+        unbinnedIDs -- a set containing sequence keys that exist in transcriptRecords
                        which should be clustered with an external algorithm.
-        transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
-                             sequences.
+        transcriptRecords -- a FastaCollection for instant lookup of sequences.
         tmpDir -- a string location for where this script should write temp files.
+    Returns:
+        tmpFileName -- a string indicating the location of the written FASTA file.
+        tmpIDs -- a dictionary linking temporary IDs (keys) to sequence keys (values).
     '''
     # Generate a temporary FASTA file containing unbinned transcripts
     tmpFileName = os.path.join(tmpDir, "tmp_BINge_unbinned_{0}.fasta".format(
         get_hash_for_input_sequences(str(transcriptRecords))
         )
     )
+    tmpIDs = {}
     with open(tmpFileName, "w") as fileOut:
-        for seqID in unbinnedIDs:
-            record = transcriptRecords[seqID]
-            fileOut.write(f">{record.name}\n{str(record)}\n")
-    
-    return tmpFileName
+        for index, seqKey in enumerate(unbinnedIDs):
+            tmpID = f"seq{index}"
+            tmpIDs[tmpID] = seqKey
+
+            record = transcriptRecords[seqKey]
+            fileOut.write(f">{tmpID}\n{str(record)}\n")
+
+    return tmpFileName, tmpIDs
 
 def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args, tmpDir, bingeTmpDir):
     '''
@@ -81,18 +91,20 @@ def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args, tmpDir, bin
     the output file, they can decide if they'd like to exclude these or not.
     
     Parameters:
-        unbinnedIDs -- a set containg sequence IDs that exist in transcriptRecords
+        unbinnedIDs -- a set containg sequence keys that exist in transcriptRecords
                        which should be clustered with an external algorithm.
-        transcriptRecords -- a FASTA file loaded in with pyfaidx for instant lookup of
-                             sequences.
+        transcriptRecords -- a FastaCollection for instant lookup of sequences.
         args -- an argparse ArgumentParser object with attributes as set by BINge's
                 main argument parsing process.
         tmpDir -- a string location for where MMseqs2 should write temp files.
         bingeTmpDir -- a string location for where the main BINge run is happening
                        and its temporary files should be written.
+    Returns:
+        resultClusters -- a dictionary where keys are integers from 0 -> n, and values
+                          are lists of sequence keys.
     '''
     # Generate a temporary FASTA file containing unbinned transcripts
-    tmpFileName = write_unbinned_fasta(unbinnedIDs, transcriptRecords, bingeTmpDir)
+    tmpFileName, tmpIDs = write_unbinned_fasta(unbinnedIDs, transcriptRecords, bingeTmpDir)
     
     # Cluster the unbinned transcripts depending on BINge parameters
     if args.unbinnedClusterer in ["mmseqs-cascade", "mmseqs-linclust"]:
@@ -108,7 +120,13 @@ def cluster_unbinned_sequences(unbinnedIDs, transcriptRecords, args, tmpDir, bin
     
     # Clean up temporary file
     os.unlink(tmpFileName)
-    
+
+    # Convert temporary IDs back into sequence keys
+    resultClusters = {
+        clusterNum: [ tmpIDs[tmpID] for tmpID in clusterIDs ]
+        for clusterNum, clusterIDs in resultClusters.items()
+    }
+
     # Return cluster dictionary results
     return resultClusters
 

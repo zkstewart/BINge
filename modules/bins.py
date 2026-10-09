@@ -18,7 +18,7 @@ class Bin:
         self.start = start
         self.end = end
         
-        self.ids = set() # set of sequence IDs
+        self.ids = set() # set of sequence keys i.e., (prefix, seqID) tuples
     
     @property
     def contig(self):
@@ -54,7 +54,8 @@ class Bin:
         self._end = value
     
     def add(self, idValue):
-        assert isinstance(idValue, str)
+        assert isinstance(idValue, tuple) and len(idValue) == 2, \
+            "Bin IDs must be (prefix, seqID) sequence keys"
         self.ids.add(idValue)
     
     def union(self, ids):
@@ -241,8 +242,8 @@ class BinBundle:
                               This represents a ratio for which sequences must co-occur.
         Returns:
             clusterDict -- a dictionary where keys are integers from 0 -> n, and values
-                           are sets of sequence IDs.
-            eliminations -- a set of sequence IDs to NOT take through to further clustering.
+                           are sets of sequence keys i.e., (prefix, seqID) tuples.
+            eliminations -- a set of sequence keys to NOT take through to further clustering.
         '''
         assert 0 < VOTE_THRESHOLD <= 1.0, \
             "VOTE_THRESHOLD must be a value greater than 0, and less than or equal to 1"
